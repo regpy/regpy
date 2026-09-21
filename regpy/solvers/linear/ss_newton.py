@@ -369,7 +369,7 @@ class SemiSmoothNewton(RegSolver):
         projection = CoordinateMask(self.h_domain.vecsp, self.inactive)
         S_taylor = quadTaylor(self.S, self.y)
         full_R_taylor = quadTaylor(self.R, self.x)
-        if (self.op.domain.nrTrues(self.active) == self.op.domain.size):
+        if (self.op.domain.nrTrues(self.active) == self.op.domain.dimension):
             self.log.info('all indices active!')
         else:
             """Define quadratic Taylor approximation of the data fidelity functional at the current iterate"""
@@ -431,7 +431,7 @@ class SemiSmoothNewton(RegSolver):
                                            (self.active_minus, self.active_minus_old)))
         self.log.info('it {}: CG its {}, changes active sets +{},-{}'.format(
             self.iteration_step_nr,
-            tikhcg.iteration_step_nr if not (self.op.domain.nrTrues(self.active) == self.op.domain.size) else 0,
+            tikhcg.iteration_step_nr if not (self.op.domain.nrTrues(self.active) == self.op.domain.dimension) else 0,
             added_ind, 
             removed_ind
             )

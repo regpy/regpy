@@ -2513,17 +2513,13 @@ class Composition(Operator):
 
         all_spaces = [self.domain]
         all_spaces.extend(op.codomain for op in self.ops[::-1])
-        all_complex = all(space.is_complex for space in all_spaces)
-        distinguished_real = (
-            not self.domain.is_complex
-            and not self.codomain.is_complex
-            and not M.domain.is_complex
-        )
-        if not (all_complex or distinguished_real):
+        # Storage may differ (e.g. complex arrays with real coordinates).
+        # The scalar field, rather than storage dtype, must agree throughout.
+        if any(space.as_real_space != self.domain.as_real_space
+               for space in all_spaces):
             raise ValueError(util.Errors.value_error(
-                "An SVD composition must either use complex vector spaces "
-                "throughout, or have real domain, codomain, and singular-"
-                "coordinate space."
+                "An SVD composition must use the same scalar field throughout "
+                "(as_real_space), including the singular-coordinate space."
             ))
 
         left_factors = self.ops[:middle_index]
@@ -4620,7 +4616,7 @@ class SciPyLinearOperator(LinearOperator):
         numpy.ndarray
         """
         op2 = self.op2
-        return op2.codomain.flatten(op2(op2.domain.fromflat(x)))
+        return op2.codomain.flatten(op2(op2.domain.fromflat(np.asarray(x).reshape(-1))))
     
     def _rmatvec(self, y: NDArray[np.float64]) -> NDArray[np.float64]:
         r"""Applies the adjoint operator.
@@ -4635,4 +4631,4 @@ class SciPyLinearOperator(LinearOperator):
         numpy.ndarray
         """
         op2 = self.op2
-        return op2.domain.flatten(op2.adjoint(op2.codomain.fromflat(y)))
+        return op2.domain.flatten(op2.adjoint(op2.codomain.fromflat(np.asarray(y).reshape(-1))))

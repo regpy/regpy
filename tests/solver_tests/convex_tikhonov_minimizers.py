@@ -127,7 +127,7 @@ def test_ss_newton_two_steps_on_split_domain(problem):
 
     operator = problem["operator"]
     domain = operator.domain
-    mask = (np.arange(domain.size).reshape(domain.shape) % 3) == 0
+    mask = (np.arange(domain.dimension).reshape(domain.shape) % 3) == 0
     p1 = CoordinateProjection(domain, mask)
     p2 = CoordinateProjection(domain, ~mask)
     split_domain = MaskableDirectSum(p1.codomain, p2.codomain)
@@ -158,7 +158,7 @@ def test_ss_newton_two_steps_on_split_domain(problem):
     ]
 
     # Verify that we compare the same objective and geometry.
-    probe = initial + 10.0 * np.sin(np.arange(domain.size)).reshape(domain.shape)
+    probe = initial + 10.0 * np.sin(np.arange(domain.dimension)).reshape(domain.shape)
     np.testing.assert_allclose(split.adjoint(split(probe)), probe)
     np.testing.assert_allclose(split_operator(split(probe)), operator(probe))
     assert split_penalty(split(probe)) == pytest.approx(penalty(probe), rel=1e-12)

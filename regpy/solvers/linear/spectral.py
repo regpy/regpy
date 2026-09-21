@@ -144,53 +144,8 @@ def _gram_operators_equal(first: Operator, second: Operator) -> bool:
 
 
 def _as_scipy_operator(op: Operator) -> SciPyLinearOperator:
-    """Return a SciPy view preserving a genuinely complex scalar field."""
-    if not (op.domain.is_complex and op.codomain.is_complex):
-        # The standard RegPy wrapper uses the real flatten/fromflat
-        # coordinates. Numerical SVDs with mixed scalar fields are rejected
-        # by SVD._init_numerical before this helper is reached.
-        return op.as_linear_operator()
-    domain = op.domain
-    codomain = op.codomain
-    dtype = np.result_type(
-        getattr(domain, 'dtype', complex),
-        getattr(codomain, 'dtype', complex),
-        1j,
-    )
-
-    try:
-        domain_coordinates = domain.complex_flatten(domain.zeros())
-        codomain_coordinates = codomain.complex_flatten(codomain.zeros())
-        domain.complex_fromflat(np.asarray(domain_coordinates))
-        codomain.complex_fromflat(np.asarray(codomain_coordinates))
-    except (AttributeError, NotImplementedError) as error:
-        raise TypeError(Errors.type_error(
-            "A genuinely complex numerical SVD requires both endpoint "
-            "spaces to implement complex_flatten and complex_fromflat."
-        )) from error
-
-    def matvec(vector):
-        argument = domain.complex_fromflat(
-            np.asarray(vector, dtype=dtype).reshape(-1)
-        )
-        return np.asarray(
-            codomain.complex_flatten(op(argument)), dtype=dtype
-        ).reshape(-1)
-
-    def rmatvec(vector):
-        argument = codomain.complex_fromflat(
-            np.asarray(vector, dtype=dtype).reshape(-1)
-        )
-        return np.asarray(
-            domain.complex_flatten(op.adjoint(argument)), dtype=dtype
-        ).reshape(-1)
-
-    return SciPyLinearOperator(
-        dtype=dtype,
-        shape=(int(codomain.size), int(domain.size)),
-        matvec=matvec,
-        rmatvec=rmatvec,
-    )
+    """Use the shared adapter and the endpoint spaces' scalar-field coordinates."""
+    return op.as_linear_operator()
 
 
 def _assemble_matrix(op: Operator) -> np.ndarray:
@@ -225,7 +180,7 @@ def _cholesky_factor(hilbert_space) -> Operator:
                 "For the convention G=L L*, a Hilbert-space Cholesky "
                 "factor must have the Hilbert vector space as codomain."
             ))
-        if factor.domain.is_complex != hilbert_space.vecsp.is_complex:
+        if factor.domain.as_real_space != hilbert_space.vecsp.as_real_space:
             raise ValueError(Errors.value_error(
                 "The Cholesky factor's auxiliary domain has the wrong real "
                 "or complex scalar field."
@@ -298,9 +253,8 @@ class SVD(Composition):
     passed to SciPy as complex operators, so their singular values are not
     duplicated by realification. Real operators use the generic
     :meth:`~regpy.vecsps.VectorSpaceBase.flatten` and ``fromflat`` coordinates.
-    Domain and codomain must use the same scalar field. Complex backends must
-    implement the analogous :meth:`complex_flatten` and
-    :meth:`complex_fromflat` methods.
+    Domain and codomain must use the same scalar field. Both real and complex
+    backends use flatten/fromflat; as_real_space selects the coordinates.
 
     Parameters
     ----------
@@ -508,8 +462,8 @@ class SVD(Composition):
         singular_value_tolerance: float | None,
         use_buffers: bool,
     ) -> None:
-        domain_complex = self.original_operator.domain.is_complex
-        codomain_complex = self.original_operator.codomain.is_complex
+        domain_complex = not self.original_operator.domain.as_real_space
+        codomain_complex = not self.original_operator.codomain.as_real_space
         if domain_complex != codomain_complex:
             raise ValueError(Errors.value_error(
                 "A numerical SVD requires both endpoint vector spaces to be "
@@ -671,6 +625,7 @@ class SVD(Composition):
         reduced_space = vecsps.NumPyVectorSpace(
             int(singular_values.size),
             dtype=(complex if complex_svd else float),
+            as_real_space=not complex_svd,
         )
         V_0 = MatrixMultiplication(
             left_vectors,

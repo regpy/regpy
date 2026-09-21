@@ -251,7 +251,7 @@ def test_tikhonov_fista_with_optimality_stopping(
     reconstruction, reconstructed_data = setting.run(
         "genFISTA", max_it=400, logging_level="DEBUG",
     )
-    executed_rule = setting.get_stopping_rule("genFISTA")
+    executed_rule = setting.get_stoprule("genFISTA")
     assert executed_rule.solver is not None
     iterations = executed_rule.solver.iteration_step_nr
     #assert iterations < 200, f"Expected fewer than 200 iterations, got {iterations}."

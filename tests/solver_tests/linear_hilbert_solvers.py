@@ -701,7 +701,7 @@ def test_alternative_tikhonov_minimizer(
     case, reference_solution = alternative_tikhonov_problem
     setting = _make_setting(case, regpar=ALTERNATIVE_REGPAR)
     setting.set_stoprule(
-        DualityGapStopping(
+        lambda setting, params: DualityGapStopping(
             tol=ALTERNATIVE_ERROR_LIMIT,
             logging_level=logging.DEBUG,
         )
