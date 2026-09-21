@@ -675,11 +675,11 @@ def test_lavrentiev_cg_internal_stopping_rule(
 
 ALTERNATIVE_TIKHONOV_METHODS = (
     "FB",
-    "dual_FB",
+    "dFB",
     "FISTA",
-    "dual_FISTA",
+    "dFISTA",
     "PDHG",
-    "dual_PDHG",
+    "dPDHG",
 )
 
 

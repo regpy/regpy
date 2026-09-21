@@ -144,8 +144,9 @@ def convergence_plots(
     :class:`OptimalityCondStopping` components. Each available history type
     gets its own subplot, and every recorded history is plotted on a
     logarithmic y-axis. The duality-gap subplot appears first and also shows
-    the x-error histories as dashed lines and y-errors divided by sqrt(setting.regpar)
-    as dotted lines, both without markers. These also share one errors panel.
+    the x-error histories as dashed lines and y-errors as dotted lines, both
+    without markers. Y-errors are divided by sqrt(setting.regpar) only for
+    convex Tikhonov settings (is_tikhonov and is_convex). These also share one errors panel.
     Methods with more than one recorded gap curve also appear in a separate
     comparison subplot containing their original and additional gaps, with
     one labelled curve per functional and method and the gap_pow transform.
@@ -176,7 +177,8 @@ def convergence_plots(
     ref_err_x, ref_err_y : float or None, optional
         Add reference lines to the merged errors subplot where the respective
         error history exists. The x reference is dashed; the y reference is
-        divided by sqrt(setting.regpar) and dotted.
+        dotted and scaled by the same factor as the y-error curves (1/sqrt(regpar)
+        only for convex Tikhonov settings).
         Values should be positive to be visible on the logarithmic y-axis.
         None (default) omits the respective reference line.
 
@@ -324,19 +326,21 @@ def convergence_plots(
     ]
 
     error_curves = []
-    if series["Error in y"]:
+    scale_y = bool(setting.is_tikhonov and setting.is_convex)
+    y_scale = 1.0
+    y_label = r"error_y/$\sqrt{\alpha}$" if scale_y else "error_y"
+    if series["Error in y"] and scale_y:
         alpha = getattr(setting, "regpar", None)
         if (alpha is None or not np.isscalar(alpha) or not np.isrealobj(alpha)
                 or not np.isfinite(alpha) or alpha <= 0):
             raise ValueError("Plotting error_y/sqrt(alpha) requires a positive finite setting.regpar.")
-    else:
-        alpha = None
+        y_scale = np.sqrt(alpha)
     for component, style, suffix in (
         ("Error in x", "--", "error_x"),
-        ("Error in y", ":", r"error_y/$\sqrt{\alpha}$"),
+        ("Error in y", ":", y_label),
     ):
         for label, horizontal, values in series[component]:
-            scaled = values / np.sqrt(alpha) if component == "Error in y" else values
+            scaled = values / y_scale if component == "Error in y" else values
             error_curves.append((label, horizontal, scaled, style, suffix))
     active_series = [
         (name, curves) for name, curves in series.items()
@@ -415,7 +419,7 @@ def convergence_plots(
             if series["Error in x"] and ref_err_x is not None:
                 references.append((ref_err_x, '--', 'reference error_x'))
             if series["Error in y"] and ref_err_y is not None:
-                references.append((ref_err_y / np.sqrt(alpha), ':', r'reference error_y/$\sqrt{\alpha}$'))
+                references.append((ref_err_y / y_scale, ':', 'reference ' + y_label))
             for value, style, label in references:
                 axis.axhline(value, color='black', linestyle=style,
                              label=label, linewidth=linewidth)
