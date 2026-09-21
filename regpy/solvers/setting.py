@@ -31,14 +31,14 @@ __all__ = [
 def _with_stoprule_defaults(methods: dict, factory: Callable[[Setting, dict], StopRule]) -> dict:
     """Attach independent configuration dictionaries, without creating rules."""
     short_runs = {'IRGNM_CG', 'LevMar', 'NewtonCG', 'NewtCGFroz', 'IRN',
-                  'Spectral', 'Spectral_SelfAdjoint', 'TikhOnGrid', 'genTikh'}
+                  'Spectral', 'Spectral_sa', 'TikhOnGrid', 'genTikh'}
     for name, method in methods.items():
-        max_it = 100 if name in ('SSNewton', 'dual_SSNewton') else (
+        max_it = 100 if name in ('SSN', 'dSSN') else (
             50 if name in short_runs else 1000)
         params = {'max_it': max_it, 'factory': factory}
         if factory is default_convex_stoprule:
             params['tol'] = 1e-3
-            if name in ('SSNewton', 'dual_SSNewton'):
+            if name in ('SSN', 'dSSN'):
                 params['schedule'] = None
         elif factory is default_nonconvex_stoprule:
             params['tol'] = 1e-3
@@ -965,7 +965,7 @@ class Setting:
         _with_stoprule_defaults({method_abbrv: method}, factory)
         self._methods[method_abbrv] = method
 
-    def evaluate_methods(self, method_names: list[str] | None = None)->None:
+    def evaluate_methods(self, method_names: list[str] | None = None)->float|None:
         """Evaluates which methods are applicable to the current setting. 
         This is achieved by calling method.check_applicability(self), which also provide information on guaranteed rates.
 
@@ -973,6 +973,11 @@ class Setting:
         ----------
         method_names: list of strings or None [default:None]
             List of names of methods to be evaluated. If None, all methods are evaluated.   
+
+        Returns
+        -----------
+        Operator norm estimate for convex Tikhonov settings, else None
+                
         """
 
         if method_names is None:
@@ -1017,6 +1022,7 @@ class Setting:
                 if (self.is_tikhonov and out['applicable']
                         and 'rate' in out):
                     method['rate'] = out['rate']
+        return op_norm
 
     def applicable_methods(self)->dict[str,dict]:
         """Return the methods that can be applied to this setting."""
@@ -1031,21 +1037,24 @@ class Setting:
         (or a list of strings). Caveats do not make a method inapplicable and
         do not exclude it from automatic method selection.
         """
-        self.evaluate_methods()
+        op_norm = self.evaluate_methods()
 
         def display(name, method, with_caveats=False):
             full = method.get('full')
-            label = name + (f' ({full})' if full_names and full else '')
-            rate = (f" linear rate: {method['rate']:.3e}"
+            label = name + (f'\t{full}' if full_names and full else '\t')
+            rate = (f"linear rate: {method['rate']:.3e}"
                     if method['applicable'] and 'rate' in method else '')
-            print(f"{label}: {method.get('info', '')}{rate}")
+            print(f"{label}\n\t{method.get('info', '')}\n\t{rate}")
             if with_caveats:
                 caveats = method['caveats']
                 if isinstance(caveats, (list, tuple)):
                     caveats = '; '.join(str(item) for item in caveats)
-                print(f"  Caveats: {caveats}")
+                print(f"\tCaveats: {caveats}")
 
-        print('Applicable methods: (default =', self.get_default_method(), ')\n')
+        print('Applicable methods: (default =', self.get_default_method(), 
+              ', ||T|| = {:.3e})\n'.format(op_norm) if op_norm else ')\n'
+              )
+
         for name, method in self._methods.items():
             if method['applicable'] and not method.get('caveats'):
                 display(name, method)
@@ -1461,7 +1470,7 @@ def get_linear_reg_method_dictionary() -> dict:
             'Spectral': {'class': Spectral,
                          'full': 'spectral regularization by an SVD filter'
                         },
-            'Spectral_SelfAdjoint': {
+            'Spectral_sa': {
                          'class': Spectral_SelfAdjoint,
                          'full': 'spectral regularization of a self-adjoint operator'
                         },
@@ -1540,17 +1549,17 @@ def get_convex_solver_dictionary() -> dict:
     )
     method_dict={
             'TikhCG': {'class':TikhonovCG, 'primal': True, 'full':'conjugate gradient method applied to normal equation'},
-            'dual_TikhCG': {'class':TikhonovCG, 'primal': False, 'full':'conjugate gradient method applied to dual normal equation'},
+            'dTikhCG': {'class':TikhonovCG, 'primal': False, 'full':'conjugate gradient method applied to dual normal equation'},
             'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
-            'dual_FB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to primal problem'},
+            'dFB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to dual problem'},
             'FISTA': {'class':FISTA, 'primal': True, 'full': 'Fast Iterative Thresholding applied to primal problem'}, 
-            'dual_FISTA': {'class':FISTA, 'primal': False, 'full': 'Fast Iterative Thresholding applied to dual problem'},
+            'dFISTA': {'class':FISTA, 'primal': False, 'full': 'Fast Iterative Thresholding applied to dual problem'},
             'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
-            'dual_PDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
+            'dPDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
             'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Multipliers' },
-            'dual_ADMM': {'class':ADMM, 'primal': False, 'full': 'Alternating Direction Method of Multipliers applied to dual problem'},
-            'SSNewton': {'class':SemiSmoothNewton, 'primal': True, 'full': 'Semismooth Newton method'},
-            'dual_SSNewton': {'class':SemiSmoothNewton, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
+            'dADMM': {'class':ADMM, 'primal': False, 'full': 'Alternating Direction Method of Multipliers applied to dual problem'},
+            'SSN': {'class':SemiSmoothNewton, 'primal': True, 'full': 'Semismooth Newton method'},
+            'dSSN': {'class':SemiSmoothNewton, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
         }
     return _with_stoprule_defaults(method_dict, default_convex_stoprule)
 

@@ -229,7 +229,7 @@ class PDHG(RegSolver):
                         sigma = mu/(2.*muSstar)
                         theta = 1./(1.+mu)
                         out['rate']=(1.+theta)/(2.+mu)
-                        out['info']='Using accelerated version 2 with convexity parameters mu_R={:.3e}, mu_S*={:.3e} and ||T||={:.3e}.\n Expected linear convergence rate: {:.3e}'.format(muR,muSstar,L,out['rate'])
+                        out['info']='Using accelerated version 2 with convexity parameters mu_R={:.3e}, mu_S*={:.3e}.'.format(muR,muSstar)
                     else:
                         theta = 0.
                         out['info']='Using accelerated version 1 with convexity parameter mu_R={:.3e} and ||T|={:.3e}. Expected convergence rate O(1/n^2).'.format(muR,L)
