@@ -274,7 +274,7 @@ class TVUniformGridFcts(Composed):
         Boundary condition in the discretization of gradient, see ForwardFDGradient
     prox_method: str, optional
         A string specifying the method for computing the prox operator. This must be a solver for the class-internal
-        TV_prox_setting derived from Setting. The default is "dual_FISTA". An alternative -- besides most other standard solvers 
+        TV_prox_setting derived from Setting. The default is "dFISTA". An alternative -- besides most other standard solvers 
         for convex Tikhonov settings -- is "Chambolle" implementing Chambolle's dual fixed point iteration.  
     prox_method_param: dict, optional
         parameters of the prox_method. Defaults to {}
@@ -403,7 +403,7 @@ class TVUniformGridFcts(Composed):
     def __init__(self, domain,
                  beta:float =0.,
                  boundary_condition:str='Neum',
-                 prox_method:str = 'dual_FISTA',
+                 prox_method:str = 'dFISTA',
                  prox_method_param:dict = {},
                  prox_stop_rule = None,
                  logging_level = "INFO",
@@ -473,10 +473,10 @@ class TVUniformGridFcts(Composed):
         self.prox_setting.regpar = 1. / tau
         prox_method_param = self.prox_method_param.copy()
         prox_method_param.update(kwargs)
-        if self.prox_method in {'FISTA', 'dual_FISTA'} and 'data' not in prox_method_param:
+        if self.prox_method in {'FISTA', 'dFISTA'} and 'data' not in prox_method_param:
             data_space = (
                 self.grad.domain
-                if self.prox_method == 'dual_FISTA'
+                if self.prox_method == 'dFISTA'
                 else self.grad.codomain
             )
             if self.prox_method not in self._fista_zero_data:

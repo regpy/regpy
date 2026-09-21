@@ -8,10 +8,10 @@ from copy import deepcopy
 from regpy.util import Errors
 from regpy.vecsps.maskable import MaskableVectorSpace, MaskableDirectSum
 from regpy.vecsps.base import TupleVector, ReadOnlyVector
-from regpy.operators import CoordinateMask
+from regpy.operators import CoordinateMask, CoordinateProjection, PtwMultiplication, Identity
 from regpy.operators.base import Composition
 from regpy.hilbert import GramHilbertSpace, HilbertSpace
-from regpy.functionals.base import Functional, SquaredNorm, Composed, Conj, HorizontalShiftDilation, FunctionalOnDirectSum
+from regpy.functionals.base import Functional, SquaredNorm, Composed, Conj, HorizontalShiftDilation, FunctionalOnDirectSum, LinearCombination
 from regpy.stoprules import CountIterations
 from regpy.functionals.integral_functionals import IntegralFunctionalBase
 
@@ -48,7 +48,7 @@ class SemiSmoothNewton(RegSolver):
     ..math::
         psi_{minus} \leq f \leq psi_{plus} 
     
-    for a separable smooth penalty functional :math:`\mathcal{R}` and a smooth, strictly convex data functional :math:`\mathcal{S}_{g^{\delta}}` 
+    for a separable smooth penalty functional :math:`\mathcal{R}` and a smooth convex data functional (strictly convex or separable) :math:`\mathcal{S}_{g^{\delta}}` 
     and a linear operator :math:`T`.
     
     Parameters
@@ -115,6 +115,15 @@ class SemiSmoothNewton(RegSolver):
     the active-set constraints.
     Direct sums of these functionals are handled componentwise, recursively.
     The original setting penalty is not modified.
+
+    For separable fidelities, each Hessian must be represented as pointwise
+    multiplication or a scalar multiple of Identity, with finite nonnegative
+    entries. Positive-curvature coordinates define the inner CG data space.
+    Zero-curvature gradient contributions are added to the quadratic penalty
+    with scale 1/regpar. An entirely affine fidelity model is solved directly
+    using the shifted penalty reference, without consuming a CG tolerance.
+    The penalty Taylor Hessian must still be invertible. Inner duals are lifted
+    to the full codomain, using -S'/regpar on zero-curvature coordinates.
 
     Initial multipliers use the same Hilbert-gradient coordinates as the
     subsequent steps: G^{-1}(T* S'(T x0) + regpar R'(x0)), where G is the
@@ -349,6 +358,38 @@ class SemiSmoothNewton(RegSolver):
             raise ValueError("The penalty could not be extended to the full domain space.")
         return result
 
+    def _fidelity_model(self):
+        """Return (quadratic fidelity, projected operator, projection, linear gradient).
+
+        The final vector is the full codomain covector on zero-curvature
+        coordinates. No Hilbert Gram inverse is applied to this covector.
+        """
+        if not self.S.is_separable:
+            return quadTaylor(self.S, self.y), self.op, None, None
+        space = self.op.codomain
+        hessian = self.S.hessian(self.y)
+        curvature = hessian(space.ones())
+        values = list(space.iter_coefficients(curvature))
+        if any(not np.isfinite(v) or np.iscomplexobj(v) or v < 0 for v in values):
+            raise ValueError("Fidelity Hessian must have finite nonnegative real entries.")
+        positive = space.mask_from_iterable(v > 0 for v in values)
+        gradient = self.S.subgradient(self.y)
+        linear = space.zeros()
+        space.copyto(linear, gradient, where=space.logical_not(positive))
+        if space.nrTrues(positive) == 0:
+            return None, None, None, linear
+        projection = CoordinateProjection(space, positive)
+        reduced_hessian = PtwMultiplication(projection.codomain, projection(curvature))
+        reduced_y = projection(self.y)
+        b = reduced_hessian.inverse(projection(gradient)) - reduced_y
+        # This constant makes quadratic + <linear,z> equal the full Taylor
+        # polynomial at y (and hence everywhere).
+        constant = (self.S(self.y) - space.vdot(linear, self.y)
+                    - projection.codomain.vdot(0.5 * reduced_y + b,
+                                              reduced_hessian(reduced_y)))
+        model = SquaredNorm(GramHilbertSpace(reduced_hessian), a=1., b=b, c=constant)
+        return model, projection * self.op, projection, linear
+
     def _next(self):
         """compute active and inactive sets"""
         self.active_plus_old=self.active_plus
@@ -367,10 +408,22 @@ class SemiSmoothNewton(RegSolver):
         self.op.domain.fill(self.lam_minus, 0, where=self.active_plus)
 
         projection = CoordinateMask(self.h_domain.vecsp, self.inactive)
-        S_taylor = quadTaylor(self.S, self.y)
+        S_taylor, model_op, data_projection, linear = self._fidelity_model()
+        cg_iterations = 0
         full_R_taylor = quadTaylor(self.R, self.x)
+        if linear is not None:
+            shift = full_R_taylor.gram.inverse(self.op.adjoint(linear) / self.regpar)
+            full_R_taylor = SquaredNorm(full_R_taylor.h_domain, a=1.,
+                                       b=full_R_taylor.b + shift, c=full_R_taylor.c)
         if (self.op.domain.nrTrues(self.active) == self.op.domain.dimension):
             self.log.info('all indices active!')
+        elif S_taylor is None:
+            # The full fidelity model is affine: separability of R makes
+            # the inactive minimizer its shifted reference vector.
+            self.op.domain.copyto(self.x, full_R_taylor.reference_vector(),
+                                  where=self.inactive)
+            self._cg_dual = -linear / self.regpar
+            self._cg_dual_adjoint = None
         else:
             """Define quadratic Taylor approximation of the data fidelity functional at the current iterate"""
             """... and a quadratic Taylor approximation of the full penalty functional"""
@@ -389,11 +442,11 @@ class SemiSmoothNewton(RegSolver):
             which respects the solution on the active set that we have already computed.
             Since we assume separability of the penalty term, the solution on the active set only affects the data term.
             """
-            quad_setting = Setting(self.op * projection, 
+            quad_setting = Setting(model_op * projection, 
                                   constr_R_taylor,
                                   S_taylor,
                                   regpar=self.regpar,
-                                  data = self.op(projection(self.x)-self.x)
+                                  data = model_op(projection(self.x)-self.x)
                                   )         
             tikhcg = TikhonovCG(quad_setting, 
                                 init=projection(full_R_taylor.reference_vector()),                                
@@ -404,7 +457,8 @@ class SemiSmoothNewton(RegSolver):
             aux, _ = tikhcg.run()
             # Capture before resetting S_taylor.data below: CG's dual belongs
             # to the shifted, restricted quadratic subproblem.
-            self._store_cg_dual(tikhcg)
+            self._store_cg_dual(tikhcg, data_projection, linear)
+            cg_iterations = tikhcg.iteration_step_nr
             self.tikhcg = tikhcg
             self.op.domain.copyto(self.x, aux, where=self.inactive)
         self.y = self.op(self.x)
@@ -439,13 +493,16 @@ class SemiSmoothNewton(RegSolver):
         if added_ind+removed_ind==0 and self.data_fid.is_quadratic and self.R.is_quadratic:
             self.converge()
 
-    def _store_cg_dual(self, solver) -> None:
+    def _store_cg_dual(self, solver, projection=None, linear=None) -> None:
         """Snapshot the latest inner dual before its Taylor functional changes."""
         pair = solver.dual()
         if pair is None or pair[0] is None:
             raise RuntimeError("The inner CG solver did not provide a dual iterate.")
         self._cg_dual = self.op.codomain.empty()
-        self.op.codomain.copyto(self._cg_dual, pair[0])
+        value = pair[0] if projection is None else projection.adjoint(pair[0])
+        if linear is not None:
+            value = value - linear / self.regpar
+        self.op.codomain.copyto(self._cg_dual, value)
         self._cg_dual_adjoint = None
 
     def dual(self):
@@ -501,7 +558,7 @@ class SemiSmoothNewton(RegSolver):
                 or setting.h_domain.vecsp != setting.op.domain
                 or not isinstance(setting.op.domain, MaskableVectorSpace)
                 or not setting.op.domain.is_ordered):
-            out['info'] += 'Operator domain must carry a real Hilbert space. '
+            out['info'] += 'Operator domain must carry a real Hilbert space, which is ordered and maskable. '
         if not setting.is_tikhonov:
             out['info'] += 'Setting has no regularization parameter.'
         if not setting.is_convex:
@@ -511,8 +568,12 @@ class SemiSmoothNewton(RegSolver):
         else:
             if not 'hessian' in setting.data_fid.methods:
                 out['info'] += 'Data functional not twice differentiable. '
-            if not setting.data_fid.is_strictly_convex:
-                out['info'] += 'Data fidelity term is not strictly convex.'
+            if not (setting.data_fid.is_strictly_convex or setting.data_fid.is_separable):
+                out['info'] += 'Data fidelity must be strictly convex or separable. '
+            if setting.data_fid.is_separable and (
+                    not isinstance(setting.op.codomain, MaskableVectorSpace)
+                    or not setting.op.codomain.is_ordered):
+                out['info'] += 'Separable fidelity requires a real ordered maskable codomain. ' 
             if setting.data_fid.Lipschitz==np.inf:
                 out['info'] += 'Data functional not Lipschitz continuous. '                
         def check_penalty(penalty):

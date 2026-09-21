@@ -354,7 +354,7 @@ class Huber_XSetting(Setting):
                               logging_level=logging_level, 
                               explicitDataWarning=explicitDataWarning, 
                               _primal_setting=_primal_setting,
-                              default_inner_solver = 'dual_FISTA'
+                              default_inner_solver = 'dFISTA'
                               )
   
     def duality_gap(self, primal = None, dual = None): #TODO: add specific implementation!

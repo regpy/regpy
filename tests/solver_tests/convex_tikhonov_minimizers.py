@@ -21,10 +21,10 @@ from regpy.vecsps import UniformGridFcts
 
 SOLVERS = (
     pytest.param("ADMM", id="ADMM"),
-    # The solver called "SS_Newton" in prose is registered as "SSNewton".
-    pytest.param("SSNewton", id="SS_Newton"),
-    pytest.param("dual_FISTA", id="dual_FISTA"),
-    pytest.param("dual_PDHG", id="dual_PDHG"),
+    # The solver called "SS_Newton" in prose is registered as "SSN".
+    pytest.param("SSN", id="SSN"),
+    pytest.param("dFISTA", id="dFISTA"),
+    pytest.param("dPDHG", id="dPDHG"),
 )
 
 RELATIVE_ERROR_TOL = 1e-2
@@ -85,7 +85,7 @@ def make_setting(problem):
 @pytest.fixture(scope="module")
 def ss_newton_reference(problem):
     """Compute the reference reconstruction used in the notebook."""
-    return make_setting(problem).run("SSNewton", gap_tol=GAP_TOL)[0]
+    return make_setting(problem).run("SSN", gap_tol=GAP_TOL)[0]
 
 
 @pytest.mark.parametrize("solver", SOLVERS)
@@ -95,7 +95,7 @@ def test_shifted_kl_with_constrained_relative_entropy(
     ss_newton_reference,
 ):
     """Each supported solver should reproduce the SS-Newton solution."""
-    if solver == "SSNewton":
+    if solver == "SSN":
         reconstruction = ss_newton_reference
     else:
         reconstruction = make_setting(problem).run(solver, gap_tol=GAP_TOL)[0]
@@ -186,11 +186,11 @@ def test_ss_newton_two_steps_on_split_domain(problem):
         assert np.all(np.isfinite(reconstructed))
         np.testing.assert_allclose(
             reconstructed, natural.x, rtol=1e-7, atol=1e-8,
-            err_msg=f"Different SSNewton domain iterates at step {step}",
+            err_msg=f"Different SSN domain iterates at step {step}",
         )
         np.testing.assert_allclose(
             blocked.y, natural.y, rtol=1e-7, atol=1e-8,
-            err_msg=f"Different SSNewton images at step {step}",
+            err_msg=f"Different SSN images at step {step}",
         )
 
     # Guard against a vacuous comparison of unchanged initial guesses.
