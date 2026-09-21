@@ -758,8 +758,14 @@ class TikhonovCG(RegSolver):
 
         if op_norm is not None and not setting.codomain_free:
             conv_param = par['regpar']*setting.penalty.convexity_param
-            cond = (op_norm**2*setting.data_fid.Lipschitz + conv_param)/conv_param
-            out['rate'] = (sqrt(cond)-1) / (sqrt(cond)+1)
+            smooth_bound = op_norm**2 * setting.data_fid.Lipschitz
+            if conv_param > 0 and np.isfinite(conv_param) and np.isfinite(smooth_bound):
+                # Equivalent condition-number formula without inf/inf.
+                root = np.hypot(1., sqrt(smooth_bound) / sqrt(conv_param))
+                out['rate'] = 1. - 2. / (root + 1.)
+            else:
+                # No finite condition-number bound is available.
+                out['rate'] = np.nan
         else:
             out['rate'] = np.nan
 

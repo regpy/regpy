@@ -651,43 +651,29 @@ class IntegralFunctionalBase(Functional):
         """Evaluate a pointwise method on full arrays using a NumPy ``where`` mask."""
         return func(x, out=out, mask=mask, **kwargs)
 
-    def _assert_essential_domain(self, v, msg=None):
-        msg = "" if msg is None else msg
-        buf = self._get_scratch('_buf',v)
-        try:
-            np.subtract(v, self.dom_u, out=buf)
-            if np.any(buf > self._ESS_DOM_TOL):
-                raise NotInEssentialDomainError(Errors.generic_message(
-                    msg + f" argument too large in {self}." + "\n\t"
-                    + f"diff:{np.max(buf)}," + "\n\t" + f"eps={self._ESS_DOM_TOL}"
-                ))
-            np.subtract(self.dom_l, v, out=buf)
-            if np.any(buf > self._ESS_DOM_TOL):
-                raise NotInEssentialDomainError(Errors.generic_message(
-                    msg + f" argument too small in {self}." + "\n\t"
-                    + f"diff:{np.max(buf)}," + "\n\t" + f"eps={self._ESS_DOM_TOL}"
-                ))
-        finally:
-            self._free_scratch('_buf')
+    def _assert_interval(self, v, lower, upper, msg=None):
+        """Check bounds without subtracting equal infinite endpoints.
 
-    def _assert_conj_essential_domain(self, vstar,  msg=None):
+        Infinite arguments are accepted at matching unbounded endpoints for
+        internal limiting-value calculations. NaN is never admissible.
+        """
         msg = "" if msg is None else msg
-        buf = self._get_scratch('_buf',vstar)
-        try:
-            np.subtract(vstar, self.conj_dom_u, out=buf)
-            if np.any(buf > self._ESS_DOM_TOL):
-                raise NotInEssentialDomainError(Errors.generic_message(
-                    msg + f" argument too large in {self}." + "\n\t"
-                    + f"diff:{np.max(buf)}," + "\n\t" + f"eps={self._ESS_DOM_TOL}"
-                ))
-            np.subtract(self.conj_dom_l, vstar, out=buf)
-            if np.any(buf > self._ESS_DOM_TOL):
-                raise NotInEssentialDomainError(Errors.generic_message(
-                    msg + f" argument too small in {self}." + "\n\t"
-                    + f"diff:{np.max(buf)}," + "\n\t" + f"eps={self._ESS_DOM_TOL}"
-                ))
-        finally:
-            self._free_scratch('_buf')
+        if np.any(np.isnan(v)):
+            raise NotInEssentialDomainError(Errors.generic_message(
+                msg + f" NaN argument in {self}."))
+        # Adding a finite tolerance leaves infinite bounds unchanged.
+        if np.any(v > np.asarray(upper) + self._ESS_DOM_TOL):
+            raise NotInEssentialDomainError(Errors.generic_message(
+                msg + f" argument too large in {self}."))
+        if np.any(v < np.asarray(lower) - self._ESS_DOM_TOL):
+            raise NotInEssentialDomainError(Errors.generic_message(
+                msg + f" argument too small in {self}."))
+
+    def _assert_essential_domain(self, v, msg=None):
+        self._assert_interval(v, self.dom_l, self.dom_u, msg)
+
+    def _assert_conj_essential_domain(self, vstar, msg=None):
+        self._assert_interval(vstar, self.conj_dom_l, self.conj_dom_u, msg)
 
     def bregman(self, x: ReadOnlyVector, y: ReadOnlyVector | None,
                 ystar: ReadOnlyVector | None = None) -> float:
@@ -2749,7 +2735,10 @@ class RelativeEntropy(IntegralFunctionalBase):
         where = self._where(mask, u)
         out = self._prepare_out(out, u)
         np.divide(u, self.w, out=out, where=where)
-        np.log(out, out=out, where=where)
+        # At zero use the limiting derivative, not a finite subgradient.
+        zero = where & (out == 0)
+        np.log(out, out=out, where=where & ~zero)
+        np.copyto(out, -np.inf, where=zero)
         np.add(out, 1., out=out, where=where)
         return out
 

@@ -448,8 +448,12 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         res = deepcopy(self)
         res.shape_codomain = ()
         res.shape = res.shape_domain
+        res._coordinate_count = int(np.prod(res.shape))
         res.measure = np.squeeze(self.measure, axis = tuple(range(-self.ndim+self.ndim_domain,0)))
-        del res.identity
+        try:
+            del res.identity
+        except AttributeError:
+            pass  # No cached identity has been constructed yet.
         return res
 
     def vector_valued_space(self,shape_codomain):
@@ -476,8 +480,12 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         res = deepcopy(self)
         res.shape_codomain = shape_codomain
         res.shape = res.shape_domain + res.shape_codomain
+        res._coordinate_count = int(np.prod(res.shape))
         res.measure = np.squeeze(self.measure, axis = tuple(range(-self.ndim+self.ndim_domain,0)))
-        del res.identity
+        try:
+            del res.identity
+        except AttributeError:
+            pass  # No cached identity has been constructed yet.
         return res
 
     @property

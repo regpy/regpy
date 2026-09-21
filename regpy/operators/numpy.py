@@ -1782,9 +1782,12 @@ class PtwScalarMultiplication(Operator):
             raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,add_info=f'For a PtwScalarMultiplication the domain must be of type MeasureSpaceFcts. Got \n\t domain = {domain}'))
         if domain.ndim_codomain==0:
             raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the domain must be vector valued!'))
-        if multiplier in domain and (multiplier.shape == domain.shape_domain + (1,)*domain.ndim_codomain):
+        scalar_space = domain.scalar_space()
+        if (isinstance(multiplier, np.ndarray)
+                and multiplier.shape == domain.shape_domain + (1,)*domain.ndim_codomain
+                and multiplier.reshape(domain.shape_domain) in scalar_space):
             self.multiplier = multiplier
-        elif multiplier in domain.scalar_space():
+        elif multiplier in scalar_space:
             self.multiplier = np.reshape(multiplier,domain.shape_domain+(1,)*domain.ndim_codomain)
         else:
             raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the multiplier must be NumPy array of matching size. Got \n\t domain = {domain}, \n\t multiplier = {multiplier}'))
@@ -1825,10 +1828,12 @@ class PtwScalarDivision(Operator):
             raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,add_info=f'For a PtwScalarMultiplication the domain must be of type MeasureSpaceFcts. Got \n\t domain = {domain}'))
         if domain.ndim_codomain==0:
             raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the domain must be vector valued!'))
-        if divisor in domain and (divisor.shape == domain.shape_domain + (1,)*domain.ndim_codomain):
+        scalar_space = domain.scalar_space()
+        if (isinstance(divisor, np.ndarray)
+                and divisor.shape == domain.shape_domain + (1,)*domain.ndim_codomain
+                and divisor.reshape(domain.shape_domain) in scalar_space):
             self.divisor = divisor
-            print("first option", self.divisor.shape)
-        elif divisor in domain.scalar_space():
+        elif divisor in scalar_space:
             self.divisor = np.reshape(divisor,domain.shape_domain+(1,)*domain.ndim_codomain)
         else:
             raise ValueError(Errors.value_error(f'For a PtwScalarMultiplication the divisor must be NumPy array of matching size. Got \n\t domain = {domain}, \n\t divisor = {divisor}'))
