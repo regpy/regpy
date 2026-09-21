@@ -260,7 +260,7 @@ class TikhonovCG(RegSolver):
             self._delta_y = codomain.empty()
             self._g_delta_y = codomain.empty()
             self.solver.hessS(self.solver.y, out=self.g_y)
-            self.norm_y = codomain.vdot(self.solver.y, self.g_y)
+            self.norm_y = codomain.vdot(self.solver.y, self.g_y).real
             if self.norm_y != 0:
                 # These must be copies: solver.y and self.g_y are updated in-place.
                 self.y0 = codomain.empty()
