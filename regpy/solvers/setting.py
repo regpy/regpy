@@ -1042,9 +1042,19 @@ class Setting:
         def display(name, method, with_caveats=False):
             full = method.get('full')
             label = name + (f'\t{full}' if full_names and full else '\t')
-            rate = (f"linear rate: {method['rate']:.3e}"
-                    if method['applicable'] and 'rate' in method else '')
-            print(f"{label}\n\t{method.get('info', '')}\n\t{rate}")
+            rate = ''
+            if method['applicable'] and 'rate' in method:
+                if method['rate']>0:
+                    rate = f"linear rate: {method['rate']:.3e}"
+                elif method['rate']<0 and isinstance(method['rate'],int):
+                    rate = f"convergence of order O(n^({method['rate']}))"
+                elif method['rate']<0 and isinstance(method['rate'],float):
+                    rate = f"ergodic convergence of order O(n^({int(method['rate'])}))"
+            print(label)
+            if 'info' in method and method['info']!='':
+                print('\t'+method['info'])
+            if rate!='':
+                print('\t'+rate)
             if with_caveats:
                 caveats = method['caveats']
                 if isinstance(caveats, (list, tuple)):

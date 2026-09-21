@@ -169,8 +169,8 @@ class ADMM(RegSolver):
             )
         out['applicable'] = out['info']==''
         if out['applicable']:
-            out['info'] += 'Ergodic rate O(1/n).'
-            out['rate'] = -1
+            out['info'] += ''
+            out['rate'] = -1.
         return out, par
 
     def primal(self):

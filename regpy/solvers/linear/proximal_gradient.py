@@ -107,7 +107,7 @@ class ForwardBackwardSplitting(RegSolver):
             mu_penalty  = setting.regpar * setting.penalty.convexity_param
             mu_data_fidelity = setting.data_fid.convexity_param * op_lower_bound**2 
             out['rate'] = (1. - par['tau'] * mu_data_fidelity) / (1. + par['tau']*mu_penalty)
-            out['rate'] = -1. if out['rate'] == 1. else out['rate']
+            out['rate'] = -1. if out['rate'] == 1 else out['rate']
             out['info'] = "FB used with step length tau={:.3e}.".format(par['tau'])
 
         return out, par
@@ -322,7 +322,7 @@ class FISTA(RegSolver):
             if par['mu']>0:
                 out['info'] = "FISTA used with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.".format(par['mu_penalty'],par['mu_data_fidelity'],par['tau'])
             else:
-                out['info'] = "Expected convergence rate O(1/n^2)."
+                out['info'] = ''
                 out['rate'] = -2
         return out, par
 

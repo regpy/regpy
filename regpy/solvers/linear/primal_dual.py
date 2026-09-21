@@ -232,7 +232,7 @@ class PDHG(RegSolver):
                         out['info']='Using accelerated version 2 with convexity parameters mu_R={:.3e}, mu_S*={:.3e}.'.format(muR,muSstar)
                     else:
                         theta = 0.
-                        out['info']='Using accelerated version 1 with convexity parameter mu_R={:.3e} and ||T|={:.3e}. Expected convergence rate O(1/n^2).'.format(muR,L)
+                        out['info']='Using accelerated version 1 with convexity parameter mu_R={:.3e}'.format(muR)
                         out['rate']=-2
                 else:
                     out['info']='Using unaccelerated version.'
