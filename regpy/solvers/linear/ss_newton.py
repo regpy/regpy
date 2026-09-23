@@ -94,7 +94,11 @@ class SemiSmoothNewton(RegSolver):
     Notes
     -----
     A penalty with restricted essential domain must be an IntegralFunctionalBase
-    or the conjugate of one, optionally wrapped in HorizontalShiftDilation.
+    or the conjugate of one. HorizontalShiftDilation wrappers are supported
+    both outside the penalty and inside a conjugate. For a direct shifted
+    integral penalty F(d*(x-s)), bounds are mapped to d*(x-s), reversing their
+    order for negative d. For conjugates, affine wrappers of the private
+    primal functional are preserved while its linear tails are extended.
     Positive and negative dilations (including the dual scale -regpar) and
     horizontal/data shifts are preserved in the private extended penalty.
     Bounds are always extracted in the original solver coordinates.
@@ -283,11 +287,42 @@ class SemiSmoothNewton(RegSolver):
                 )
 
     @staticmethod
-    def _is_integral_conjugate(penalty) -> bool:
-        """Recognize conjugates through horizontal shift/dilation wrappers."""
+    def _is_shifted_integral(penalty) -> bool:
+        """Recognize an integral functional beneath affine argument wrappers."""
         while isinstance(penalty, HorizontalShiftDilation):
             penalty = penalty.func
-        return isinstance(penalty, Conj) and isinstance(penalty.func, IntegralFunctionalBase)
+        return isinstance(penalty, IntegralFunctionalBase)
+
+    @staticmethod
+    def _is_integral_conjugate(penalty) -> bool:
+        """Recognize shifts of conjugates and conjugates of shifted integrals."""
+        while isinstance(penalty, HorizontalShiftDilation):
+            penalty = penalty.func
+        return (isinstance(penalty, Conj)
+                and SemiSmoothNewton._is_shifted_integral(penalty.func))
+
+    def _extend_conjugate_primal(self, primal):
+        """Replace primal linear tails, preserving every affine wrapper."""
+        if isinstance(primal, HorizontalShiftDilation):
+            result = deepcopy(primal)
+            result.func = self._extend_conjugate_primal(primal.func)
+            result.__dict__.pop('conj', None)
+            return result
+        primal = deepcopy(primal)
+        for side in ('l', 'u'):
+            linear = getattr(primal, 'lin_taylor_' + side)
+            if linear is None:
+                continue
+            threshold = np.array(np.broadcast_to(linear, primal.domain.shape), copy=True)
+            natural = getattr(primal, '_nat_dom_' + side)
+            mask = np.isfinite(threshold) & (
+                threshold >= natural if side == 'l' else threshold <= natural)
+            if np.any(mask):
+                self._check_extension_point(primal, threshold, mask, positive=True)
+            setattr(primal, 'lin_taylor_' + side, None)
+            if np.any(mask):
+                setattr(primal, 'quad_taylor_' + side, threshold)
+        return primal
 
     def _extended_penalty(self, penalty, lower=None, upper=None):
         """Extend a private penalty while preserving the original active-set bounds."""
@@ -301,40 +336,30 @@ class SemiSmoothNewton(RegSolver):
             ]
             result.__dict__.pop('conj', None)
             return result
-        if (isinstance(penalty, HorizontalShiftDilation)
-                and self._is_integral_conjugate(penalty)):
-            # The active-set bounds were extracted from the original wrapper,
-            # including the exchange of lower/upper bounds for negative scale.
-            # Keep the same affine coordinates for the extended functional.
+        if isinstance(penalty, HorizontalShiftDilation):
+            # Bounds refer to x; the wrapped functional receives d*(x-s).
+            shift = penalty.shift_val
+            inner_lower = lower if shift is None else lower - shift
+            inner_upper = upper if shift is None else upper - shift
+            inner_lower = penalty.dilation * inner_lower
+            inner_upper = penalty.dilation * inner_upper
+            if penalty.dilation < 0:
+                inner_lower, inner_upper = inner_upper, inner_lower
             result = deepcopy(penalty)
-            result.func = self._extended_penalty(penalty.func, lower, upper)
+            result.func = self._extended_penalty(penalty.func, inner_lower, inner_upper)
             result.__dict__.pop('conj', None)
             return result
-        if isinstance(penalty, Conj) and isinstance(penalty.func, IntegralFunctionalBase):
-            primal = deepcopy(penalty.func)
-            for side in ('l', 'u'):
-                linear = getattr(primal, 'lin_taylor_' + side)
-                if linear is None:
-                    continue
-                threshold = np.array(
-                    np.broadcast_to(linear, primal.domain.shape), copy=True
-                )
-                natural = getattr(primal, '_nat_dom_' + side)
-                mask = np.isfinite(threshold) & (
-                    threshold >= natural if side == 'l' else threshold <= natural
-                )
-                if np.any(mask):
-                    self._check_extension_point(primal, threshold, mask, positive=True)
-                # The conjugate of a positive-curvature quadratic tail is
-                # quadratic beyond the former dual constraint f'(threshold).
-                setattr(primal, 'lin_taylor_' + side, None)
-                if np.any(mask):
-                    setattr(primal, 'quad_taylor_' + side, threshold)
-            if not primal.conj_everywhere_finite:
+        if isinstance(penalty, Conj) and self._is_shifted_integral(penalty.func):
+            primal = self._extend_conjugate_primal(penalty.func)
+            # This flag is specific to integral functionals, not wrappers.
+            # Nonzero affine argument maps preserve finiteness of the conjugate.
+            integral_primal = primal
+            while isinstance(integral_primal, HorizontalShiftDilation):
+                integral_primal = integral_primal.func
+            if not integral_primal.conj_everywhere_finite:
                 raise ValueError(
                     "The conjugate penalty still has a restricted domain after "
-                    "replacing primal linear extensions by quadratic extensions."
-                )
+                    "replacing primal linear extensions by quadratic extensions.")
             return primal.conj
         if not isinstance(penalty, IntegralFunctionalBase):
             return penalty
@@ -485,7 +510,7 @@ class SemiSmoothNewton(RegSolver):
                                            (self.active_minus, self.active_minus_old)))
         self.log.info('it {}: CG its {}, changes active sets +{},-{}'.format(
             self.iteration_step_nr,
-            tikhcg.iteration_step_nr if not (self.op.domain.nrTrues(self.active) == self.op.domain.dimension) else 0,
+            cg_iterations,
             added_ind, 
             removed_ind
             )
@@ -588,7 +613,7 @@ class SemiSmoothNewton(RegSolver):
                 vals = (bound,) if np.isscalar(bound) else penalty.domain.iter_coefficients(bound)
                 return all(np.isneginf(v) if sign < 0 else np.isposinf(v) for v in vals)
             return ((infinite(lower, -1) and infinite(upper, 1))
-                    or isinstance(penalty, IntegralFunctionalBase)
+                    or SemiSmoothNewton._is_shifted_integral(penalty)
                     or SemiSmoothNewton._is_integral_conjugate(penalty))
         if not check_penalty(setting.penalty):
             out['info'] += ('Penalty must have a separable Hessian and support '
