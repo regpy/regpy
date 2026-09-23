@@ -255,9 +255,7 @@ class IrgnmCG(RegSolver):
         # Disable info logging, but don't override log level for all CountIterations instances.
         #stoprule.log = self.log.getChild('CountIterations')
         stoprule.log.setLevel(self.inner_it_logging_level)
-        inner_init = self.op.domain.empty()
-        self.op.domain.copyto(inner_init, self.init)
-        inner_init -= self.x
+        inner_init = self.op.domain.zeros()
         step, _ = _run_inner_cg(self, inner_init, stoprule)
         self.x += step
         if self.setting.codomain_free:
