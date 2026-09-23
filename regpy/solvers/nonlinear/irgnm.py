@@ -97,6 +97,7 @@ def _run_inner_cg(
             solver.h_domain,
             solver.h_domain,
             regpar=solver.regpar,
+            init=reference,
             codomain_free=True,
             explicitDataWarning=False,
             logging_level=solver.inner_it_logging_level,
@@ -104,7 +105,7 @@ def _run_inner_cg(
         return LavrentievCG(
             setting=inner_setting,
             data=solver._normal_rhs,
-            init=reference,
+            x0=solver.deriv.domain.zeros(),
             **cg_pars,
         ).run(stoprule=stoprule)
 
@@ -113,13 +114,14 @@ def _run_inner_cg(
         solver.h_domain,
         solver.h_codomain,
         regpar=solver.regpar,
+        init=reference,        
         explicitDataWarning=False,
         logging_level=solver.inner_it_logging_level,
     )
     return TikhonovCG(
         setting=inner_setting,
         data=solver.data - solver.y,
-        init=reference,
+        x0=solver.deriv.domain.zeros(),
         **cg_pars,
     ).run(stoprule=stoprule)
 
@@ -255,7 +257,9 @@ class IrgnmCG(RegSolver):
         # Disable info logging, but don't override log level for all CountIterations instances.
         #stoprule.log = self.log.getChild('CountIterations')
         stoprule.log.setLevel(self.inner_it_logging_level)
-        inner_init = self.op.domain.zeros()
+        inner_init = self.op.domain.empty()
+        self.op.domain.copyto(inner_init, self.init)
+        inner_init -= self.x
         step, _ = _run_inner_cg(self, inner_init, stoprule)
         self.x += step
         if self.setting.codomain_free:
