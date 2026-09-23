@@ -1,7 +1,9 @@
+from __future__ import annotations
+from collections.abc import Callable, Iterable
 from math import sqrt
 from copy import deepcopy,copy
 
-from regpy.stoprules import CountIterations
+from regpy.stoprules import CountIterations, StopRule
 from regpy.util import Errors
 from regpy.operators import Operator
 from regpy.vecsps import Vector
@@ -345,89 +347,156 @@ class NewtonSemiSmoothFrozen(RegSolver):
 
 
 class IterativelyRegularizedNewton(RegSolver):
-    r"""General method for iterated linearization of operator and subsequent solution of linearized problem. In each iteration, minimizes
+    r"""General method for iterated linearization of a forward operator :math:`F`
+    and subsequent solution of regularized linearized operator equations. 
+    In each iteration, an update :math:`h =x_{n+1}-x_n` is computed by minimizing
 
     .. math::
-        S_{data}(T'[x_n]h+T(x_n)) + regpar_{n} \cdot R(h+x_n)
+        S_{data}(F'[x_n]h+F(x_n)) + regpar_{n} \cdot R(h+x_n)
 
-    where :math:`T` is a Fréchet-differentiable operator, using the given `inner_solver`.
-    :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
+    using a given `inner_solver`.
+    :math:`regpar_n` is a decreasing sequence of regularization parameters.
 
     Parameters
     ----------
-    setting : regpy.solvers.Setting
-        The setting of the forward problem.
-    inner_solver : Solver class
-        Solver class used for the solution of the linearized problem.
-    inner_solver_stoprule: stoprule or callable
-        Either a callable that can be applied to a setting to yield a stoprule or a Stoprule which is used for the inner solver.
-    inner_solver_pars : dict, optional default: dict()
-        Parameter dictionary for the inner solver. Should contain all necessary parameters which are not included in the linearized setting.
-    data : Vector, optional default: None
-        The measured data. If None it is taken from setting.
-    regpar : float, optional default: None
-        The initial regularization parameter. Must be positive. If None it is taken from setting.
+    setting : Setting
+        Non-Tikhonov setting with explicit codomain vectors.
+    inner_method : str, optional
+        Inner method's registry abbreviation, e.g. 'FISTA' or 'SSN'.
+        Defaults to 'FISTA'.
+    inner_stoprule : callable or None, optional
+        Factory ``factory(inner_setting, params) -> StopRule``. None keeps
+        the inner setting's default factory.
+    inner_params : dict or None, optional
+        Updates to the inner method's constructor parameters.
+    data : Vector or None, optional
+        Optional replacement data. Otherwise retain the setting's fidelity,
+        including data already incorporated into it.
+    regpar : float, optional
+        First regularization parameter; defaults to 1.
     regpar_step : float, optional
-        The factor by which to reduce the `regpar` in each iteration. Default: :math:`2/3`.
-    init : Vector, optional default: None
-        The initial guess. If None it is set to the zero array.
+        Geometric factor, default 2/3.
+    init : Vector or None, optional
+        Initial guess; defaults to setting.init. Copied into solver storage.
+    regpars : iterable of float or None, optional
+        Explicit sequence of positive parameters, overriding regpar and
+        regpar_step. Otherwise use regpar * regpar_step**Naturals().
+        Empty sequences raise ValueError; finite sequences stop after their
+        last inner solve. Parameter validation and advancement match IRGNM.
+    inner_solver_configurator : callable or None, optional
+        Called as ``configurator(inner_setting, (x, y), method_dict)``
+        immediately before the inner run. x and y are the current outer
+        iterate and its nonlinear operator image; treat them as read-only.
+        The dictionary is the actual entry in inner_setting._methods.
+        Modify its method_params and/or stoprule_params in place; the return
+        value is ignored. The inner unknown is h, not x, so initial guesses
+        supplied through method_params must be in correction coordinates.
+        Mutually exclusive with non-None inner_params or inner_stoprule.
+        If omitted, an internal configurator applies those user parameters.
+    logging_level : int or str, optional
+        Outer logging level, default 'INFO'. Configure inner logging through
+        inner_params or inner_solver_configurator if desired.
     """
-    def __init__(
-               self, setting, 
-               inner_solver,
-               inner_solver_stoprule,
-               inner_solver_pars=dict(),
-               data=None, regpar=None,
-                regpar_step=2 / 3, 
-                 init=None, 
-         ):
-        super().__init__(setting)
-        if data is None:
-            if(setting.data is not None):
-                data=setting.data
-            else:
-                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
-        else:
-            setting.data=data#sets data in setting if there is no data
-        if(regpar is None):
-            if(not setting.is_tikhonov):
-                raise ValueError(Errors.value_error("Regularization parameter has to be included in setting or given directly."))
-            regpar=setting.regpar
-        self.data=data
-        """The measured data."""
-        if init is None:
-            init = self.op.domain.zeros()
-        self.init = init
-        """The initial guess."""
-        self.x = copy(self.init)
-        self.y, self.deriv = self.op.linearize(self.x)
-        self.regpar = regpar
-        """The regularization parameter."""
-        self.regpar_step = regpar_step
-        """The `regpar` factor."""
-        self.inner_solver=inner_solver
-        self.inner_solver_pars=inner_solver_pars
-        self.inner_solver_stoprule=inner_solver_stoprule
 
-    def _next(self):
-        # Linearized setting
-        inner_setting=Setting(self.deriv,self.setting.penalty,self.data_fid.shift(data_shift=-self.y),regpar=self.regpar,penalty_shift=-self.x)        
-        if(callable(self.inner_solver_stoprule)):
-            inner_stoprule=self.inner_solver_stoprule(inner_setting)
-        else:
-            inner_stoprule=copy(self.inner_solver_stoprule)
-        # Running inner solver
-        step, _ = self.inner_solver(inner_setting,**self.inner_solver_pars).run(stoprule=inner_stoprule)
+    def __init__(
+        self, setting: Setting, inner_method: str = 'FISTA',
+        inner_stoprule: Callable[[Setting, dict], StopRule] | None = None,
+        inner_params: dict | None = None,
+        data: Vector | None = None, regpar: float = 1.,
+        regpar_step: float = 2 / 3, init: Vector | None = None,
+        regpars: Iterable[float] | None = None,
+        inner_solver_configurator: Callable[
+            [Setting, tuple[Vector, Vector], dict], None
+        ] | None = None,
+        logging_level: int | str = 'INFO',
+    ) -> None:
+        from .irgnm import (
+            _regularization_parameter_iterator, _next_regularization_parameter,
+        )
+
+        out, _ = self.check_applicability(setting)
+        if not out['applicable']:
+            raise ValueError('IterativelyRegularizedNewton not applicable. ' + out['info'])
+        if not isinstance(inner_method, str):
+            raise TypeError('inner_method must be a method abbreviation string.')
+        if inner_params is not None and not isinstance(inner_params, dict):
+            raise TypeError('inner_params must be a dict or None.')
+        if inner_stoprule is not None and not callable(inner_stoprule):
+            raise TypeError('inner_stoprule must be a factory or None.')
+        if inner_solver_configurator is not None:
+            if not callable(inner_solver_configurator):
+                raise TypeError('inner_solver_configurator must be callable or None.')
+            if inner_params is not None or inner_stoprule is not None:
+                raise ValueError('inner_solver_configurator cannot be combined with '
+                                 'inner_params or inner_stoprule.')
+        initial = setting.init if init is None else init
+        if initial not in setting.op.domain:
+            raise ValueError('init must belong to the operator domain.')
+        if data is not None and data not in setting.op.codomain:
+            raise ValueError('data must belong to the operator codomain.')
+        super().__init__(setting)
+        self.log.setLevel(logging_level)
+        self.init = self.op.domain.empty()
+        self.op.domain.copyto(self.init, initial)
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, self.init)
+        self.data = setting.data if data is None else data
+        if data is not None:
+            self.data_fid = deepcopy(setting.data_fid).as_data_func(data)
+        self._regpar_iterator = _regularization_parameter_iterator(
+            regpars, regpar, regpar_step
+        )
+        try:
+            self.regpar = _next_regularization_parameter(self._regpar_iterator)
+        except StopIteration as error:
+            raise ValueError('regpars must provide at least one regularization parameter.') from error
+        self.regpar_step = regpar_step
+        self.inner_method = inner_method
+        self.inner_params = {} if inner_params is None else dict(inner_params)
+        self.inner_stoprule = inner_stoprule
+        if inner_solver_configurator is None:
+            def configure(inner_setting, iterate, method_dict):
+                method_dict.setdefault('method_params', {}).update(self.inner_params)
+                if self.inner_stoprule is not None:
+                    method_dict.setdefault('stoprule_params', {})['factory'] = self.inner_stoprule
+            inner_solver_configurator = configure
+        self.inner_solver_configurator = inner_solver_configurator
+        self.y, self.deriv = self.op.linearize(self.x)
+
+    def _next(self) -> None:
+        from .irgnm import _next_regularization_parameter
+
+        inner_setting = Setting(
+            self.deriv,
+            self.setting.penalty.shift(v=-self.x),
+            self.data_fid.shift(data_shift=-self.y),
+            regpar=self.regpar,
+            init=self.op.domain.zeros(),
+            incorporate_init_in_penalty=False
+        )
+        self.inner_setting = inner_setting
+        if self.inner_method not in inner_setting._methods:
+            raise ValueError(f'Unknown inner method {self.inner_method!r}.')
+        self.inner_solver_configurator(
+            inner_setting, (self.x, self.y),
+            inner_setting._methods[self.inner_method],
+        )
+        step, _ = inner_setting.run(self.inner_method)
         self.x += step
-        self.y , self.deriv = self.op.linearize(self.x)
-        self.regpar *= self.regpar_step
-        self.log.info(f"its.{self.iteration_step_nr}: alpha={self.regpar}")
+        self.y, self.deriv = self.op.linearize(self.x)
+        self.log.info('its.%s: alpha=%s', self.iteration_step_nr, self.regpar)
+        try:
+            self.regpar = _next_regularization_parameter(self._regpar_iterator)
+        except StopIteration:
+            self.converge()
 
     @staticmethod
     def check_applicability(setting: Setting) -> tuple[dict, dict]:
-        out = {"info": "",  "warning": ""}
-        par = {}
+        """Check outer requirements; the inner setting checks its own method."""
+        out = {'info': '', 'warning': ''}
         if setting.is_tikhonov:
-            out["info"] += "Setting must not have a regularization parameter. "
+            out['info'] += 'Setting must not have a regularization parameter. '
+        if setting.codomain_free:
+            out['info'] += 'Explicit codomain vectors are required. '
         out['applicable'] = out['info'] == ''
-        return out, par  
+        return out, {}
