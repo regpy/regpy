@@ -1041,7 +1041,12 @@ class Setting:
 
         def display(name, method, with_caveats=False):
             full = method.get('full')
-            label = name + (f'\t{full}' if full_names and full else '\t')
+            info = method.get('info')
+            if full_names:
+                print(name + (f'\t{full}' if full else '\t'))
+                if info: print('\t'+info)
+            else: 
+                print(name + (f'\t{info}' if info else '\t'))           
             rate = ''
             if method['applicable'] and 'rate' in method:
                 if method['rate']>0:
@@ -1050,9 +1055,6 @@ class Setting:
                     rate = f"convergence of order O(n^({method['rate']}))"
                 elif method['rate']<0 and isinstance(method['rate'],float):
                     rate = f"ergodic convergence of order O(n^({int(method['rate'])}))"
-            print(label)
-            if 'info' in method and method['info']!='':
-                print('\t'+method['info'])
             if rate!='':
                 print('\t'+rate)
             if with_caveats:

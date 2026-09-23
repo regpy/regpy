@@ -10,7 +10,7 @@ from regpy.stoprules import (
 if TYPE_CHECKING:
     from regpy.solvers import Setting
 
-__all__ = ['convergence_plots', 'op_eval_over_time_plot', 'plot_operator_evaluations']
+__all__ = ['convergence_plots', 'op_eval_over_time_plot', 'plot_operator_evaluations', 'get_method_colors']
 
 _PLOT_SPECS = (
     ("Error in x", ErrorMonitor, ("error_x",)),
@@ -20,6 +20,59 @@ _PLOT_SPECS = (
     ("Optimality condition: dSstar", OptimalityCondStopping, ("dSstar",)),
     ("Optimality condition: dR", OptimalityCondStopping, ("dR",)),
 )
+
+
+def get_method_colors(
+    setting: Setting, methods: list[str] | None = None,
+) -> dict[str, tuple[float, float, float, float]]:
+    """Return persistent method colors for convergence and application plots.
+
+    ``methods`` contains short names from ``setting._methods``; None selects
+    all registered methods. On first use, colors are allocated in the requested
+    order from Matplotlib's current color cycle. Later calls reuse assigned
+    colors regardless of selection, order, or changes to the color cycle.
+    The palette repeats when exhausted. New methods receive the next color.
+
+    Colors and the initial palette are stored privately on the setting. The
+    returned dictionary is a copy, with concrete RGBA tuples as values.
+    No convergence plot needs to have been created first. Matplotlib is
+    imported only when this helper is called.
+
+    Application code can use::
+
+        colors = get_method_colors(setting, list(reconstructions))
+        ax.plot(grid, reconstructions[method], color=colors[method])
+
+    Raises TypeError for an invalid registry or methods argument and
+    ValueError for unknown method names.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import to_rgba
+
+    registry = getattr(setting, "_methods", None)
+    if not isinstance(registry, dict):
+        raise TypeError("setting must provide a dictionary attribute _methods.")
+    if methods is not None and (
+        not isinstance(methods, list)
+        or not all(isinstance(name, str) for name in methods)
+    ):
+        raise TypeError("methods must be a list of strings or None.")
+    names = list(registry) if methods is None else methods
+    unknown = [name for name in names if name not in registry]
+    if unknown:
+        raise ValueError("Unknown method name(s): " + ", ".join(unknown))
+    if not names:
+        return {}
+    state = getattr(setting, "_plot_method_color_state", None)
+    if state is None:
+        palette = plt.rcParams['axes.prop_cycle'].by_key().get('color') or ['C0']
+        state = (tuple(to_rgba(color) for color in palette), {})
+        setting._plot_method_color_state = state
+    palette, colors = state
+    for name in names:
+        if name not in colors:
+            colors[name] = palette[len(colors) % len(palette)]
+    return {name: colors[name] for name in names}
 
 
 def _history_keys(component, subplot_title, default_keys):
@@ -153,7 +206,8 @@ def convergence_plots(
     Only the first overlay of each error type is labelled in the gap panel.
     Final curve points are excluded from y-limit selection where possible,
     except in the errors panel, which uses automatic scaling of all points.
-    Method colors are shared across subplots. Curve widths and marker sizes
+    Method colors are shared across subplots and retained on the setting.
+    Application plots can retrieve them with ``get_method_colors(setting)``. Curve widths and marker sizes
     are half the Matplotlib defaults active when this function is called.
 
     Parameters
@@ -356,11 +410,7 @@ def convergence_plots(
 
     # Keep each method's color stable across histories and subplots.
     active_series.sort(key=lambda item: item[0] != "Duality gap")
-    palette = plt.rcParams['axes.prop_cycle'].by_key().get('color', ['C0'])
-    method_colors = {
-        name: palette[index % len(palette)]
-        for index, (name, _) in enumerate(selected_methods)
-    }
+    method_colors = get_method_colors(setting, [name for name, _ in selected_methods])
     linewidth = plt.rcParams['lines.linewidth'] / 2
     markersize = plt.rcParams['lines.markersize'] / 2
 
@@ -546,8 +596,10 @@ def op_eval_over_time_plot(
     if not curves:
         raise ValueError("No recorded operator-evaluation histories were found.")
     figure, axis = plt.subplots(figsize=(8., 4.5))
+    method_colors = get_method_colors(setting, [name for name, _ in curves])
     for method_name, values in curves:
-        axis.plot(values[:, 0], values[:, 1], 'o-',label=method_name)
+        axis.plot(values[:, 0], values[:, 1], 'o-', label=method_name,
+                  color=method_colors[method_name])
     axis.set_xlabel("CPU time [s]")
     axis.set_ylabel("Operator evaluations (weighted)")
     axis.grid(True, alpha=0.3)
