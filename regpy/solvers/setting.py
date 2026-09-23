@@ -1502,7 +1502,6 @@ def get_nonlinear_reg_method_dictionary() -> dict:
         FISTA as genFISTA,
         LevenbergMarquardt,
         NewtonCG,
-        NewtonCGFrozen,
         IterativelyRegularizedNewton
     )
     return _with_stoprule_defaults({
@@ -1521,9 +1520,6 @@ def get_nonlinear_reg_method_dictionary() -> dict:
                         },
             'NewtonCG':     {'class': NewtonCG, 
                          'full': 'Newton method with inner CGNE regularized by early stopping'
-                        },
-            'NewtCGFroz':     {'class': NewtonCGFrozen, 
-                         'full': 'Newton-CG method with derivative frozen at initial guess'
                         },
             'IRN' :      {'class': IterativelyRegularizedNewton,
                           'full': 'Iteratively regularized Newton methods (generalized IRGNM)'

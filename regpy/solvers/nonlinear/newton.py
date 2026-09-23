@@ -12,7 +12,7 @@ from ..solver import RegSolver
 from ..setting import Setting, check_Hilbert_applicability
 from ..linear import SemiSmoothNewton
 
-__all__ = ["NewtonCG","NewtonCGFrozen","NewtonSemiSmoothFrozen","IterativelyRegularizedNewton"]
+__all__ = ["NewtonCG","IterativelyRegularizedNewton"]
 
 class NewtonCG(RegSolver):
     r"""The Newton-CG method. Solves the potentially nonlinear, ill-posed equation:
@@ -144,208 +144,6 @@ class NewtonCG(RegSolver):
     def nr_inner_its(self):
         return self._k
 
-class NewtonCGFrozen(RegSolver):
-    r"""The frozen Newton-CG method. Like Newton-CG but freezes the derivative for some time to avoid 
-    recomputing it. 
-
-    Parameters
-    ----------
-    setting : regpy.solvers.Setting
-        The regularization setting includes the operator and penalty and data fidelity functionals.
-    data : Vector or None [default: None]
-        Right-hand side in ``setting.op.codomain``. In the default case,
-        ``setting.data`` is used.
-    init : Vector or None [default: None]
-        Initial guess. In the default case, it is taken from the setting.
-    cgmaxit : int [default: 50]
-        Maximum number of inner CG iterations.
-    rho : float [default: 0.8]
-        Inner discrepancy factor; must lie in ``(0, 1)``.
-    logging_level : int or str [default: "INFO"]
-        Logging level.
-    """
-    def __init__(self, setting:Setting,
-                 data:Vector | None = None, init:Vector | None = None,
-                 cgmaxit:int=50, rho:float=0.8,
-                 logging_level:int | str="INFO") -> None:
-        out, par = self.check_applicability(
-            setting, user_data=data, user_init=init
-        )
-        if not out['applicable']:
-            raise ValueError(
-                'NewtonCGFrozen not applicable to this setting. ' + out['info']
-            )
-        super().__init__(setting)
-        self.log.setLevel(logging_level)
-        initial = par['init']
-        self.data = par['data']
-        if self.data is None:
-            raise ValueError(Errors.value_error(
-                "Data have to be included in the setting or given directly."
-            ))
-
-        self.x = self.op.domain.empty()
-        self.op.domain.copyto(self.x, initial)
-        _, self.deriv = self.op.linearize(self.x)
-        self._n = 1
-        self._op_copy = deepcopy(self.op)
-        self._outer_update()
-        self.rho = rho
-        self.cgmaxit = cgmaxit
-
-    check_applicability = staticmethod(NewtonCG.check_applicability)
-
-    def _outer_update(self):
-        if int(self._n / 10) * 10 == self._n:
-            _, self.deriv = self.op.linearize(self.x)
-        self._x_k = self.op.domain.zeros()
-        self.y = self._op_copy(self.x)
-        self._residual = self.data - self.y
-        self._s = self._residual - self.deriv(self._x_k)
-        self._s2 = self.h_codomain.gram(self._s)
-        self._rtilde = self.deriv.adjoint(self._s2)
-        self._r = self.h_domain.gram_inv(self._rtilde)
-        self._d = self._r
-        self._inner_prod = self.op.domain.vdot(self._r, self._rtilde).real
-        self._norms0 = sqrt(self.op.codomain.vdot(self._s2, self._s).real)
-        self._k = 1
-        self._n += 1
-
-    def _inner_update(self):
-        _, self.deriv = self.op.linearize(self.x)
-        self._q = self.deriv(self._d)
-        self._q2 = self.h_codomain.gram(self._q)
-        self._alpha = self._inner_prod / self.op.codomain.vdot(self._q, self._q2).real
-        self._s += -self._alpha * self._q
-        self._s2 += -self._alpha * self._q2
-        self._rtilde = self.deriv.adjoint(self._s2)
-        self._r = self.h_domain.gram_inv(self._rtilde)
-        self._beta = self.op.domain.vdot(self._r, self._rtilde).real / self._inner_prod
-
-    def _next(self):
-        while (
-            sqrt(self.op.codomain.vdot(self._s2, self._s).real) > self.rho * self._norms0
-            and self._k <= self.cgmaxit
-        ):
-            self._inner_update()
-            self._x_k += self._alpha * self._d
-            self._d = self._r + self._beta * self._d
-            self._k += 1
-        self.x += self._x_k
-        self._outer_update()
-
-
-class NewtonSemiSmoothFrozen(RegSolver):
-    r"""The frozen Newton-CG method. Like Newton-CG adds constraints :math:`\psi_+` and :math:`\psi_-` and efficiently
-    only updates the parts needed to be updated. 
-
-    Parameters
-    ----------
-    setting : regpy.solvers.Setting
-        The regularization setting includes the operator and penalty and data fidelity functionals.
-    data : Vector
-        The data from which to recover. Initializes the rhs y of the equation to be solved. Must 
-        be in setting.op.codomain.
-    alphas: iterable object or tuple
-        Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
-    psi_minus : scalar
-        lower constraint of the minimization. Must be larger then `psi_plus`
-    psi_plus : scalar
-        upper constraint of the minimization. Must be smaller than `psi_minus`
-    init : Vector, optional
-        Initial guess to exact solution. (Default: setting.op.domain.zeros())
-    xref : Vector, optional
-        Reference value in the Tikhonov functional. (Default: setting.op.domain.zeros())
-    inner_NSS_iter_max : int, optional
-        The number of maximal iterations when solving the linearized problem. (Default: 50)
-    cg_pars : dictionary, optional
-        Parameters of the CG method for minimizing the Tikhonov functional in the inner 
-        Semi-Smooth Newton. (Default: None)
-    """
-    def __init__(self, setting, data, alphas, psi_minus, psi_plus, init = None, xref =None, inner_NSS_iter_max = 50, cg_pars = None):
-        from ..sequences import Naturals
-        super().__init__(setting)
-        if init is not None and init not in self.op.domain:
-            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
-        if data not in self.op.codomain:
-            raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
-        self.rhs = data
-        """The rhs y of the equation to be solved. Initialized by data
-        """
-        self.x = init if init is not None else setting.op.domain.zeros()
-        """The iterate of x.
-        """
-        self.xref = xref if xref is not None else setting.op.domain.zeros()
-        """Reference value in the Tikhonov functional.
-        """
-        if isinstance(alphas,tuple) and len(alphas)==2:
-            self._alphas = (alphas[0] * (alphas[1]) ** Naturals())
-        else:
-            self._alphas = iter(alphas)
-        self.alpha = next(self._alphas)
-        r"""Initial regularization parameter :math:`\alpha`.
-        """
-        self.alpha_old = self.alpha
-        self.psi_minus = psi_minus
-        """lower constraint of the minimization.
-        """
-        self.psi_plus = psi_plus
-        """upper constraint of the minimization.
-        """
-        self.cg_pars = cg_pars
-        """Parameters passed to inner Semi Smooth Newton for the used Tikhonov Solver. 
-        """
-        self.inner_NSS_iter_max = inner_NSS_iter_max
-        self.y, deriv = self.op.linearize(self.x)
-        self.deriv = deepcopy(deriv)
-        
-        self.active_plus = (self.alpha*(self.x-self.psi_plus ))>=0 
-        self.active_minus = (self.alpha*(self.x-self.psi_minus))>=0 
-
-        self.lam_plus = setting.op.domain.zeros()
-        self.lam_minus = setting.op.domain.zeros()
-        
-
-    def _next(self):
-        self.lin_NSS = SemismoothNewton_bilateral(
-            Setting(
-                self.deriv,
-                self.penalty,
-                self.data_fid
-                ),
-            self.rhs-self.y+self.deriv(self.x),
-            self.alpha,
-            x0 = self.x,
-            psi_minus=self.psi_minus,
-            psi_plus=self.psi_plus,
-            logging_level= "WARNING",
-            cg_logging_level="WARNING",
-            cg_pars = self.cg_pars
-        )
-        self.lin_NSS.lam_minus = (self.alpha/self.alpha_old)*self.lam_minus
-        self.lin_NSS.lam_plus = (self.alpha/self.alpha_old)*self.lam_plus
-        self.lin_NSS.active_minus = self.active_minus
-        self.lin_NSS.active_plus = self.active_plus
-        self.x, _ = self.lin_NSS.run(
-            CountIterations(max_iterations=self.inner_NSS_iter_max)
-        )
-        self.y , deriv = self.op.linearize(self.x)
-        self.deriv = deepcopy(deriv)
-
-        self.lam_minus = self.lin_NSS.lam_minus
-        self.lam_plus = self.lin_NSS.lam_plus
-        self.active_minus = self.lin_NSS.active_minus         
-        self.active_plus = self.lin_NSS.active_plus 
-        
-        try:
-            self.alpha_old = self.alpha
-            self.alpha = next(self._alphas)
-        except StopIteration:
-            return self.converge()
-
-
-
 class IterativelyRegularizedNewton(RegSolver):
     r"""General method for iterated linearization of a forward operator :math:`F`
     and subsequent solution of regularized linearized operator equations. 
@@ -469,7 +267,7 @@ class IterativelyRegularizedNewton(RegSolver):
         inner_setting = Setting(
             self.deriv,
             self.setting.penalty.shift(v=-self.x),
-            self.data_fid.shift(data_shift=-self.y),
+            self.data_fid.shift(v=-self.y),
             regpar=self.regpar,
             init=self.op.domain.zeros(),
             incorporate_init_in_penalty=False

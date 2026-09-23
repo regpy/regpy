@@ -14,7 +14,7 @@ class PeriodicCProblem(Operator):
     """A simple forward operator for testing purposes.
     The operator maps a periodic function c to the solution of the periodic differential equation
     .. math::
-        -\Delta u - k^2(1+c) u = f        
+        -Delta u - k^2(1+c) u = f        
     
     Parameters
     n: int
