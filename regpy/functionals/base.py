@@ -2100,20 +2100,33 @@ class SquaredNorm(Functional):
     def shift(
         self, v: Vector | None = None, data_shift: Vector | None = None
     ) -> SquaredNorm:
-        if(data_shift is not None):
-            if(data_shift not in self.domain):
-                raise ValueError(util.Errors.not_in_vecsp(data_shift,self.domain,vec_name="shift data vector",space_name="domain of functional"))
-            if(self.is_data_func):
-                data_shift+=self.data
-        #Parameters have to be used without dependence on data so that data and parameters are both updated correctly
-        if(v is None):
-            return SquaredNorm(self.h_domain,a = self._a,b = self._b,c = self._c,data=data_shift)
-        return SquaredNorm(self.h_domain,
-                               a = self._a,
-                               b = self._b-self._a*v,
-                               c = self._c - self.h_domain.inner(self._b,v).real + (self._a/2)* self.h_domain.norm(v)**2,
-                               data=data_shift
-                               )
+        """Return x -> self(x - v - data_shift), preserving existing data.
+
+        Neither the supplied shifts nor the original functional are modified.
+        The result remains a SquaredNorm with intrinsic coefficients and data
+        stored separately.
+        """
+        if v is not None and v not in self.domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                v, self.domain, vec_name="shift vector", space_name="domain of functional"))
+        if data_shift is not None and data_shift not in self.domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                data_shift, self.domain, vec_name="shift data vector", space_name="domain of functional"))
+        data = self._copy_vector(self.data) if self.is_data_func else None
+        if data_shift is not None:
+            if data is None:
+                data = self._copy_vector(data_shift)
+            else:
+                data += data_shift
+        if v is None:
+            return SquaredNorm(self.h_domain, a=self._a,
+                               b=self._copy_vector(self._b), c=self._c, data=data)
+        return SquaredNorm(
+            self.h_domain, a=self._a, b=self._b - self._a * v,
+            c=self._c - self.h_domain.inner(self._b, v).real
+              + (self._a / 2) * self.h_domain.norm(v)**2,
+            data=data,
+        )
 
     def __add__(self, other: object) -> Functional | NotImplementedType:
         if isinstance(other, SquaredNorm) and other.h_domain==self.h_domain:
@@ -2685,7 +2698,13 @@ class VerticalShift(Functional):
 
 class HorizontalShiftDilation(Functional):
     r"""Implements a horizontal shift and/or a horizontal translation of the graph of a functional :math:`F`, i.e. replaces 
-    :math:`F(x)` by :math:`F(dilation(x-shift))`
+    :math:`F(x)` by :math:`F(dilation(x-shift-data))`.
+
+    Nested HorizontalShiftDilation instances are combined into one wrapper.
+    An inner transformation b*(x-t) and an outer transformation a*(x-s)
+    combine to (b*a)*(x-s-t/a). Wrapper-owned data translations follow the
+    same rule; data of the underlying functional remain in its coordinates.
+    Supplied shift and data vectors are copied and are not modified.
     
     Parameters
     ----------
@@ -2723,21 +2742,27 @@ class HorizontalShiftDilation(Functional):
         elif shift is not None and shift not in func.domain:
             raise ValueError(util.Errors.not_in_vecsp(shift,func.domain,vec_name="shift vector",space_name="domain of functional"))
         if data is not None and data not in func.domain:
-            raise ValueError(util.Errors.not_in_vecsp(shift,func.domain,vec_name="data vector",space_name="domain of functional"))
-        if isinstance(func,HorizontalShiftDilation):
-            #prevents nested shifts
-            if(func._shift_val is not None):
-                if(shift is None):
-                    shift=(1/func.dilation)*func._shift_val
-                else:
-                    shift+=(1/func.dilation)*func._shift_val
-            if(func.is_data_func):
-                if(data is None):
-                    data=(1/func.dilation)*func.data
-                else:
-                    self.log.warning("The underlying functional for the HorizontalShiftDilation is already a HorizontalShiftDialtion functional with data. The provided data argument will used and the original ignored.")
-            dilation*=func.dilation
-            func=func.func
+            raise ValueError(util.Errors.not_in_vecsp(data,func.domain,vec_name="data vector",space_name="domain of functional"))
+        # F(b*(a*(x-s-d)-t-e)) = F((b*a)*(x-s-d-t/a-e/a)).
+        # Keep wrapper-owned data separate from intrinsic shifts.
+        if shift is not None:
+            shift = func._copy_vector(shift)
+        if data is not None:
+            data = func._copy_vector(data)
+        while isinstance(func, HorizontalShiftDilation):
+            if func._shift_val is not None:
+                translated = func._shift_val / dilation
+                shift = translated if shift is None else shift + translated
+            if func.is_data_func and not func._shifted_data_fid:
+                translated_data = func.data / dilation
+                data = translated_data if data is None else data + translated_data
+            dilation *= func.dilation
+            func = func.func
+        # Data owned by the underlying functional stay in its own coordinates.
+        # Additional outer data are a translation, and must not be discarded.
+        if func.is_data_func and data is not None:
+            shift = data if shift is None else shift + data
+            data = None
         self.func = func
         self.dilation = dilation
         self._shift_val = shift
