@@ -25,6 +25,7 @@ from .linear_krylov import *
 from .primal_dual import *
 from .proximal_gradient import *
 from .richardson_lucy import *
+from .bregman import *
 from .ss_newton import *
 from .spectral import *
 
@@ -46,6 +47,8 @@ __all__ += mod_all
 from .proximal_gradient import __all__ as mod_all
 __all__ += mod_all
 from .richardson_lucy import __all__ as mod_all
+__all__ += mod_all
+from .bregman import __all__ as mod_all
 __all__ += mod_all
 from .ss_newton import __all__ as mod_all
 __all__ += mod_all

@@ -936,25 +936,43 @@ class IntegralFunctionalBase(Functional):
             if source_scratch is not None:
                 self._free_scratch("_subgradient_input")
  
-    def dist_subdiff(self, vstar, x):
+    @staticmethod
+    def _at_boundary(x, bound):
+        """Recognize a finite boundary up to floating-point roundoff.
+
+        Coordinate transformations can move an exact boundary a few ulps
+        into the interior. Use a small relative machine-precision tolerance,
+        not NumPy's default isclose tolerance or the essential-domain
+        tolerance. No absolute floor is used, so small weighted dual bounds
+        retain the same relative precision as large ones.
+        """
+        eps = max(np.finfo(np.result_type(np.asarray(value), 1.)).eps
+                  for value in (x, bound))
+        return np.isfinite(bound) & np.isclose(x, bound, rtol=8 * eps, atol=0.)
+
+    def dist_subdiff(self, vstar, x, best_approx=None):
+        """Dual distance, optionally writing the projection to best_approx.
+
+        best_approx must be a pre-allocated vector in self.domain and may
+        alias either input. Pointwise hooks return the signed residual
+        ``vstar - projection``; active bounds add their normal cones.
+        Only points within roundoff of a bound acquire its normal cone from
+        the interior. Points just outside a bound, accepted by the
+        essential-domain tolerance, also use that bound.
+        """
+        self._validate_out(best_approx)
         self._assert_essential_domain(x, msg='dist_subdiff')
         diff = self._ptw_dist_subdiff(vstar, x)
-        deriv = np.empty_like(x)
 
-        ind = np.isclose(x, self.dom_u)
-        if np.any(ind):
-            self._f_deriv(x, out=deriv, mask=ind)
-            np.multiply(deriv, self.measure, out=deriv, where=ind)
-            np.subtract(vstar, deriv, out=deriv, where=ind)
-            np.minimum(deriv, 0., out=diff, where=ind)
+        ind = (x >= self.dom_u) | self._at_boundary(x, self.dom_u)
+        np.minimum(diff, 0., out=diff, where=ind)
 
-        ind = np.isclose(x, self.dom_l)
-        if np.any(ind):
-            self._f_deriv(x, out=deriv, mask=ind)
-            np.multiply(deriv, self.measure, out=deriv, where=ind)
-            np.subtract(vstar, deriv, out=deriv, where=ind)
-            np.maximum(deriv, 0., out=diff, where=ind)
-        return self.h_domain.dual_space().norm(diff)
+        ind = (x <= self.dom_l) | self._at_boundary(x, self.dom_l)
+        np.maximum(diff, 0., out=diff, where=ind)
+        distance = self.h_domain.dual_space().norm(diff)
+        if best_approx is not None:
+            self._copy_vector(vstar - diff, out=best_approx)
+        return distance
 
     def _conj_subgradient(self, vstar, out=None):
         if not self.conj_everywhere_finite:
@@ -1008,25 +1026,23 @@ class IntegralFunctionalBase(Functional):
         finally:
             self._free_scratch('_buf2')
 
-    def _conj_dist_subdiff(self, v, xstar):
+    def _conj_dist_subdiff(self, v, xstar, best_approx=None):
+        """Primal distance and optional projection onto the conjugate subdiff."""
+        self._validate_out(best_approx)
         self._assert_conj_essential_domain(xstar, msg='_conj_dist_subdiff')
         diff = self._conj_ptw_dist_subdiff(v, xstar)
-        argument = np.empty_like(xstar)
-        deriv = np.empty_like(xstar)
-        np.divide(xstar, self.measure, out=argument)
 
-        ind = np.isclose(xstar, self.conj_dom_u)
-        if np.any(ind):
-            self._f_conj_deriv(argument, out=deriv, mask=ind)
-            np.subtract(v, deriv, out=deriv, where=ind)
-            np.minimum(deriv, 0., out=diff, where=ind)
+        ind = ((xstar >= self.conj_dom_u)
+               | self._at_boundary(xstar, self.conj_dom_u))
+        np.minimum(diff, 0., out=diff, where=ind)
 
-        ind = np.isclose(xstar, self.conj_dom_l)
-        if np.any(ind):
-            self._f_conj_deriv(argument, out=deriv, mask=ind)
-            np.subtract(v, deriv, out=deriv, where=ind)
-            np.maximum(deriv, 0., out=diff, where=ind)
-        return self.h_domain.norm(diff)
+        ind = ((xstar <= self.conj_dom_l)
+               | self._at_boundary(xstar, self.conj_dom_l))
+        np.maximum(diff, 0., out=diff, where=ind)
+        distance = self.h_domain.norm(diff)
+        if best_approx is not None:
+            self._copy_vector(v - diff, out=best_approx)
+        return distance
 
     def _hessian(self, v):
         if not self.everywhere_finite:
@@ -1245,6 +1261,7 @@ class IntegralFunctionalBase(Functional):
         raise NotImplementedError
 
     def _ptw_dist_subdiff(self,vstar, w, **kwargs):
+        """Return the signed residual vstar minus its subdiff projection."""
         return vstar-self.subgradient(w, **kwargs)
 
     def _f_second_deriv(self, v, out=None, mask=None, **kwargs):
@@ -1270,6 +1287,7 @@ class IntegralFunctionalBase(Functional):
         raise NotImplementedError
 
     def _conj_ptw_dist_subdiff(self, v, wstar, **kwargs):
+        """Return v minus its projection onto the conjugate subdifferential."""
         return v-self.conj.subgradient(wstar, **kwargs)
 
     def _f_conj_second_deriv(self, vstar, out=None, mask=None, **kwargs):
@@ -2219,17 +2237,19 @@ class L1MeasureSpace(IntegralFunctionalBase):
         return out
 
     def _ptw_dist_subdiff(self, vstar, x):
-        diff = self.subgradient(x)
-        diff -= vstar
+        diff = vstar - self.subgradient(x)
         zeroind = (x==0)
-        diff[zeroind] = np.maximum(np.abs(vstar[zeroind])-self.measure[zeroind],0.)
+        diff[zeroind] = (np.sign(vstar[zeroind])
+                         * np.maximum(np.abs(vstar[zeroind])-self.measure[zeroind],0.))
         return diff
 
     def _conj_ptw_dist_subdiff(self, v, xstar):
         w = v.copy()
-        ind = np.where(np.isclose(xstar,self.measure))
+        ind = np.where((xstar >= self.measure)
+                       | self._at_boundary(xstar, self.measure))
         w[ind] = np.minimum(w[ind],0.)
-        ind = np.where(np.isclose(xstar,-self.measure))
+        ind = np.where((xstar <= -self.measure)
+                       | self._at_boundary(xstar, -self.measure))
         w[ind] = np.maximum(w[ind],0.)
         return w
 
@@ -3077,9 +3097,9 @@ class QuadraticIntv(IntegralFunctionalBase):
         diff = vstar.copy()
         diff -= self.subgradient(x)
         ubind = (x==self.sigma)
-        diff[ubind] = np.minimum(vstar[ubind] - self.sigma[ubind],0.)
+        diff[ubind] = np.minimum(diff[ubind],0.)
         lbind = (x==-self.sigma)
-        diff[lbind] = np.maximum(vstar[lbind] + self.sigma[lbind],0.)
+        diff[lbind] = np.maximum(diff[lbind],0.)
         return diff
 
 

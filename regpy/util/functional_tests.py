@@ -637,6 +637,167 @@ def _vector_difference_within_tolerance(domain, actual, expected, tolerance):
     return error <= tolerance * scale, error, scale
 
 
+def _has_own_dist_subdiff(func):
+    """Recognize inherited overrides, looking through the conjugate proxy."""
+    from regpy.functionals.base import Functional, Conj
+
+    method = getattr(func.dist_subdiff, '__func__', func.dist_subdiff)
+    if isinstance(func, Conj) and method is Conj.dist_subdiff:
+        conjugate_method = getattr(func.func._conj_dist_subdiff, '__func__',
+                                   func.func._conj_dist_subdiff)
+        if isinstance(func.func, Conj) and conjugate_method is Conj._conj_dist_subdiff:
+            return _has_own_dist_subdiff(func.func.func)
+        return conjugate_method is not Functional._conj_dist_subdiff
+    return method is not Functional.dist_subdiff
+
+
+def test_dist_subdiff(func, u=None, vstar=None, tolerance=1e-10,
+                     test_aliasing=True, check_young=True):
+    r"""Test the projection output and scalar distance of ``dist_subdiff``.
+
+    Compare calls with and without ``best_approx`` and verify that the
+    returned distance equals the dual Hilbert norm of ``vstar-best_approx``.
+    Non-aliasing calls must preserve both inputs. If requested, test
+    ``best_approx is vstar``, ``best_approx is u``, and partially overlapping
+    NumPy views of either input.
+
+    For a specialized implementation (including an inherited override), also
+    check Young's equality for the projected vector p:
+
+    .. math::
+        F(u) + F^*(p) = \operatorname{Re}\langle p, u\rangle.
+
+    The conjugate proxy is inspected through its underlying
+    ``_conj_dist_subdiff`` implementation. Young's equality is skipped for
+    the generic subgradient fallback and when either evaluation is missing.
+    It verifies membership in the subdifferential, not nearest-point
+    optimality on its own.
+
+    Parameters
+    ----------
+    func : regpy.functionals.Functional
+        Functional advertising ``dist_subdiff``; may also be a conjugate.
+    u : element of ``func.domain``, optional
+        Point in the essential domain. Sampled automatically if omitted.
+        Supply boundary or nonsmooth points to exercise multivalued cases.
+    vstar : element of ``func.domain``, optional
+        Vector to project; sampled independently of u if omitted.
+    tolerance : float, optional
+        Relative tolerance with an absolute scale floor of one.
+    test_aliasing : bool, optional
+        Also exercise shared input/output storage. Defaults to True.
+    check_young : bool, optional
+        Check Young's equality for specialized implementations when both
+        evaluations are available. Defaults to True.
+
+    Returns
+    -------
+    bool
+        True if every available selected check passes.
+    """
+    if not np.isfinite(tolerance) or tolerance < 0:
+        raise ValueError('tolerance must be finite and non-negative.')
+    if 'dist_subdiff' not in func.methods:
+        func.log.info('Skipping dist_subdiff: method not advertised.')
+        return True
+    domain = func.domain
+    if u is None:
+        u = (sample_essential_domain(func) if func.is_separable
+             else domain.randn())
+    if vstar is None:
+        vstar = domain.randn()
+    # Work on copies so even a failing implementation cannot corrupt the
+    # caller's supplied samples or the references used by later checks.
+    u_ref = _copy_domain_vector(domain, u)
+    v_ref = _copy_domain_vector(domain, vstar)
+
+    def vectors_agree(actual, expected, label):
+        passed, error, scale = _vector_difference_within_tolerance(
+            domain, actual, expected, tolerance)
+        if not passed:
+            func.log.warning(f'dist_subdiff {label}: err={error}, '
+                             f'tolerance={tolerance * scale}.')
+        return passed
+
+    def distances_agree(actual, expected, label):
+        passed = (np.isscalar(actual) and np.isrealobj(actual)
+                  and not isinstance(actual, (bool, np.bool_))
+                  and np.isfinite(actual) and actual >= 0
+                  and abs(actual - expected) <= tolerance * max(1., abs(expected)))
+        if not passed:
+            func.log.warning(f'dist_subdiff {label}: distance={actual}, '
+                             f'expected={expected}.')
+        return bool(passed)
+
+    x = _copy_domain_vector(domain, u_ref)
+    v = _copy_domain_vector(domain, v_ref)
+    distance = func.dist_subdiff(v, x)
+    if not distances_agree(distance, distance, 'invalid scalar return'):
+        return False
+    if not (vectors_agree(x, u_ref, 'modified u without output')
+            and vectors_agree(v, v_ref, 'modified vstar without output')):
+        return False
+
+    projection = domain.randn()
+    with_output = func.dist_subdiff(v, x, best_approx=projection)
+    if not (distances_agree(with_output, distance, 'output changed distance')
+            and vectors_agree(x, u_ref, 'modified u with separate output')
+            and vectors_agree(v, v_ref, 'modified vstar with separate output')):
+        return False
+    residual_norm = func.h_domain.dual_space().norm(v_ref - projection)
+    if not distances_agree(distance, residual_norm, 'projection residual mismatch'):
+        return False
+
+    if (check_young and _has_own_dist_subdiff(func)
+            and 'eval' in func.methods and 'eval' in func.conj.methods):
+        from regpy.functionals.base import NotInEssentialDomainError
+        try:
+            value = func(u_ref)
+            conjugate_value = func.conj(projection)
+        except NotInEssentialDomainError:
+            func.log.warning('dist_subdiff projection fails Young equality: '
+                             'point or projection is outside the essential domain.')
+            return False
+        pairing = domain.vdot(projection, u_ref).real
+        values = np.asarray([value, conjugate_value, pairing])
+        error = abs(value + conjugate_value - pairing)
+        if (not np.all(np.isfinite(values))
+                or error > tolerance * max(1., np.max(np.abs(values)))):
+            func.log.warning('dist_subdiff projection fails Young equality: '
+                             f'err={error}, F(u)={value}, '
+                             f'F*(p)={conjugate_value}, <p,u>={pairing}.')
+            return False
+
+    if test_aliasing:
+        for target in ('vstar', 'u'):
+            reference = v_ref if target == 'vstar' else u_ref
+            modes = ('same', 'overlap') if isinstance(reference, np.ndarray) and reference.size > 1 else ('same',)
+            for mode in modes:
+                x = _copy_domain_vector(domain, u_ref)
+                v = _copy_domain_vector(domain, v_ref)
+                if mode == 'same':
+                    out = v if target == 'vstar' else x
+                else:
+                    storage = np.empty(reference.size + 1, dtype=reference.dtype)
+                    aliased_input = storage[:-1].reshape(reference.shape)
+                    domain.copyto(aliased_input, reference)
+                    out = storage[1:].reshape(reference.shape)
+                    if target == 'vstar':
+                        v = aliased_input
+                    else:
+                        x = aliased_input
+                actual_distance = func.dist_subdiff(v, x, best_approx=out)
+                label = f'{mode} alias of {target}'
+                if not (distances_agree(actual_distance, distance, label)
+                        and vectors_agree(out, projection, label)):
+                    return False
+                untouched, expected = (x, u_ref) if target == 'vstar' else (v, v_ref)
+                if not vectors_agree(untouched, expected, label + ' modified other input'):
+                    return False
+    func.log.info('Passed dist_subdiff projection/output checks.')
+    return True
+
+
 def _test_allocating_vs_inplace_call(func, method_name, x, method_args,
                                      tolerance, test_aliasing=True):
     """Compare one allocating functional call with its ``out=`` variants."""
@@ -721,9 +882,13 @@ def test_inplace_functional_methods(func, u=None, ustar=None, tau=1.,
       ``conj_subgradient(xstar, out=out)``
     * ``conj_proximal(xstar, tau)`` and
       ``conj_proximal(xstar, tau, out=out)``
+    * ``dist_subdiff(vstar, x)`` with and without ``best_approx``
+      for the functional and its conjugate
 
     In addition, the test checks the supported aliasing case ``out is x`` and
-    verifies that non-aliasing calls leave their input unchanged.
+    verifies that non-aliasing calls leave their input unchanged. For
+    ``dist_subdiff``, both inputs are checked as output aliases, including
+    partially overlapping NumPy views.
 
     Parameters
     ----------
@@ -783,6 +948,17 @@ def test_inplace_functional_methods(func, u=None, ustar=None, tau=1.,
                 test_aliasing=test_aliasing):
             return False
 
+    distance_tests = []
+    if test_primal and "dist_subdiff" in func.methods:
+        distance_tests.append((func, u))
+    if test_conjugate and "dist_subdiff" in func.conj.methods:
+        distance_tests.append((func.conj, ustar))
+    for tested_func, argument in distance_tests:
+        if not test_dist_subdiff(
+                tested_func, u=argument, tolerance=tolerance,
+                test_aliasing=test_aliasing, check_young=False):
+            return False
+
     func.log.info(
         "Allocating and in-place functional methods produce identical results."
     )
@@ -825,10 +1001,13 @@ def test_functional(func,u_s=None,sample_N=5,
         suites can migrate without an immediate API break.
     test_inplace : bool, optional
         Compare allocating and ``out=`` variants of subgradient, proximal,
-        conjugate subgradient, and conjugate proximal methods. Defaults to True.
+        conjugate subgradient, and conjugate proximal methods, and compare
+        ``dist_subdiff`` calls with/without ``best_approx`` for both the
+        functional and its conjugate. Defaults to True.
     test_inplace_aliasing : bool, optional
         Also test the supported aliasing case where the output buffer is the
-        input vector itself. Defaults to True.
+        input vector itself. For ``dist_subdiff``, check either input and
+        partially overlapping NumPy views. Defaults to True.
     tolerance : float, optional
         The maximum allowed relative error. Defaults to 1e-10.
     test_gradient_operator, test_gradient_operator_conj : bool, optional
@@ -859,6 +1038,11 @@ def test_functional(func,u_s=None,sample_N=5,
 
     Notes
     -----
+    Specialized ``dist_subdiff`` implementations also undergo Young-equality
+    tests using their projected vectors, whenever both functional and
+    conjugate evaluation are available. This check is independent of
+    ``test_inplace`` and does not require a subgradient implementation.
+
     The tests results are logged with further details when the tests failed 
 
     """
@@ -913,6 +1097,12 @@ def test_functional(func,u_s=None,sample_N=5,
         if {"eval","subgradient"} <= func.methods and "eval" in func.conj.methods:
             if not test_young_equality(func,u,tolerance=tolerance):
                 raise AssertionError(f"{func} failed Young equality!"+msg)
+        if ({"eval", "dist_subdiff"} <= func.methods
+                and "eval" in func.conj.methods and _has_own_dist_subdiff(func)):
+            if not test_dist_subdiff(
+                    func, u=u, tolerance=tolerance, test_aliasing=False):
+                raise AssertionError(
+                    f"{func} failed dist_subdiff projection Young equality!" + msg)
         if {"subgradient"} <= func.methods and {"subgradient","is_subgradient"} <= func.conj.methods:
             if not test_subgradient_conj_subgradient_dist_subdiff(func,u):
                 raise AssertionError(f"{func} failed subgradient_conj_subgradient_dist_subdiff test"+msg)

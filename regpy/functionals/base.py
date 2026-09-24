@@ -713,7 +713,9 @@ class Functional:
             )
         return reference
     
-    def dist_subdiff(self, vstar: Vector, x: Vector) -> float:
+    def dist_subdiff(
+        self, vstar: Vector, x: Vector, best_approx: Vector | None = None
+    ) -> float:
         r"""Returns the distance of a vector :math:`v^*` to the subdifferential :math:`\partial F(x)` at x with respect 
         to the dual norm.
         Needs to be re-implemented for functionals which are not Gateaux differentiable.
@@ -724,12 +726,26 @@ class Functional:
             Vector of which the distance is to be determined. 
         x: in `self.domain`
             Point at which the subdifferential is evaluated
+        best_approx: Vector in `self.domain` or None, optional
+            Pre-allocated output vector. If provided, write the best
+            approximation to vstar in the subdifferential at x into it.
+            The default implementation uses ``subgradient(x)``; nonsmooth
+            functionals need to override this method to project onto the
+            whole subdifferential. The output may alias either input.
+
+        Returns
+        -------
+        float
+            Distance in the dual Hilbert norm. Providing best_approx does
+            not change the return type or the distance.
         """
-        residual = self.domain.empty()
-        self.subgradient(x, out=residual)
-        residual *= -1
-        residual += vstar
-        return self.h_domain.dual_space().norm(residual)
+        self._validate_out(best_approx)
+        proj_vstar = self.domain.empty()
+        self.subgradient(x, out=proj_vstar)
+        distance = self.h_domain.dual_space().norm(vstar - proj_vstar)
+        if best_approx is not None:
+            self._copy_vector(proj_vstar, out=best_approx)
+        return distance
 
     def hessian(
         self, x: Vector, recursion_safeguard: bool = False
@@ -783,7 +799,8 @@ class Functional:
             tolerance = 64 * np.finfo(float).eps * max(
                 1., self.h_domain.dual_space().norm(ystar))
             if not np.isfinite(distance) or distance > tolerance:
-                raise ValueError('ystar must belong to the subdifferential at y.')
+                raise ValueError(Errors.value_error('ystar must belong to the subdifferential at y.',
+                                                    (self.dist_subdiff,tolerance)))
         return y, self._copy_vector(ystar), float(np.real(value))
 
     def bregman_func(self, y: Vector, ystar: Vector | None = None) -> Functional:
@@ -997,7 +1014,9 @@ class Functional:
             ))
         return grad
 
-    def _conj_dist_subdiff(self, v: Vector, xstar: Vector) -> float:
+    def _conj_dist_subdiff(
+        self, v: Vector, xstar: Vector, best_approx: Vector | None = None
+    ) -> float:
         r"""Returns the distance of a vector :math:`v` to the subdifferential :math:`\partial F^*(x^*)` at :math:`x^*`.
         Needs to be re-implemented for functionals whose conjugate is not Gateaux differentiable.
 
@@ -1005,14 +1024,25 @@ class Functional:
         ----------
         v: in `self.domain`
             Vector of which the distance is to be determined. 
-        x_star: in `self.domain`
+        xstar: in `self.domain`
             Point at which the subdifferential is evaluated
+        best_approx: Vector in `self.domain` or None, optional
+            Pre-allocated output for the closest point to v in the
+            conjugate subdifferential. The default is
+            ``conj_subgradient(xstar)``. May alias either input.
+
+        Returns
+        -------
+        float
+            Distance in the primal Hilbert norm.
         """
-        residual = self.domain.empty()
-        self.conj_subgradient(xstar, out=residual)
-        residual *= -1
-        residual += v
-        return self.domain.norm(residual)
+        self._validate_out(best_approx)
+        proj_v = self.domain.empty()
+        self.conj_subgradient(xstar, out=proj_v)
+        distance = self.h_domain.norm(v - proj_v)
+        if best_approx is not None:
+            self._copy_vector(proj_v, out=best_approx)
+        return distance
 
     def conj_hessian(
         self, xstar: Vector, recursion_safeguard: bool = False
@@ -1551,8 +1581,10 @@ class Conj(Functional):
     def _reference_vector(self, out: Vector | None = None) -> Vector:
         return self.func.conj_reference_vector(out=out)
 
-    def dist_subdiff(self, v: Vector, x: Vector) -> float:
-        return self.func._conj_dist_subdiff(v,x,)
+    def dist_subdiff(
+        self, v: Vector, x: Vector, best_approx: Vector | None = None
+    ) -> float:
+        return self.func._conj_dist_subdiff(v, x, best_approx=best_approx)
 
     def _conj_subgradient(
         self, x: Vector, out: Vector | None = None, **subgradient_par: Any
@@ -1562,8 +1594,10 @@ class Conj(Functional):
     def _conj_reference_vector(self, out: Vector | None = None) -> Vector:
         return self.func.reference_vector(out=out)
 
-    def _conj_dist_subdiff(self, v: Vector, x: Vector) -> float:
-        return self.func.dist_subdiff(v,x)
+    def _conj_dist_subdiff(
+        self, v: Vector, x: Vector, best_approx: Vector | None = None
+    ) -> float:
+        return self.func.dist_subdiff(v, x, best_approx=best_approx)
     
     def _hessian(self, x: Vector) -> operators.Operator:
         return self.func.conj_hessian(x)
@@ -1741,8 +1775,13 @@ class LinearFunctional(Functional):
             return out
         raise NotInEssentialDomainError('LinearFunctional.conj')
 
-    def _conj_dist_subdiff(self, v: Vector, xstar: Vector) -> float:
+    def _conj_dist_subdiff(
+        self, v: Vector, xstar: Vector, best_approx: Vector | None = None
+    ) -> float:
+        self._validate_out(best_approx)
         if self.domain.norm(xstar - self._gradient) == 0:
+            if best_approx is not None:
+                self._copy_vector(v, out=best_approx)
             return 0.
         else:
             raise NotInEssentialDomainError('LinearFunctional.conj')          
@@ -2130,16 +2169,21 @@ class SquaredNorm(Functional):
             return out
         raise NotInEssentialDomainError
 
-    def _conj_dist_subdiff(self, v: Vector, xstar: Vector) -> float:
+    def _conj_dist_subdiff(
+        self, v: Vector, xstar: Vector, best_approx: Vector | None = None
+    ) -> float:
+        self._validate_out(best_approx)
         if self.a==0:
-            if xstar==self.gram(self.b):
-                return True 
+            if self.domain.norm(xstar - self.gram(self.b)) == 0:
+                if best_approx is not None:
+                    self._copy_vector(v, out=best_approx)
+                return 0.
             else:
-                return NotInEssentialDomainError
+                raise NotInEssentialDomainError('SquaredNorm.conj')
         elif self.a <0:
-            return RuntimeError("Can't evaluate conjugate and its subdifferential if a<0.")
+            raise RuntimeError("Can't evaluate conjugate and its subdifferential if a<0.")
         else: 
-            return super()._conj_dist_subdiff(v,xstar)
+            return super()._conj_dist_subdiff(v, xstar, best_approx=best_approx)
 
     def _conj_hessian(self, xstar: Vector) -> operators.Operator:
         if self.a>0:
@@ -2473,21 +2517,44 @@ class LinearCombination(Functional):
         result += self.grad_sum
         return self._copy_vector(result, out=out)
 
-    def dist_subdiff(self, vstar: Vector, x: Vector, **kwargs: Any) -> float:
-        """Dual-norm distance: a * dist((vstar-b)/a, subdiff F(x))."""
+    def dist_subdiff(
+        self, vstar: Vector, x: Vector, best_approx: Vector | None = None,
+        **kwargs: Any,
+    ) -> float:
+        """Distance to a*subdiff F(x)+b; optionally write a*projection+b."""
+        self._validate_out(best_approx)
         if not self.funcs:
-            return self.h_domain.dual_space().norm(vstar - self.grad_sum)
+            distance = self.h_domain.dual_space().norm(vstar - self.grad_sum)
+            if best_approx is not None:
+                self._copy_vector(self.grad_sum, out=best_approx)
+            return distance
         term = self._single_convex_term()
         coeff, func = term
-        return coeff * func.dist_subdiff(self._conj_argument(vstar, coeff), x, **kwargs)
+        shift = self.grad_sum
+        if best_approx is not None and self._shares_memory(best_approx, shift):
+            shift = self._copy_vector(shift)
+        distance = coeff * func.dist_subdiff(
+            self._conj_argument(vstar, coeff), x,
+            best_approx=best_approx, **kwargs)
+        if best_approx is not None:
+            best_approx *= coeff
+            best_approx += shift
+        return distance
 
-    def _conj_dist_subdiff(self, v: Vector, xstar: Vector, **kwargs: Any) -> float:
-        """Distance to subdiff F*((xstar-b)/a), without a scaling factor."""
+    def _conj_dist_subdiff(
+        self, v: Vector, xstar: Vector, best_approx: Vector | None = None,
+        **kwargs: Any,
+    ) -> float:
+        """Distance and optional projection onto subdiff F*((xstar-b)/a)."""
+        self._validate_out(best_approx)
         term = self._single_convex_term()
         if term is None:
-            return self.linear_part._conj_dist_subdiff(v, xstar, **kwargs)
+            return self.linear_part._conj_dist_subdiff(
+                v, xstar, best_approx=best_approx, **kwargs)
         coeff, func = term
-        return func.conj.dist_subdiff(v, self._conj_argument(xstar, coeff), **kwargs)
+        return func.conj.dist_subdiff(
+            v, self._conj_argument(xstar, coeff),
+            best_approx=best_approx, **kwargs)
 
     @property
     def Lipschitz(self) -> float:
@@ -2774,12 +2841,20 @@ class HorizontalShiftDilation(Functional):
         result *= self.dilation
         return result
 
-    def dist_subdiff(self, vstar: Vector, x: Vector, **kwargs: Any) -> float:
+    def dist_subdiff(
+        self, vstar: Vector, x: Vector, best_approx: Vector | None = None,
+        **kwargs: Any,
+    ) -> float:
+        """Transform the distance and optional projection back by dilation."""
+        self._validate_out(best_approx)
         dual_argument = self._dual_argument(vstar)
         argument, _ = self._shifted_argument(x)
-        return self.func.dist_subdiff(
-            dual_argument, argument, **kwargs
+        distance = self.func.dist_subdiff(
+            dual_argument, argument, best_approx=best_approx, **kwargs
         )
+        if best_approx is not None:
+            best_approx *= self.dilation
+        return abs(self.dilation) * distance
 
     def _hessian(self, x: Vector, **kwargs: Any) -> operators.Operator:
         argument, _ = self._shifted_argument(x)
@@ -2833,16 +2908,27 @@ class HorizontalShiftDilation(Functional):
         return result
  
     def _conj_dist_subdiff(
-        self, v: Vector, x_star: Vector, **kwargs: Any
+        self, v: Vector, x_star: Vector, best_approx: Vector | None = None,
+        **kwargs: Any,
     ) -> float:
+        """Undo dilation and add the shift to the conjugate projection."""
+        self._validate_out(best_approx)
         dual_argument = self._dual_argument(x_star)
         primal_argument = self._copy_vector(v)
-        if self.shift_val is not None:
-            primal_argument -= self.shift_val
+        shift = self.shift_val
+        if shift is not None:
+            primal_argument -= shift
+            if best_approx is not None and self._shares_memory(best_approx, shift):
+                shift = self._copy_vector(shift)
         primal_argument *= self.dilation
-        return self.func._conj_dist_subdiff(
-            primal_argument, dual_argument, **kwargs
+        distance = self.func._conj_dist_subdiff(
+            primal_argument, dual_argument, best_approx=best_approx, **kwargs
         )
+        if best_approx is not None:
+            best_approx *= 1. / self.dilation
+            if shift is not None:
+                best_approx += shift
+        return distance / abs(self.dilation)
 
     def _conj_hessian(
         self, x_star: Vector, **kwargs: Any
@@ -3220,12 +3306,19 @@ class FunctionalOnDirectSum(Functional):
         return out
 
     def dist_subdiff(
-        self, vstar: vecsps.TupleVector, x: vecsps.TupleVector
+        self, vstar: vecsps.TupleVector, x: vecsps.TupleVector,
+        best_approx: vecsps.TupleVector | None = None,
     ) -> float:
+        """Combine component projections and distances in the dual sum norm."""
+        self._validate_out(best_approx)
+        if best_approx is not None:
+            vstar = self._preserve_input_if_needed(vstar, best_approx)
+            x = self._preserve_input_if_needed(x, best_approx)
         return sum(
-            f_i.dist_subdiff(vstar_i, x_i)
-            for f_i, vstar_i, x_i in zip(self.funcs, vstar, x)
-        )
+            f_i.dist_subdiff(vstar_i, x_i,
+                            best_approx=None if best_approx is None else best_approx[i]) ** 2
+            for i, (f_i, vstar_i, x_i) in enumerate(zip(self.funcs, vstar, x))
+        ) ** 0.5
 
     def _hessian(self, x: vecsps.TupleVector) -> operators.DirectSum:
         return operators.DirectSum(*tuple(f_i.hessian(x_i) for f_i,x_i in zip(self.funcs,x)))
@@ -3276,12 +3369,19 @@ class FunctionalOnDirectSum(Functional):
         return out
 
     def _conj_dist_subdiff(
-        self, v: vecsps.TupleVector, xstar: vecsps.TupleVector
+        self, v: vecsps.TupleVector, xstar: vecsps.TupleVector,
+        best_approx: vecsps.TupleVector | None = None,
     ) -> float:
+        """Combine conjugate projections and distances in the primal sum norm."""
+        self._validate_out(best_approx)
+        if best_approx is not None:
+            v = self._preserve_input_if_needed(v, best_approx)
+            xstar = self._preserve_input_if_needed(xstar, best_approx)
         return sum(
-            f_i.conj.dist_subdiff(v_i, xstar_i)
-            for f_i, v_i, xstar_i in zip(self.funcs, v, xstar)
-        )
+            f_i.conj.dist_subdiff(v_i, xstar_i,
+                                 best_approx=None if best_approx is None else best_approx[i]) ** 2
+            for i, (f_i, v_i, xstar_i) in enumerate(zip(self.funcs, v, xstar))
+        ) ** 0.5
 
     def _conj_hessian(self, xstar: vecsps.TupleVector) -> operators.DirectSum:
         return operators.DirectSum(*tuple(f_i.conj.hessian(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)))

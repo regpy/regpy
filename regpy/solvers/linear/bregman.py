@@ -293,8 +293,11 @@ class Bregman(RegSolver):
                 return self.penalty.bregman_func(self.x)
             # self.y is T f_n and previous_alpha is alpha_n, even when the
             # next solve uses a different regularization parameter.
-            p = (-1. / previous_alpha) * self.data_fid.subgradient(self.y)
-            return self.penalty.bregman_func(self.x, self.op.adjoint(p))
+            p = self.data_fid.subgradient(self.y)
+            p *= (-1. / previous_alpha)
+            Tp = self.op.adjoint(p)
+            self.penalty.dist_subdiff(Tp,self.x,best_approx=Tp)
+            return self.penalty.bregman_func(self.x,Tp)
         subgradient = self.select_subgradient(
             self.setting, self.op.domain.read_only(self.x))
         if subgradient is None:
