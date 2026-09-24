@@ -1781,6 +1781,30 @@ class Quadratic(IntegralFunctionalBase):
                          quad_taylor_l=quad_taylor_l, quad_taylor_u=quad_taylor_u,
                          **kwargs
                          )
+    def bregman_func(self, y: ReadOnlyVector,
+                     ystar: ReadOnlyVector | None = None) -> Functional:
+        """Return a Quadratic with the Bregman affine correction.
+
+        Constraints, extensions, measure, and data metadata are preserved.
+        The dual subgradient is divided by the integration measure to obtain
+        its pointwise density. Constants are subtracted pointwise, before
+        integration, rather than distributed from a global functional value.
+        """
+        if not self.is_convex:
+            return super().bregman_func(y, ystar)
+        y, ystar, _ = self._bregman_reference(y, ystar)
+        if np.any(self.measure <= 0) or not np.all(np.isfinite(self.measure)):
+            raise ValueError('Quadratic.bregman_func requires finite positive integration weights.')
+        density = ystar / self.measure
+        values = self.domain.empty()
+        self._eval(y, func_vals=values, sum_values=False)
+        result = self._arithmetic_copy()
+        result._b = self._b - density
+        result._c = self._c - values + density * y
+        result._refresh_quadratic()
+        return result
+
+
     def _arithmetic_copy(self):
         """Copy mutable state without cloning the domain or Hilbert geometry."""
         result = deepcopy(self, {id(self.domain): self.domain,

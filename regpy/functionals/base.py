@@ -766,6 +766,60 @@ class Functional:
         else:
             raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"The computed Hessian of {self} is either nonlinear or its domain or codomain are not identical to the domain of the functional."))
 
+    def _bregman_reference(self, y: Vector, ystar: Vector | None):
+        """Validate and copy a Bregman base point and its dual subgradient."""
+        if y not in self.domain:
+            raise ValueError('y must belong to the functional domain.')
+        y = self._copy_vector(y)
+        value = self(y)
+        if not np.isfinite(value):
+            raise NotInEssentialDomainError('The Bregman base point must have finite functional value.')
+        if ystar is None:
+            ystar = self.subgradient(y)
+        else:
+            if ystar not in self.domain:
+                raise ValueError('ystar must belong to the functional domain (dual coordinates).')
+            distance = self.dist_subdiff(ystar, y)
+            tolerance = 64 * np.finfo(float).eps * max(
+                1., self.h_domain.dual_space().norm(ystar))
+            if not np.isfinite(distance) or distance > tolerance:
+                raise ValueError('ystar must belong to the subdifferential at y.')
+        return y, self._copy_vector(ystar), float(np.real(value))
+
+    def bregman_func(self, y: Vector, ystar: Vector | None = None) -> Functional:
+        r"""Construct the Bregman functional based at y.
+
+        Returns the functional
+
+        .. math::
+            x \mapsto F(x)-F(y)-\langle y^*,x-y\rangle.
+
+        y must have finite functional value. ystar is a dual covector in
+        the subdifferential at y; if omitted, subgradient(y) is used. The
+        pairing is the real part of domain.vdot, not a Hilbert inner product.
+        The generic result is a LinearCombination with an affine correction.
+        Base-point and subgradient vectors are copied. The original F is
+        retained as a component and should not subsequently be modified.
+
+        The same interface is available on F.conj.
+        """
+        y, ystar, value = self._bregman_reference(y, ystar)
+        linear = LinearFunctional(-ystar, domain=self.domain,
+                                  h_domain=self.h_domain,
+                                  gradient_in_dual_space=True)
+        offset = float(np.real(self.domain.vdot(ystar, y))) - value
+        return LinearCombination(self, linear, offset=offset)
+
+
+    def conj_bregman_func(self, y: Vector, ystar: Vector | None = None) -> Functional:
+        """Construct the conjugate's Bregman functional (overridable hook).
+
+        Here y is a point in dual coordinates and ystar is a primal element
+        of the conjugate's subdifferential at y.
+        """
+        return Functional.bregman_func(self.conj, y, ystar)
+
+
     def bregman(self,x:Vector, y:Vector|None, ystar:Vector|None=None) -> float:
         r"""Computes the Bregman divergence of the functional `F`for two points `x` and `y` 
         with respect to a subgradient :math:`y^* \in \partial F(y)` given by 
@@ -1535,6 +1589,11 @@ class Conj(Functional):
     ) -> Vector:
         return self.func.proximal(x, tau, out=out, **proximal_par)
 
+    def bregman_func(self, y: Vector, ystar: Vector | None = None) -> Functional:
+        """Delegate construction to the primal's conjugate-specific hook."""
+        return self.func.conj_bregman_func(y, ystar)
+
+
     def bregman(self, x: Vector, y: Vector | None,
                 ystar: Vector | None = None) -> float:
         return self.func.conj_bregman(x, y, ystar)
@@ -1970,6 +2029,25 @@ class SquaredNorm(Functional):
     def as_data_func(self, data: ObsDataT) -> SquaredNorm:
         self.data=data
         return self
+
+    def bregman_func(self, y: Vector, ystar: Vector | None = None) -> Functional:
+        r"""Return a SquaredNorm representing a/2 * ||x-y||_H**2.
+
+        For convex SquaredNorms, affine coefficients and stored data cancel.
+        """
+        if not self.is_convex:
+            return super().bregman_func(y, ystar)
+        y, _, _ = self._bregman_reference(y, ystar)
+        return SquaredNorm(self.h_domain, a=self.a, shift=y)
+
+
+    def conj_bregman_func(self, y: Vector, ystar: Vector | None = None) -> Functional:
+        """Use the dual Hilbert norm for the conjugate of a positive quadratic."""
+        if not self.is_convex or self.a <= 0:
+            return super().conj_bregman_func(y, ystar)
+        y, _, _ = self.conj._bregman_reference(y, ystar)
+        return SquaredNorm(self.h_domain.dual_space(), a=1. / self.a, shift=y)
+
 
     def _eval(self, x: Vector) -> float:
         return (self.a/2.) * self.h_domain.inner(x,x).real  + self.h_domain.inner(self.b,x).real + self.c
@@ -3080,6 +3158,28 @@ class FunctionalOnDirectSum(Functional):
                         is_separable = is_separable,                        
                         methods=methods,conj_methods=conj_methods 
                         )
+
+    def bregman_func(self, y: Vector, ystar: Vector | None = None) -> Functional:
+        """Construct componentwise Bregman functionals on the same direct sum."""
+        if not self.is_convex:
+            return super().bregman_func(y, ystar)
+        if y not in self.domain or (ystar is not None and ystar not in self.domain):
+            raise ValueError('Bregman vectors must belong to the direct-sum domain.')
+        return FunctionalOnDirectSum([
+            f.bregman_func(y[i], None if ystar is None else ystar[i])
+            for i, f in enumerate(self.funcs)
+        ], self.domain)
+
+
+    def conj_bregman_func(self, y: Vector, ystar: Vector | None = None) -> Functional:
+        """Keep the componentwise structure for the conjugate as well."""
+        if y not in self.domain or (ystar is not None and ystar not in self.domain):
+            raise ValueError('Bregman vectors must belong to the direct-sum domain.')
+        return FunctionalOnDirectSum([
+            f.conj.bregman_func(y[i], None if ystar is None else ystar[i])
+            for i, f in enumerate(self.funcs)
+        ], self.domain)
+
 
     def _preserve_input_if_needed(
         self, x: vecsps.TupleVector, out: vecsps.TupleVector

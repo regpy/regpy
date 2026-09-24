@@ -424,3 +424,88 @@ def test_nonnegative_quadratic_bregman_with_boundary_subgradient():
     assert functional.bregman(x, y, ystar) == pytest.approx(
         expected, rel=0, abs=1e-12
     )
+
+
+@pytest.mark.parametrize("kind", ["quadratic", "kullback_leibler", "relative_entropy"])
+@pytest.mark.parametrize("conjugate", [False, True], ids=["primal", "conjugate"])
+def test_integral_bregman_functional_consistency(kind, conjugate):
+    """Exercise constructed Bregman functionals with the general test suite."""
+    set_rng_seed(2026092403)
+    rng = np.random.default_rng(2026092403)
+    domain = MeasureSpaceFcts(measure=np.array([.5, 1., 2., 3.]))
+    if kind == "quadratic":
+        functional = Quadratic(domain, a=2., b=.3, c=4.)
+    elif kind == "kullback_leibler":
+        functional = KullbackLeibler(domain, w=np.array([1., 2., 1.5, .8]))
+    else:
+        functional = RelativeEntropy(domain, w=np.array([1., 2., 1.5, .8]))
+    x, y = rng.uniform(.5, 2., size=(2, 4))
+    if conjugate:
+        x, y = functional.subgradient(x), functional.subgradient(y)
+        functional = functional.conj
+    divergence = functional.bregman_func(y)
+    explicit = functional.bregman_func(y, functional.subgradient(y))
+    expected = functional.bregman(x, y)
+    assert divergence(x) == pytest.approx(expected, rel=1e-10, abs=1e-11)
+    assert explicit(x) == pytest.approx(expected, rel=1e-10, abs=1e-11)
+    assert divergence(y) == pytest.approx(0., abs=1e-11)
+    assert divergence(x) >= -1e-11
+    assert functional.bregman(x, None, functional.subgradient(y)) == pytest.approx(
+        expected, rel=1e-10, abs=1e-11)
+    if kind == "quadratic" and not conjugate:
+        assert isinstance(divergence, Quadratic)
+    ft.test_functional(divergence)
+
+
+@pytest.mark.parametrize("extension", [False, True], ids=["constrained", "extended"])
+def test_quadratic_bregman_preserves_data_constraints_and_extensions(extension):
+    domain = MeasureSpaceFcts(measure=np.array([.5, 1., 2.]))
+    options = ({"lin_taylor_l": -1., "lin_taylor_u": 3.} if extension
+               else {"constr_l": -1., "constr_u": 3.})
+    functional = Quadratic(domain, a=2., b=.3, c=4., **options)
+    functional.as_data_func(np.array([.2, .4, .6]))
+    original_coefficients = [getattr(functional, name).copy() for name in ("_a", "_b", "_c")]
+    y = np.array([.7, 1., 1.3])
+    x = np.array([-.9, 1.5, 4.]) if extension else np.array([.1, 1.5, 2.])
+    divergence = functional.bregman_func(y)
+    assert isinstance(divergence, Quadratic)
+    assert divergence(x) == pytest.approx(functional.bregman(x, y), abs=1e-11)
+    for name in options:
+        np.testing.assert_array_equal(getattr(divergence, name), getattr(functional, name))
+    np.testing.assert_array_equal(divergence.data, functional.data)
+    for name, value in zip(("_a", "_b", "_c"), original_coefficients):
+        np.testing.assert_array_equal(getattr(functional, name), value)
+    if not extension:
+        assert np.isinf(divergence(-2 * domain.ones()))
+
+
+def test_bregman_functional_with_noncanonical_boundary_subgradient():
+    """ystar differs from subgradient(y), but lies in the full subdifferential."""
+    set_rng_seed(2026092404)
+    weights = np.array([.5, 1., 2., 3.])
+    domain = MeasureSpaceFcts(measure=weights)
+    functional = Quadratic(domain, a=2., constr_l=0., constr_u=2.)
+    y = np.array([0., 2., .5, 1.])
+    x = np.array([1., 1., 1.5, .2])
+    gradient = functional.subgradient(y)
+    normal = np.array([-1., 2., 0., 0.])
+    ystar = gradient + normal
+    assert not np.array_equal(ystar, gradient)
+    assert functional.dist_subdiff(ystar, y) == pytest.approx(0., abs=1e-12)
+    divergence = functional.bregman_func(y, ystar)
+    assert isinstance(divergence, Quadratic)
+    expected = np.sum(weights*(x-y)**2) - np.dot(normal, x-y)
+    assert divergence(x) == pytest.approx(expected, abs=1e-11)
+    assert functional.bregman(x, y, ystar) == pytest.approx(expected, abs=1e-11)
+    assert divergence(y) == pytest.approx(0., abs=1e-11)
+    assert divergence(x) > functional.bregman_func(y)(x)
+    assert np.isinf(divergence(np.array([-1., 1., 1., 1.])))
+    # The opposite normal directions are not subgradients at these bounds.
+    with pytest.raises(ValueError, match="subdifferential"):
+        functional.bregman_func(y, gradient - normal)
+    # Hessians are not defined at the constraint/dual transition points.
+    ft.test_functional(divergence, test_second_deriv=False, test_second_deriv_conj=False)
+    dual_divergence = functional.conj.bregman_func(ystar, y)
+    assert dual_divergence(gradient) == pytest.approx(
+        functional.conj.bregman(gradient, ystar, y), abs=1e-11)
+    ft.test_functional(dual_divergence, test_second_deriv=False, test_second_deriv_conj=False)
