@@ -2197,504 +2197,328 @@ class SquaredNorm(Functional):
 
 
 class LinearCombination(Functional):
-    r"""Linear combination of functionals. 
+    r"""A flattened sum ``offset + linear_part + sum(c_i * funcs[i])``.
 
     Parameters
     ----------
-    *args : (scalar, regpy.functionals.Functional) or regpy.functionals.Functional
-        List of coefficients and functionals to be taken as linear combinations.
+    *args : Functional or (float, Functional)
+        Functionals with optional real coefficients. Nested combinations
+        (including VerticalShift) are flattened and their weighted offsets
+        accumulated. Repeated functionals are combined and zero terms removed.
+        At least one functional is required to determine the domain.
+    offset : float, optional
+        Finite additive constant, default zero.
+
+    Attributes
+    ----------
+    funcs, coeffs : list
+        Nonlinear components and their nonzero coefficients only.
+    linear_part : LinearFunctional
+        Sum of all linear components, stored as a dual covector. It is the
+        zero functional when no linear components are present.
+    offset : float
+        Accumulated additive constant.
+
+    Notes
+    -----
+    For ``G(x) = a*F(x) + <b,x> + c`` with a > 0, the conjugate is
+    ``G*(p) = a*F*((p-b)/a) - c``. Conjugate operations and proximal maps
+    delegate to F when available. Purely affine sums are handled directly.
+    With several nonlinear terms, evaluation and derivatives are available
+    when implemented by all terms; no general proximal/conjugate formula exist. 
+    Negative nonlinear coefficients retain primal evaluation and
+    derivatives, but do not enable these convex conjugate/proximal formulas.
+    The Hilbert geometry is that of the first nonlinear term (or the first
+    argument for affine sums). A proximal map inherited from a nonlinear
+    term is therefore evaluated in that term's own metric.
     """
-    def __init__(
-        self, *args: Functional | tuple[float, Functional]
-    ) -> None:
-        coeff_for_func = defaultdict(lambda: 0)
+
+    def __init__(self, *args: Functional | tuple[float, Functional],
+                 offset: float = 0.0) -> None:
+        if not isinstance(offset, (int, float, np.integer, np.floating)) or not np.isfinite(offset):
+            raise ValueError('offset must be a finite real scalar.')
+        if not args:
+            raise ValueError('At least one functional is required to determine the domain.')
+        terms = defaultdict(float)
+        domain = None
+        first = None
+        total_offset = float(offset)
+
+        def collect(coeff, func):
+            nonlocal domain, first, total_offset
+            if not isinstance(func, Functional):
+                raise TypeError('Each component must be a Functional.')
+            if not isinstance(coeff, (int, float, np.integer, np.floating)) or not np.isfinite(coeff):
+                raise ValueError('Coefficients must be finite real scalars.')
+            if domain is None:
+                domain, first = func.domain, func
+            elif func.domain != domain:
+                raise ValueError('All functionals must have the same domain.')
+            if coeff == 0:
+                return
+            if isinstance(func, LinearCombination):
+                total_offset += coeff * func.offset
+                collect(coeff, func.linear_part)
+                for c, f in zip(func.coeffs, func.funcs):
+                    collect(coeff * c, f)
+            else:
+                terms[func] += coeff
+
         for arg in args:
             if isinstance(arg, tuple):
-                coeff, func = arg
+                if len(arg) != 2:
+                    raise ValueError('Weighted components must be (coefficient, functional) pairs.')
+                collect(*arg)
             else:
-                coeff, func = 1, arg
-            if not isinstance(func, Functional) or not isinstance(coeff,(int,float)):
-                raise ValueError(util.Errors.value_error(f"""
-        The LinearCombination only takes a list of arbitrary items provided either tuples 
-        (coeff,func) which are a real non-negative number and functional or a only a functional. However, you gave:
-            [{"; ".join(f"({arg})" for arg in args)}]"""))
-            if isinstance(func, type(self)):
-                for c, f in zip(func.coeffs, func.funcs):
-                    coeff_for_func[f] += coeff * c
+                collect(1., arg)
+        self.offset = float(total_offset)
+        self.funcs, self.coeffs = [], []
+        grad = domain.zeros()
+        for func, coeff in terms.items():
+            if coeff == 0:
+                continue
+            if func.is_linear:
+                grad += coeff * func.subgradient(domain.zeros())
             else:
-                coeff_for_func[func] += coeff
-        self.coeffs = []
-        """List of all coefficients
-        """
-        self.funcs = []
-        """List of all functionals. 
-        """
-        self.linear_table = []
-        for func, coeff in coeff_for_func.items():
-            self.coeffs.append(coeff)
-            self.funcs.append(func)
-            self.linear_table.append(func.is_linear or coeff==0)        
-
-        domains = [func.domain for func in self.funcs if func.domain]
-        domain = domains[0]
-        if  any(d != domain for d in domains): raise ValueError(util.Errors.generic_message(f"The domains of the functionals to be combined in a linear combination have to match. The functioanls domains are" +"\n\t" +f"domains = {domains}"))
-
-        if self.linear_table.count(False)<=1 and self.linear_table.count(True)>=1:
-            self.grad_sum = self.funcs[0].domain.zeros()
-            gradient = self.funcs[0].domain.empty()
-            for coeff,func,is_linear in zip(self.coeffs,self.funcs,self.linear_table):
-                if is_linear and coeff != 0:
-                    self.funcs[0].domain.copyto(gradient, func.gradient)
-                    gradient *= coeff
-                    self.grad_sum += gradient
-
-        is_separable = np.all([F.is_separable for F in self.funcs])
-
-        methods = set.intersection(*[func.methods for func in self.funcs])
-        conj_computable = (len(self.funcs) == 1) or (self.linear_table.count(False)==0) or (self.linear_table.count(False)==1)
-        if not conj_computable:
-            methods -= {'proximal'}
-        if  conj_computable: 
-            conj_methods = set.intersection(*[func.conj.methods for func in self.funcs])
-        else: 
+                self.funcs.append(func)
+                self.coeffs.append(float(coeff))
+        h_domain = self.funcs[0].h_domain if self.funcs else first.h_domain
+        self.linear_part = LinearFunctional(
+            grad, domain=domain, h_domain=h_domain, gradient_in_dual_space=True)
+        # Retained as a compatibility alias; it is a covector, not a Hilbert gradient.
+        self.grad_sum = grad
+        self.linear_table = [False] * len(self.funcs)
+        if self.funcs:
+            methods = set.intersection(*(set(f.methods) for f in self.funcs))
+            methods -= {'proximal', 'dist_subdiff'}
             conj_methods = set()
-        super().__init__(domain, is_linear = all(self.linear_table),
-                         is_separable=is_separable,
-                         methods = methods, conj_methods = conj_methods
-                         )
+            if len(self.funcs) == 1 and self.coeffs[0] > 0 and self.funcs[0].is_convex:
+                methods |= self.funcs[0].methods & {'proximal', 'dist_subdiff'}
+                conj_methods = set(self.funcs[0].conj.methods)
+        else:
+            methods = {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'}
+            conj_methods = {'eval', 'subgradient', 'proximal', 'dist_subdiff'}
+        super().__init__(
+            domain, h_domain=h_domain,
+            is_linear=not self.funcs and self.offset == 0,
+            is_separable=all(f.is_separable for f in self.funcs),
+            methods=methods, conj_methods=conj_methods,
+        )
 
     def _eval(self, x: Vector, **kwargs: Any) -> float:
-        y = 0
-        for coeff, func in zip(self.coeffs, self.funcs):
-            y += coeff * func(x,**kwargs)
-        return y
+        return (self.offset + self.linear_part(x)
+                + sum(c * f(x, **kwargs) for c, f in zip(self.coeffs, self.funcs)))
 
     def _linearize(self, x: Vector, **kwargs: Any) -> tuple[float, Vector]:
-        y = 0
-        grad = self.domain.empty()
-        work = None
-        for i, (coeff, func) in enumerate(zip(self.coeffs, self.funcs)):
-            f, g = func.linearize(x,**kwargs)
-            y += coeff * f
-            target = grad
-            if i:
-                if work is None:
-                    work = self.domain.empty()
-                target = work
-            self.domain.copyto(target, g)
-            target *= coeff
-            if i:
-                grad += target
-        return y, grad
+        value = self.offset + self.linear_part(x)
+        gradient = self._copy_vector(self.grad_sum)
+        for c, f in zip(self.coeffs, self.funcs):
+            val, grad = f.linearize(x, **kwargs)
+            value += c * val
+            gradient += c * grad
+        return value, gradient
 
-    def _subgradient(
-        self, x: Vector, out: Vector | None = None, **subgradient_par: Any
-    ) -> Vector:
-        grad = self.domain.empty() if out is None else out
-        if self._shares_memory(grad, x):
-            source = self.domain.empty()
-            self.domain.copyto(source, x)
-        else:
-            source = x
-        self.funcs[0].subgradient(
-            source, out=grad, **subgradient_par
-        )
-        grad *= self.coeffs[0]
-        if len(self.funcs) > 1:
-            work = self.domain.empty()
-            for coeff, func in zip(self.coeffs[1:], self.funcs[1:]):
-                func.subgradient(
-                    source, out=work, **subgradient_par
-                )
-                work *= coeff
-                grad += work
-        return grad
-
-    def dist_subdiff(self, vstar: Vector, x: Vector, **kwargs: Any) -> float:
-        if len(self.funcs) == 1 or self.linear_table.count(False)==0:
-            return super().dist_subdiff(vstar, x,**kwargs)
-        elif self.linear_table.count(False)==1:
-            j = self.linear_table.index(False)
-            argument = self._copy_vector(vstar)
-            argument -= self.grad_sum
-            argument *= 1. / self.coeffs[j]
-            return self.funcs[j].dist_subdiff(argument,x,**kwargs)
-        else:
-            return NotImplementedError
+    def _subgradient(self, x: Vector, out: Vector | None = None,
+                     **subgradient_par: Any) -> Vector:
+        # Accumulate separately so out may alias x or a stored covector.
+        gradient = self._copy_vector(self.grad_sum)
+        for c, f in zip(self.coeffs, self.funcs):
+            gradient += c * f.subgradient(x, **subgradient_par)
+        return self._copy_vector(gradient, out=out)
 
     def _hessian(self, x: Vector, **kwargs: Any) -> operators.Operator:
-        if self.linear_table.count(False)==1: 
-            # separate implementation of this case to be able to use inverse of hessian
-            j = self.linear_table.index(False)
-            return self.coeffs[j] * self.funcs[j].hessian(x,**kwargs)
-        else:
-            return operators.LinearCombination(
-                *((coeff, func.hessian(x,**kwargs)) for coeff, func in zip(self.coeffs, self.funcs))
-            )
-
-    def _proximal(
-        self,
-        x: Vector,
-        tau: float,
-        out: Vector | None = None,
-        **proximal_par: Any,
-    ) -> Vector:
+        if not self.funcs:
+            return operators.Zero(self.domain)
         if len(self.funcs) == 1:
-            return self.funcs[0].proximal(
-                x, self.coeffs[0] * tau, out=out, **proximal_par
-            )
-        if self.linear_table.count(False) == 0:
-            grad_sum = self.grad_sum
-            if out is not None and self._shares_memory(out, grad_sum):
-                grad_sum = self._copy_vector(grad_sum)
-            if out is None or self._shares_memory(out, x):
-                result = self.domain.empty()
-            else:
-                result = out
-            self.h_domain.gram_inv(grad_sum, out=result)
-            result *= -tau
-            result += x
-            if out is not None and result is not out:
-                self.domain.copyto(out, result)
-                result = out
-            return result
-        if self.linear_table.count(False) == 1:
-            j = self.linear_table.index(False)
-            grad_sum = self.grad_sum
-            if out is not None and self._shares_memory(out, grad_sum):
-                grad_sum = self._copy_vector(grad_sum)
-            if out is None or self._shares_memory(out, x):
-                argument = self.domain.empty()
-            else:
-                argument = out
-            self.h_domain.gram_inv(grad_sum, out=argument)
-            argument *= -tau
-            argument += x
-            return self.funcs[j].proximal(
-                argument, self.coeffs[j] * tau,
-                out=argument if out is None else out, **proximal_par
-            )
-        raise NotImplementedError
-    
+            return self.coeffs[0] * self.funcs[0].hessian(x, **kwargs)
+        return operators.LinearCombination(
+            *((c, f.hessian(x, **kwargs)) for c, f in zip(self.coeffs, self.funcs)))
+
+    def _single_convex_term(self):
+        if not self.funcs:
+            return None
+        if len(self.funcs) != 1 or self.coeffs[0] <= 0 or not self.funcs[0].is_convex:
+            raise NotImplementedError('Requires at most one nonlinear term with positive coefficient and convex functional.')
+        return self.coeffs[0], self.funcs[0]
+
+    def _conj_argument(self, xstar, coeff):
+        argument = self._copy_vector(xstar)
+        argument -= self.grad_sum
+        argument /= coeff
+        return argument
+
+    def _proximal(self, x: Vector, tau: float, out: Vector | None = None,
+                  **proximal_par: Any) -> Vector:
+        term = self._single_convex_term()
+        argument = self._copy_vector(x)
+        argument -= tau * self.h_domain.gram_inv(self.grad_sum)
+        if term is None:
+            return self._copy_vector(argument, out=out)
+        coeff, func = term
+        return func.proximal(argument, coeff * tau, out=out, **proximal_par)
+
     def _conj(self, xstar: Vector, **kwargs: Any) -> float:
-        if not self.is_convex:
-            raise RuntimeError('conj of non-convex LinearCombination not implemented.')
-        if len(self.funcs) == 1:
-            argument = self._copy_vector(xstar)
-            argument *= 1. / self.coeffs[0]
-            return self.coeffs[0]*self.funcs[0]._conj(argument,**kwargs)
-        elif self.linear_table.count(False)==0:
-            return 0 if xstar == self.grad_sum else inf
-        elif self.linear_table.count(False)==1:
-            j = self.linear_table.index(False)
-            argument = self._copy_vector(xstar)
-            argument -= self.grad_sum
-            argument *= 1. / self.coeffs[j]
-            return self.coeffs[j]*self.funcs[j]._conj(argument,**kwargs)
-        else:
-            return NotImplementedError
+        term = self._single_convex_term()
+        if term is None:
+            return -self.offset if self.domain.norm(xstar - self.grad_sum) == 0 else inf
+        coeff, func = term
+        return coeff * func.conj(self._conj_argument(xstar, coeff), **kwargs) - self.offset
 
-    def _conj_subgradient(
-        self, xstar: Vector, out: Vector | None = None, **subgradient_par: Any
-    ) -> Vector:
-        if not self.is_convex:
-            raise RuntimeError('conj.subgradient of non-convex linear combination not implemented.')
-        if len(self.funcs) == 1:
-            argument = self._copy_vector(xstar, out=out)
-            argument *= 1. / self.coeffs[0]
-            return self.funcs[0].conj_subgradient(
-                argument, out=argument, **subgradient_par
-            )
-        if self.linear_table.count(False) == 0:
-            if self.domain.norm(xstar - self.grad_sum) == 0:
-                if out is None:
-                    return self.domain.zeros()
-                self.domain.fill(out, 0)
-                return out
-            raise NotInEssentialDomainError('Linear combination of linear functionals')
-        if self.linear_table.count(False) == 1:
-            j = self.linear_table.index(False)
-            grad_sum = self.grad_sum
-            if out is not None and self._shares_memory(out, grad_sum):
-                grad_sum = self._copy_vector(grad_sum)
-            argument = self._copy_vector(xstar, out=out)
-            argument -= grad_sum
-            argument *= 1. / self.coeffs[j]
-            return self.funcs[j].conj_subgradient(
-                argument, out=argument, **subgradient_par
-            )
-        raise NotImplementedError
-
-    def _conj_dist_subdiff(
-        self, v: Vector, xstar: Vector, **kwargs: Any
-    ) -> float:
-        if len(self.funcs) == 1:
-            argument = self._copy_vector(xstar)
-            argument *= 1. / self.coeffs[0]
-            return self.funcs[0]._conj_dist_subdiff(v,argument,**kwargs)
-        elif self.linear_table.count(False)==0:
-            residual = self._copy_vector(xstar)
-            residual -= self.grad_sum
-            return self.domain.norm(residual)
-        elif self.linear_table.count(False)==1:
-            j = self.linear_table.index(False)
-            argument = self._copy_vector(xstar)
-            argument -= self.grad_sum
-            argument *= 1. / self.coeffs[j]
-            return self.funcs[j]._conj_dist_subdiff(v,argument,**kwargs)
-        else:
-            return NotImplementedError
+    def _conj_subgradient(self, xstar: Vector, out: Vector | None = None,
+                          **subgradient_par: Any) -> Vector:
+        term = self._single_convex_term()
+        if term is None:
+            return self.linear_part.conj_subgradient(xstar, out=out, **subgradient_par)
+        coeff, func = term
+        return func.conj_subgradient(self._conj_argument(xstar, coeff),
+                                    out=out, **subgradient_par)
 
     def _conj_hessian(self, xstar: Vector, **kwargs: Any) -> operators.Operator:
-        if not self.is_convex:
-            raise RuntimeError('conj.hessian of non-convex linear combination not implemented.') 
-        if len(self.funcs) == 1:
-            argument = self._copy_vector(xstar)
-            argument *= 1. / self.coeffs[0]
-            return (1./self.coeffs[0])*self.funcs[0]._conj_hessian(argument,**kwargs)
-        elif self.linear_table.count(False)==0:
-            raise NotTwiceDifferentiableError('Conjugate of linear combination of linear functionals')
-        elif self.linear_table.count(False)==1:
-            j = self.linear_table.index(False)
-            argument = self._copy_vector(xstar)
-            argument -= self.grad_sum
-            argument *= 1. / self.coeffs[j]
-            return (1./self.coeffs[j])*self.funcs[j]._conj_hessian(argument,**kwargs)
-        else:
-            return NotImplementedError
+        term = self._single_convex_term()
+        if term is None:
+            raise NotTwiceDifferentiableError('The conjugate of an affine functional is a singleton indicator.')
+        coeff, func = term
+        return (1. / coeff) * func.conj.hessian(self._conj_argument(xstar, coeff), **kwargs)
 
-    def _conj_proximal(
-        self,
-        xstar: Vector,
-        tau: float,
-        out: Vector | None = None,
-        **proximal_par: Any,
-    ) -> Vector:
-        if not self.is_convex:
-            raise RuntimeError('conj.proximal of non-convex linear combination not implemented.')
-        if len(self.funcs) == 1:
-            coeff = self.coeffs[0]
-            argument = self._copy_vector(xstar, out=out)
-            argument *= 1. / coeff
-            result = self.funcs[0].conj_proximal(
-                argument, tau / coeff, out=argument, **proximal_par
-            )
-            result *= coeff
-            return result
-        if self.linear_table.count(False) == 0:
+    def _conj_proximal(self, xstar: Vector, tau: float,
+                       out: Vector | None = None, **proximal_par: Any) -> Vector:
+        term = self._single_convex_term()
+        if term is None:
             return self._copy_vector(self.grad_sum, out=out)
-        if self.linear_table.count(False) == 1:
-            j = self.linear_table.index(False)
-            coeff = self.coeffs[j]
-            grad_sum = self.grad_sum
-            if out is not None and self._shares_memory(out, grad_sum):
-                grad_sum = self._copy_vector(grad_sum)
-            argument = self._copy_vector(xstar, out=out)
-            argument -= grad_sum
-            argument *= 1. / coeff
-            result = self.funcs[j].conj_proximal(
-                argument, tau / coeff, out=argument, **proximal_par
-            )
-            result *= coeff
-            result += grad_sum
-            return result
-        raise NotImplementedError
+        coeff, func = term
+        argument = self._conj_argument(xstar, coeff)
+        result = func.conj_proximal(argument, tau / coeff, **proximal_par)
+        # Copy before scaling; underlying functionals may return shared storage.
+        result = self._copy_vector(result)
+        result *= coeff
+        result += self.grad_sum
+        return self._copy_vector(result, out=out)
+
+    def dist_subdiff(self, vstar: Vector, x: Vector, **kwargs: Any) -> float:
+        """Dual-norm distance: a * dist((vstar-b)/a, subdiff F(x))."""
+        if not self.funcs:
+            return self.h_domain.dual_space().norm(vstar - self.grad_sum)
+        term = self._single_convex_term()
+        coeff, func = term
+        return coeff * func.dist_subdiff(self._conj_argument(vstar, coeff), x, **kwargs)
+
+    def _conj_dist_subdiff(self, v: Vector, xstar: Vector, **kwargs: Any) -> float:
+        """Distance to subdiff F*((xstar-b)/a), without a scaling factor."""
+        term = self._single_convex_term()
+        if term is None:
+            return self.linear_part._conj_dist_subdiff(v, xstar, **kwargs)
+        coeff, func = term
+        return func.conj.dist_subdiff(v, self._conj_argument(xstar, coeff), **kwargs)
 
     @property
     def Lipschitz(self) -> float:
-        Lip = sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
-        Lip -= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
-        return Lip if all([func.is_convex for func in self.funcs]) else np.inf
-    
+        return sum(abs(c) * f.Lipschitz for c, f in zip(self.coeffs, self.funcs))
+
+    def _convexity_bound(self):
+        return sum(c * (f.convexity_param if c > 0 else f.Lipschitz)
+                   for c, f in zip(self.coeffs, self.funcs))
+
     @property
     def convexity_param(self) -> float:
-        conv = sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
-        conv += sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
-        return conv if (conv>=0 and all([func.is_convex for func in self.funcs])) else 0.
-
-    @property
-    def is_quadratic(self) -> bool:
-        return all([func.is_quadratic for func in self.funcs])
-
-    @property
-    def conj_is_quadratic(self) -> bool:
-        return self.is_quadratic and self.convexity_param>0
-
-    @property
-    def is_norm_squared_type(self):
-        return all([func.is_linear or func.is_norm_squared_type for func in self.funcs]) and self.convexity_param>0
+        return max(0., self._convexity_bound()) if self.is_convex else 0.
 
     @property
     def is_convex(self) -> bool:
-        return all([func.is_convex for func in self.funcs]) and self.convexity_param>=0,            
+        return bool(all(f.is_convex for f in self.funcs) and self._convexity_bound() >= 0)
 
-    @property
-    def dom_l(self) -> Vector | None:
-        return np.max([F.dom_l for F in self.funcs]) if self.is_separable else None
-    
-    @property
-    def dom_u(self) -> Vector | None:
-        return np.min([F.dom_u for F in self.funcs]) if self.is_separable else None
-
-    @property
-    def conj_dom_l(self) -> Vector | None:
-        _conj_dom_l = None
-        if self.is_separable:
-            if self.linear_table.count(False)==0:
-                _conj_dom_l = self.domain.empty()
-                self.domain.copyto(_conj_dom_l, self.grad_sum)
-            elif len(self.funcs) == 1:
-                if self.coeffs[0]>=0:
-                    _conj_dom_l = self.funcs[0].conj_dom_l * self.coeffs[0]
-            elif self.linear_table.count(False)==1:
-                j = self.linear_table.index(False)
-                if self.coeffs[j] >=0:
-                    _conj_dom_l = self.domain.empty()
-                    self.domain.copyto(_conj_dom_l, self.grad_sum)
-                    _conj_dom_l += self.funcs[j].conj_dom_l*self.coeffs[j] 
-        return _conj_dom_l
-    
-    @property
-    def conj_dom_u(self) -> Vector | None:
-        _conj_dom_u = None
-        if self.is_separable:
-            if self.linear_table.count(False)==0:
-                _conj_dom_u = self.domain.empty()
-                self.domain.copyto(_conj_dom_u, self.grad_sum)
-            elif len(self.funcs) == 1:
-                if self.coeffs[0]>=0:
-                    _conj_dom_u = self.funcs[0].conj_dom_u * self.coeffs[0]
-            elif self.linear_table.count(False)==1:
-                j = self.linear_table.index(False)
-                if self.coeffs[j] >=0:
-                    _conj_dom_u = self.domain.empty()
-                    self.domain.copyto(_conj_dom_u, self.grad_sum)
-                    _conj_dom_u += self.funcs[j].conj_dom_u*self.coeffs[j]
-        return _conj_dom_u
-
-class VerticalShift(Functional):
-    r"""Shifting a functional by some offset. Should not be used directly but rather by adding some scalar to the functional.
-
-    Parameters
-    ----------
-    func : regpy.functionals.Functional
-        Functional to be offset.
-    offset : scalar
-        Reals offset added to the evaluation of the functional.
-    """
-    def __init__(self, func: Functional, offset: float) -> None:
-        if not isinstance(func, Functional) or not isinstance(offset,(int,float)):
-            raise ValueError(util.Errors.value_error(f""" 
-            The VerticalShift only takes two arguments one AbstractFunctional 
-            and one offset that is a scalar. However, you gave:
-                func = {func},
-                offset = {offset}."""))
-        super().__init__(func.domain, 
-                         is_linear = False,
-                         is_separable = func.is_separable,
-                         methods = func._methods, conj_methods = func._conj_methods 
-                         )
-        self.func = func
-        """Functional to be offset.
-        """
-        self.offset = offset
-        """Offset added to the evaluation of the functional.
-        """
-
-    def _eval(self, x: Vector, **kwargs: Any) -> float:
-        return self.func(x,**kwargs) + self.offset
-
-    def _linearize(self, x: Vector, **kwargs: Any) -> tuple[float, Vector]:
-        return self.func._linearize(x,**kwargs)
-
-    def _subgradient(
-        self, x: Vector, out: Vector | None = None, **subgradient_par: Any
-    ) -> Vector:
-        return self.func.subgradient(x, out=out, **subgradient_par)
-
-    def dist_subdiff(self, vstar: Vector, x: Vector, **kwargs: Any) -> float:
-        return self.func.dist_subdiff(vstar,x,**kwargs)    
-
-    def _hessian(self, x: Vector, **kwargs: Any) -> operators.Operator:
-        return self.func.hessian(x,**kwargs)
-    
-    def _proximal(
-        self,
-        x: Vector,
-        tau: float,
-        out: Vector | None = None,
-        **proximal_par: Any,
-    ) -> Vector:
-        return self.func.proximal(x, tau, out=out, **proximal_par)
-
-    def _conj(self, x: Vector, **kwargs: Any) -> float:
-        return self.func.conj(x,**kwargs) - self.offset
-    
-    def _conj_subgradient(
-        self, xstar: Vector, out: Vector | None = None, **subgradient_par: Any
-    ) -> Vector:
-        return self.func.conj_subgradient(xstar, out=out, **subgradient_par)
-
-    def _conj_dist_subdiff(
-        self, v: Vector, xstar: Vector, **kwargs: Any
-    ) -> float:
-        return self.func.conj.dist_subdiff(v,xstar,**kwargs)
-
-    def _conj_hessian(self, xstar: Vector, **kwargs: Any) -> operators.Operator:
-        return self.func.conj.hessian(xstar,**kwargs)
-
-    def _conj_proximal(
-        self,
-        x: Vector,
-        tau: float,
-        out: Vector | None = None,
-        **proximal_par: Any,
-    ) -> Vector:
-        return self.func.conj_proximal(x, tau, out=out, **proximal_par)
-
-    @property
-    def is_quadratic(self) -> bool:
-        return self.func.is_quadratic
-
-    @property
-    def is_norm_squared_type(self):
-        return super().is_norm_squared_type
-
-    @property 
-    def convexity_param(self) -> float:
-        return self.func.convexity_param
-    
-    @property
-    def Lipschitz(self) -> float:
-        return self.func.Lipschitz
-    
     @property
     def is_strictly_convex(self) -> bool:
-        return bool(self.func.is_strictly_convex)
+        return bool(self.convexity_param > 0 or (
+            self.is_convex and all(c > 0 for c in self.coeffs)
+            and any(f.is_strictly_convex for f in self.funcs)))
 
     @property
     def conj_is_strictly_convex(self) -> bool:
-        return bool(self.func.conj_is_strictly_convex)
+        if len(self.funcs) == 1 and self.coeffs[0] > 0:
+            return bool(self.funcs[0].conj_is_strictly_convex)
+        return bool(np.isfinite(self.Lipschitz) and self.is_convex)
 
     @property
-    def is_convex(self) -> bool:
-        return self.func.is_convex
+    def is_quadratic(self) -> bool:
+        return all(f.is_quadratic for f in self.funcs)
 
     @property
-    def dom_l(self) -> Vector | Scalar | None:
-        return self.func.dom_l
-    
+    def conj_is_quadratic(self) -> bool:
+        return bool(len(self.funcs) == 1 and self.coeffs[0] > 0
+                    and self.funcs[0].conj_is_quadratic)
+
     @property
-    def dom_u(self) -> Vector | Scalar | None:
-        return self.func.dom_u
-    
+    def is_norm_squared_type(self):
+        return bool(self.convexity_param > 0
+                    and all(f.is_norm_squared_type for f in self.funcs))
+
+    def _domain_bound(self, name, lower):
+        if not self.is_separable:
+            return None
+        values = [getattr(f, name) for f in self.funcs]
+        if any(v is None for v in values):
+            return None
+        if not values:
+            return -inf if lower else inf
+        bound = values[0]
+        # Use vector-space operations for tuple and other non-NumPy vectors.
+        for value in values[1:]:
+            if np.isscalar(bound) and np.isscalar(value):
+                bound = max(bound, value) if lower else min(bound, value)
+            else:
+                b = bound * self.domain.ones() if np.isscalar(bound) else bound
+                v = value * self.domain.ones() if np.isscalar(value) else value
+                if not hasattr(self.domain, 'geq_mask'):
+                    return None
+                bound = self._copy_vector(b)
+                mask = self.domain.geq_mask(v, b) if lower else self.domain.geq_mask(b, v)
+                self.domain.copyto(bound, v, where=mask)
+        return bound
+
     @property
-    def conj_dom_l(self) -> Vector | Scalar | None:
-        return self.func.conj_dom_l
-    
+    def dom_l(self):
+        return self._domain_bound('dom_l', True)
+
     @property
-    def conj_dom_u(self) -> Vector | Scalar | None:
-        return self.func.conj_dom_u
+    def dom_u(self):
+        return self._domain_bound('dom_u', False)
+
+    def _conjugate_bound(self, name):
+        if not self.is_separable:
+            return None
+        if not self.funcs:
+            return self._copy_vector(self.grad_sum)
+        if len(self.funcs) != 1 or self.coeffs[0] <= 0:
+            return None
+        bound = getattr(self.funcs[0], name)
+        if bound is None:
+            return None
+        if np.isscalar(bound):
+            bound = bound * self.domain.ones()
+        return self.grad_sum + self.coeffs[0] * bound
+
+    @property
+    def conj_dom_l(self):
+        return self._conjugate_bound('conj_dom_l')
+
+    @property
+    def conj_dom_u(self):
+        return self._conjugate_bound('conj_dom_u')
+
+
+class VerticalShift(LinearCombination):
+    """Add a constant to a functional using LinearCombination's flat storage.
+
+    Nested offsets are accumulated by the parent constructor. For a simple
+    functional this stores one nonlinear component (or one linear part), and
+    the supplied offset. Evaluation and linearization include the offset;
+    conjugate evaluation subtracts it. Derivatives and proximal maps do not
+    depend on the offset.
+    """
+
+    def __init__(self, func: Functional, offset: float) -> None:
+        super().__init__(func, offset=offset)
+
 
 class HorizontalShiftDilation(Functional):
     r"""Implements a horizontal shift and/or a horizontal translation of the graph of a functional :math:`F`, i.e. replaces 
