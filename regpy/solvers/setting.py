@@ -1081,18 +1081,37 @@ class Setting:
             if not method['applicable']:
                 display(name, method)
 
-    def _get_params(self, method_name: str, key: str) -> dict:
+    def _get_configured_method(self, method_name: str) -> dict:
+        """Resolve configuration, keeping inner convex solvers separate.
+
+        Without a regularization parameter, convex labels configure inner
+        minimizers in ``_convex_solvers``; they do not become runnable outer
+        regularization methods. Convex labels take precedence on name overlap.
+        """
         if not isinstance(method_name, str):
             raise TypeError("method_name must be a string.")
+        if not self.is_tikhonov:
+            configured = getattr(self, '_convex_solvers', {})
+            if method_name in configured:
+                return configured[method_name]
+            registry = get_convex_solver_dictionary()
+            if method_name in registry:
+                if not hasattr(self, '_convex_solvers'):
+                    self._convex_solvers = {}
+                self._convex_solvers[method_name] = registry[method_name]
+                return self._convex_solvers[method_name]
         if method_name not in self._methods:
             raise ValueError(f"Unknown method {method_name!r}.")
-        return self._methods[method_name][key]
+        return self._methods[method_name]
+
+    def _get_params(self, method_name: str, key: str) -> dict:
+        return self._get_configured_method(method_name)[key]
 
     def get_method_params(self, method_name: str) -> dict:
         """Return a shallow copy of one method's constructor parameters."""
         return dict(self._get_params(method_name, 'method_params'))
 
-    def set_method_params(self, method_names: str, params: dict | None = None) -> None:
+    def set_method_params(self, method_names: str | list[str], params: dict | None = None) -> None:
         """Update constructor parameters; omitted keys retain their values."""
         method_names = [method_names] if isinstance(method_names,str) else method_names
         for method_name in method_names:
@@ -1155,7 +1174,7 @@ class Setting:
 
     def set_stoprule(self,
                      rule: Callable[[Setting, dict], StopRule] | str | StopRule,
-                     method_names: list[str] | None = None,
+                     method_names: str | list[str] | None = None,
                      params: dict | None = None) -> None:
         """Configure a factory without constructing a stopping rule.
 
@@ -1163,7 +1182,9 @@ class Setting:
         parameter dictionary containing the method's ``stoprule_params`` plus
         ``solver_class`` and ``logging_level``. The setting is a separate argument.
         ``params``, if supplied, updates each selected method's parameters.
-        With no method names, configure all applicable methods.
+        A convex solver label on a setting without a regularization parameter
+        configures its inner solver in ``_convex_solvers``.
+        With no method names, configure all applicable outer methods.
 
         Passing a StopRule is deprecated. It is wrapped in a factory returning
         an independent reset copy. Such a factory ignores the parameter dict.
@@ -1183,14 +1204,13 @@ class Setting:
             raise TypeError("params must be a dict or None.")
         if method_names is None:
             method_names = list(self.applicable_methods())
+        if isinstance(method_names, str):
+            method_names = [method_names]
         if not isinstance(method_names, list) or not all(
                 isinstance(name, str) for name in method_names):
-            raise TypeError("method_names must be a list of strings or None.")
-        for name in method_names:
-            if name not in self._methods:
-                raise ValueError(f"{name} is unknown method key.")
-        for name in method_names:
-            method = self._methods[name]
+            raise TypeError("method_names must be a string, a list of strings or None.")
+        methods = [self._get_configured_method(name) for name in method_names]
+        for method in methods:
             method['stoprule_params']['factory'] = rule
             if params is not None:
                 method['stoprule_params'].update(deepcopy(params))

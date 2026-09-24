@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from regpy.functionals.base import Functional
     from ..setting import Setting
 
-__all__ = ["Bregman"]
+__all__ = ["Bregman", "RunOnAlphaGrid"]
 
 _END = object()
 
@@ -64,8 +64,8 @@ class Bregman(RegSolver):
         Executed solvers, stopping histories, and cached applicability results
         are not reused. A string selects from the convex-method registry;
         matching method parameters from the supplied setting are retained.
-        Stopping parameters are also retained if that setting is Tikhonov;
-        otherwise the inner problem uses convex-optimization stopping defaults.
+        On settings without a regularization parameter, configuration is
+        taken from ``setting._convex_solvers``, including stopping parameters.
         Dual methods are supported through Setting.run(), which returns a
         reconstruction in primal coordinates of the supplied setting.
     nr_its : int, optional
@@ -188,13 +188,13 @@ class Bregman(RegSolver):
 
         if isinstance(method, str):
             registry = get_convex_solver_dictionary()
-            configured = getattr(setting, '_methods', {}).get(method)
-            if configured is not None and setting.is_tikhonov:
+            configured = getattr(setting,
+                                 '_methods' if setting.is_tikhonov else '_convex_solvers',
+                                 {}).get(method)
+            if configured is not None:
                 template = configured
             elif method in registry:
                 template = dict(registry[method])
-                if configured is not None:
-                    template['method_params'] = dict(configured.get('method_params', {}))
             else:
                 raise ValueError(f'Unknown convex inner method {method!r}.')
         elif isinstance(method, dict):
@@ -204,8 +204,8 @@ class Bregman(RegSolver):
         cls = template.get('class')
         if not isinstance(cls, type) or not issubclass(cls, RegSolver):
             raise TypeError("The inner method's 'class' must be a RegSolver subclass.")
-        if issubclass(cls, Bregman):
-            raise ValueError('Bregman itself is not an inner convex minimizer.')
+        if issubclass(cls, (Bregman, RunOnAlphaGrid)):
+            raise ValueError('An outer parameter runner is not an inner convex minimizer.')
         if not callable(getattr(cls, 'check_applicability', None)):
             raise TypeError('The inner solver must provide check_applicability().')
         primal = template.get('primal', True)
@@ -246,16 +246,20 @@ class Bregman(RegSolver):
         return {'applicable': not info, 'info': ' '.join(info)}, {}
 
     def _next(self) -> None:
-        from ..setting import Setting
-
         alpha = self._validate_alpha(self._pending_alpha)
         # Reconstruct from the original R, never from the previous divergence.
         if self.iteration_step_nr > 1:
             self._bregman_penalty = self._make_bregman_penalty(self.regpar)
+        self._run_inner(alpha, self._bregman_penalty, self.x)
+
+    def _run_inner(self, alpha: float, penalty: Functional, init: Vector) -> None:
+        """Execute a fresh inner problem and advance the parameter iterator."""
+        from ..setting import Setting
+
         inner = Setting(
-            op=self.op, penalty=self._bregman_penalty,
+            op=self.op, penalty=penalty,
             data_fid=self.data_fid, regpar=alpha,
-            init=self.x, incorporate_init_in_penalty=False,
+            init=init, incorporate_init_in_penalty=False,
             explicitDataWarning=False, logging_level=self.log.level,
         )
         template = self._inner_template
@@ -277,7 +281,8 @@ class Bregman(RegSolver):
             self.y = self.op.codomain.empty()
             self.op.codomain.copyto(self.y, y)
         self.regpar = alpha
-        self.log.info('Bregman iteration %s: alpha=%s', self.iteration_step_nr, alpha)
+        self.log.info('%s iteration %s: alpha=%s',
+                      type(self).__name__, self.iteration_step_nr, alpha)
         self._pending_alpha = next(self._regpars, _END)
         if self._pending_alpha is _END:
             self.converge()
@@ -303,3 +308,103 @@ class Bregman(RegSolver):
         if subgradient is None:
             raise ValueError('select_subgradient must return a subgradient vector.')
         return self.penalty.bregman_func(self.x, subgradient)
+
+
+class RunOnAlphaGrid(RegSolver):
+    """Solve independent convex Tikhonov problems on a parameter grid.
+
+    Each step minimizes ``S(Tf) + alpha * R(f)`` using a fresh inner setting,
+    solver, and stopping history. The original penalty and the same initial
+    guess are used at every step; there is no warm start between grid points.
+
+    This method is used to select the regularization parameter by a parameter choice rule. 
+
+    Parameters
+    ----------
+    setting : Setting
+        Must have no regularization parameter, a linear operator, convex
+        penalty and fidelity, and an explicit codomain and fidelity.
+    regpars : Sequence or iterable of float
+        Nonempty, finite or infinite iterable of finite positive parameters.
+        Parameters are validated lazily, as in Bregman.
+    inner_solver : str or dict, optional
+        Convex solver label (default 'FISTA') or method dictionary, as in
+        Bregman. Labels retain configuration from ``setting._convex_solvers``.
+    init : Vector or None, optional
+        Fixed initial guess for every solve, default ``setting.init``.
+        An explicit inner method initialization takes precedence.
+    logging_level : int or str, optional
+        Outer logging level, default 'INFO'.
+    is_primal : bool, optional
+        Coordinate label for RegSolver, default True.
+
+    Notes
+    -----
+    Iteration yields one result per parameter; ``run()`` returns the last pair.
+    ``regpar``, ``inner_setting`` and ``inner_method_name`` have the same meaning
+    as in Bregman. No penalty subgradient or Bregman divergence is required.
+    The supplied setting and its configuration are not modified.
+    """
+
+    _validate_alpha = staticmethod(Bregman._validate_alpha)
+    _method_template = staticmethod(Bregman._method_template)
+    _run_inner = Bregman._run_inner
+    primal = Bregman.primal
+
+    def __init__(
+        self,
+        setting: Setting,
+        regpars: Sequence | Iterable[float],
+        inner_solver: str | dict[str, Any] = 'FISTA',
+        *,
+        init: Vector | None = None,
+        logging_level: int | str = 'INFO',
+        is_primal: bool = True,
+    ) -> None:
+        out, _ = self.check_applicability(setting)
+        if not out['applicable']:
+            raise ValueError('RunOnAlphaGrid is not applicable. ' + out['info'])
+        self._regpars = iter(regpars)
+        self._pending_alpha = next(self._regpars, _END)
+        if self._pending_alpha is _END:
+            raise ValueError('regpars must contain at least one parameter.')
+        alpha = self._validate_alpha(self._pending_alpha)
+        self._inner_template = self._method_template(setting, inner_solver)
+        initial = setting.init if init is None else init
+        if initial not in setting.op.domain:
+            raise ValueError('init must belong to the operator domain.')
+        super().__init__(setting, is_primal=is_primal)
+        self.log.setLevel(logging_level)
+        self.regpar = alpha
+        self._initial = self.op.domain.empty()
+        self.op.domain.copyto(self._initial, initial)
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, initial)
+        self.y = self.op(self.x)
+        self.inner_setting: Setting | None = None
+        self.inner_method_name = '_alpha_grid_inner'
+
+    @staticmethod
+    def check_applicability(
+        setting: Setting, op_norm: float | None = None,
+    ) -> tuple[dict, dict]:
+        """Check convexity and absence of a fixed regularization parameter."""
+        info = []
+        if setting.is_tikhonov:
+            info.append('The setting must have no regularization parameter.')
+        if not setting.op.linear:
+            info.append('The forward operator must be linear.')
+        if not setting.penalty.is_convex:
+            info.append('The penalty must be convex.')
+        if setting.codomain_free:
+            info.append('An explicit codomain and data-fidelity functional are required.')
+        elif not setting.data_fid.is_convex:
+            info.append('The data fidelity must be convex.')
+        return {'applicable': not info, 'info': ' '.join(info)}, {}
+
+    def _next(self) -> None:
+        alpha = self._validate_alpha(self._pending_alpha)
+        # Give every solve its own copy, even if an inner method mutates init.
+        initial = self.op.domain.empty()
+        self.op.domain.copyto(initial, self._initial)
+        self._run_inner(alpha, self.penalty, initial)
