@@ -13,54 +13,86 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
     ----------
     func : regpy.functionals.Functional
         The functional. Needs to be separable!
-    eps_perturbation: float or None [default: None]
-        If not None, an additional vector h is returned  
+    u : array-like or None, optional
+        A supplied point is retained and must satisfy the coordinate bounds.
+        Otherwise, sample each coordinate in its own interval.
+    eps_perturbation : float or None, optional
+        Nonnegative perturbation length. If provided, also return a direction h.
+        Coordinates with equal lower and upper bounds have h=0.
         
     Returns
     -------
     array-like
         An element u of func.domain
-        If eps_perturbation is not None, an additional vector h is returned such that u+eps_perturbation is also in the essential domain. 
+        If eps_perturbation is not None, return (u, h), with
+        u + eps_perturbation*h satisfying the coordinate domain bounds.
+        Sampling and perturbation use coordinatewise bounds, not their
+        intersection. Finite intervals are sampled in their interior whenever
+        representable; a singleton interval is sampled at its sole point.
     """
     from regpy.vecsps import MeasureSpaceFcts, DirectSum
     if not func.is_separable:
         raise ValueError(Errors.value_error("Cannot sample in the essential domain if the functional is not separable!"))
+    if eps_perturbation is not None:
+        if (not np.isscalar(eps_perturbation)
+                or not np.isreal(eps_perturbation)
+                or not np.isfinite(eps_perturbation)
+                or eps_perturbation < 0):
+            raise ValueError("eps_perturbation must be finite and nonnegative.")
     if isinstance(func.domain,MeasureSpaceFcts):
-        dom_l = np.max(func.dom_l)
-        dom_u = np.min(func.dom_u)
-        assert dom_l<=dom_u
-        numel = np.prod(func.domain.shape)
-        if dom_l>-np.inf:
-            if dom_u<np.inf:
-                if u is None:
-                    #u = np.linspace(dom_l,dom_u,numel)
-                    u = np.linspace(dom_l,dom_u,numel+2)
-                    u = u[1:-1]
-                if eps_perturbation is not None:
-                    h = np.sign(0.5*dom_l+0.5*dom_u-u)
-                    fac = 2 * eps_perturbation / np.min(dom_u-dom_l)
-                    if fac >= 1.:
-                        h /= fac
-            else: 
-                if u is None:
-                    u = dom_l-0.5*np.exp(-np.sqrt(numel))+np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
-                if eps_perturbation is not None:
-                    h = np.ones_like(u)
-        else: # dom_l == np.inf
-            if dom_u==np.inf:
-                if u is None:
-                    u = np.tan(np.linspace(-np.pi/2+1/numel,np.pi/2-1/numel,numel))
-                if eps_perturbation is not None:
-                    h = np.ones_like(u)            
-            else:
-                if u is None:
-                    u = dom_u+0.5*np.exp(-np.sqrt(numel))-np.exp(np.linspace(-np.sqrt(numel),np.sqrt(numel),numel))
-                if eps_perturbation is not None:
-                    h = - np.ones_like(u)            
-        if eps_perturbation is None:
-            return np.reshape(u,func.domain.shape)
+        shape = func.domain.shape
+        # Coordinate-dependent bounds need not have a common intersection.
+        lower = np.broadcast_to(np.asarray(func.dom_l, dtype=float), shape)
+        upper = np.broadcast_to(np.asarray(func.dom_u, dtype=float), shape)
+        if (np.any(np.isnan(lower)) or np.any(np.isnan(upper))
+                or np.any(lower > upper) or np.any(lower == np.inf)
+                or np.any(upper == -np.inf)):
+            raise ValueError("Each coordinate must have a nonempty finite-valued interval.")
+        finite_l, finite_u = np.isfinite(lower), np.isfinite(upper)
+        bounded = finite_l & finite_u
+        lower_only = finite_l & ~finite_u
+        upper_only = ~finite_l & finite_u
+        unbounded = ~finite_l & ~finite_u
+        numel = int(np.prod(shape))
+        if u is None:
+            u = np.empty(shape, dtype=float)
+            fractions = np.linspace(0., 1., numel + 2)[1:-1].reshape(shape)
+            # Convex interpolation avoids subtracting potentially large bounds.
+            u[bounded] = ((1. - fractions[bounded]) * lower[bounded]
+                          + fractions[bounded] * upper[bounded])
+            if np.any(lower_only | upper_only):
+                offsets = (np.exp(np.linspace(-np.sqrt(numel), np.sqrt(numel), numel))
+                           - 0.5 * np.exp(-np.sqrt(numel))).reshape(shape)
+                u[lower_only] = lower[lower_only] + offsets[lower_only]
+                u[upper_only] = upper[upper_only] - offsets[upper_only]
+            if np.any(unbounded):
+                values = np.tan(np.linspace(-np.pi/2 + 1/numel,
+                                            np.pi/2 - 1/numel, numel)).reshape(shape)
+                u[unbounded] = values[unbounded]
+            # Preserve coordinates whose feasible interval is a singleton.
+            fixed = lower == upper
+            u[fixed] = lower[fixed]
         else:
-            return np.reshape(u,func.domain.shape), np.reshape(h,func.domain.shape)
+            u = np.asarray(u).reshape(shape)
+        if (not np.all(np.isfinite(u)) or np.any(u < lower)
+                or np.any(u > upper)):
+            raise ValueError("The sample must satisfy the coordinate domain bounds.")
+        if eps_perturbation is None:
+            return u
+        h = np.ones(shape, dtype=float)
+        h[upper_only] = -1.
+        midpoint = 0.5 * lower[bounded] + 0.5 * upper[bounded]
+        direction = np.where(u[bounded] <= midpoint, 1., -1.)
+        half_width = 0.5 * upper[bounded] - 0.5 * lower[bounded]
+        scale = np.ones_like(half_width)
+        if eps_perturbation > 0:
+            # Divide only where rescaling is needed; zero-width coordinates
+            # get zero directions, without ever dividing by their width.
+            narrow = half_width < eps_perturbation
+            scale[narrow] = half_width[narrow] / eps_perturbation
+        scale[half_width == 0.] = 0.
+        h[bounded] = direction * scale
+        return u, h
     elif isinstance(func.domain, DirectSum):
         from regpy.functionals.base import Conj, FunctionalOnDirectSum, HorizontalShiftDilation
         if not isinstance(func, (FunctionalOnDirectSum,Conj,HorizontalShiftDilation)):
@@ -82,10 +114,13 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
                 funcs = (HorizontalShiftDilation(f, shift=sh, dilation=SDfunc.dilation) for f,sh in zip(SDfunc.func.funcs,func.domain.split(SDfunc.shift_val)))
             if isinstance(func,Conj):
                 funcs = (f.conj for f in funcs)
+        components = [None] * len(func.domain.summands) if u is None else func.domain.split(u)
         if eps_perturbation is None:
-            return func.domain.join(*(sample_essential_domain(funci) for funci in funcs))
+            return func.domain.join(*(sample_essential_domain(funci, u=ui)
+                                      for funci, ui in zip(funcs, components)))
         else:
-            xx,hh = zip(*(sample_essential_domain(funci, eps_perturbation=eps_perturbation) for funci in funcs))
+            xx,hh = zip(*(sample_essential_domain(funci, u=ui, eps_perturbation=eps_perturbation)
+                         for funci, ui in zip(funcs, components)))
             return func.domain.join(*xx), func.domain.join(*hh)
     
 

@@ -2409,7 +2409,8 @@ class LinearCombination(Functional):
             return operators.Zero(self.domain)
         if len(self.funcs) == 1:
             return self.coeffs[0] * self.funcs[0].hessian(x, **kwargs)
-        return operators.LinearCombination(
+        from regpy.operators.base import LinearCombination as OperatorLinearCombination
+        return OperatorLinearCombination(
             *((c, f.hessian(x, **kwargs)) for c, f in zip(self.coeffs, self.funcs)))
 
     def _single_convex_term(self):
@@ -3132,6 +3133,13 @@ class FunctionalOnDirectSum(Functional):
         List of functionals each defined on one summand of the direct sum of vector spaces.
     domain : regpy.vecsps.DirectSum
         Domain on which the combined functional is defined. 
+
+    Notes
+    -----
+    The Hilbert geometry is the direct sum of the component functionals'
+    ``h_domain`` spaces. In particular, components defined on dual Hilbert
+    spaces retain their dual geometry, as required by the componentwise
+    proximal operators and Moreau's identity.
     """
     def __init__(
         self,
@@ -3154,7 +3162,9 @@ class FunctionalOnDirectSum(Functional):
         is_separable = all([func.is_separable for func in funcs])
         methods = set.intersection(*[func.methods for func in funcs])
         conj_methods = set.intersection(*[func.conj.methods for func in funcs])
-        super().__init__(domain, 
+        super().__init__(domain,
+                        h_domain=hilbert.DirectSum(
+                            *[func.h_domain for func in funcs], vecsp=domain),
                         is_separable = is_separable,                        
                         methods=methods,conj_methods=conj_methods 
                         )
