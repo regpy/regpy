@@ -57,9 +57,11 @@ class Bregman(RegSolver):
         Any iterable is accepted, including RegPy's arithmetic Sequences.
         Values are validated when used. An empty sequence raises ValueError.
         If None, repeat ``setting.regpar`` ``nr_its`` times.
-    inner_solver : str or dict, optional
-        Convex method abbreviation, default 'FISTA', or a method dictionary
-        as stored in ``setting._methods``. Dictionaries must contain 'class'
+    inner_solver : str or dict or None, optional
+        Convex method abbreviation, or a method dictionary
+        as stored in ``setting._methods`` or None (default). 
+        If None, the default inner solver of the setting is used.
+        Dictionaries must contain 'class'
         and may specify 'primal', 'full', 'method_params', and 'stoprule_params'.
         Executed solvers, stopping histories, and cached applicability results
         are not reused. A string selects from the convex-method registry;
@@ -131,7 +133,7 @@ class Bregman(RegSolver):
         self,
         setting: Setting,
         regpars: Sequence | Iterable[float] | None = None,
-        inner_solver: str | dict[str, Any] = 'FISTA',
+        inner_solver: str | dict[str, Any] | None = None,
         *,
         nr_its: int = 2,
         init: Vector | None = None,
@@ -183,9 +185,14 @@ class Bregman(RegSolver):
         return alpha
 
     @staticmethod
-    def _method_template(setting: Setting, method: str | dict) -> dict:
+    def _method_template(setting: Setting, method: str | dict | None) -> dict:
         from ..setting import get_convex_solver_dictionary
 
+        if method is None:
+            if setting._default_inner_solver is None:
+                raise RuntimeError('Inner solver is neither specified as argument of the constructor nor as default in the setting.')            
+            else:
+                method = setting._default_inner_solver            
         if isinstance(method, str):
             registry = get_convex_solver_dictionary()
             configured = getattr(setting,
@@ -327,8 +334,8 @@ class RunOnAlphaGrid(RegSolver):
     regpars : Sequence or iterable of float
         Nonempty, finite or infinite iterable of finite positive parameters.
         Parameters are validated lazily, as in Bregman.
-    inner_solver : str or dict, optional
-        Convex solver label (default 'FISTA') or method dictionary, as in
+    inner_solver : str or dict or None, optional
+        Convex solver label or method dictionary or None, as in
         Bregman. Labels retain configuration from ``setting._convex_solvers``.
     init : Vector or None, optional
         Fixed initial guess for every solve, default ``setting.init``.
@@ -355,7 +362,7 @@ class RunOnAlphaGrid(RegSolver):
         self,
         setting: Setting,
         regpars: Sequence | Iterable[float],
-        inner_solver: str | dict[str, Any] = 'FISTA',
+        inner_solver: str | dict[str, Any] | None = None,
         *,
         init: Vector | None = None,
         logging_level: int | str = 'INFO',

@@ -245,7 +245,8 @@ class HilbertSetting(Setting):
               
         penalty = L2(op.domain) if penalty is None else penalty
         data_fid = L2(op.codomain) if data_fid is None else data_fid
-        super().__init__(op, penalty, data_fid, regpar, 
+        super().__init__(op, penalty, data_fid, 
+                              regpar = regpar, 
                               data = data, 
                               exact_data = exact_data, 
                               init=init, 
@@ -285,7 +286,13 @@ class BoundConstrSetting(Setting):
                  constr_l: Vector | None = None, 
                  constr_u: Vector | None = None,
                  regpar: float | None = None, 
-                 **kwargs
+                 incorporate_init_in_penalty: bool = True,
+                 data: Vector|None = None,
+                 exact_data:Vector|None = None,
+                 codomain_free: bool = False,
+                 logging_level = "INFO",
+                 explicitDataWarning:bool = True,                 
+                 _primal_setting:Setting | None =None
                  ) -> None:
         from regpy.functionals import IntegralFunctionalBase
 
@@ -293,10 +300,20 @@ class BoundConstrSetting(Setting):
             raise ValueError("BoundConstrSetting requires a real domain.")
        
         super().__init__(
-            op, 
-            penalty, 
-            data_fid,
-            regpar, **kwargs
+                        op, 
+                        penalty, 
+                        data_fid,
+                        regpar = regpar, 
+                        incorporate_init_in_penalty=incorporate_init_in_penalty,
+                        exact_data=exact_data,
+                        data = data,
+                        codomain_free=codomain_free, 
+                        logging_level=logging_level, 
+                        explicitDataWarning=explicitDataWarning, 
+                        _primal_setting=_primal_setting,
+                        default_linear_regmethod = 'RunOnAlphaGrid',
+                        default_nonlinear_regmethod = 'IRN',
+                        default_inner_solver = 'PDHG'            
         )
         if not isinstance(self.penalty, IntegralFunctionalBase):
             raise TypeError(Errors.type_error("The penalty must be a subtype of IntegralFunctionalBase.",self))
