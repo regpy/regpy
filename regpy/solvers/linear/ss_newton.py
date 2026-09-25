@@ -1,3 +1,12 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from numpy.typing import ArrayLike
+    from regpy.vecsps.base import Scalar, Vector
+    from regpy.operators.base import Operator
+    from regpy._typing import Mask
 from math import sqrt,inf
 from collections.abc import Iterable
 from numbers import Real
@@ -21,9 +30,22 @@ from ..setting import Setting
 from .tikhonov import TikhonovCG
 __all__ = ["SemiSmoothNewton"]
 
-def quadTaylor(func:Functional,x):
-    """returns the quadratic Taylor polynomial of a functional at a given point as a SquaredNorm functional.
+def quadTaylor(func:Functional,x: ReadOnlyVector) -> SquaredNorm:
+    r"""returns the quadratic Taylor polynomial of a functional at a given point as a SquaredNorm functional.
     The Gram matrix of the Hilbert space underlying the new functional is set to the Hessian of the given functional.
+    
+    Parameters
+    ----------
+    func: Functional
+        Functional to evaluate or transform.
+    x: ReadOnlyVector
+        Input vector; its coefficients are only read.
+    
+    
+    Returns
+    -------
+    SquaredNorm
+        Result described above.
     """
     if not isinstance(func,Functional):
         raise TypeError(Errors.type_error("func must be a Functional",func))
@@ -39,12 +61,12 @@ def quadTaylor(func:Functional,x):
 
 class SemiSmoothNewton(RegSolver):
     r"""Semi-smooth Newton method for minimizing smooth Tikhonov functionals
-
+    
     .. math::
         \mathcal{S}_{g^{\delta}}(Tf) + \alpha * \mathcal{R}(f) 
-
+    
     subject to bilateral constraints 
-
+    
     ..math::
         psi_{minus} \leq f \leq psi_{plus} 
     
@@ -53,14 +75,10 @@ class SemiSmoothNewton(RegSolver):
     
     Parameters
     ----------
-    is_primal : bool, optional
-        Whether iterates represent the original primal problem (default True).
-        Pass False when solving its dual. This labels coordinates and does not
-        change the iteration formulas or construct a dual setting.
     setting: Setting
         The setting. The operator domain must be a real ordered MaskableVectorSpace
-        equipped with a Hilbert space. 
-    init: Vector or None, default: None
+        equipped with a Hilbert space.
+    init: ReadOnlyVector | None [default: None]
         Zeroth iterate. If None, it is taken from the setting. 
         init must be feasible. It is exposed as iteration zero through x, y
         and primal(), before any CG solve. Boundary multipliers are initialized
@@ -69,16 +87,23 @@ class SemiSmoothNewton(RegSolver):
         an ordinary active-set Newton step; there is no preliminary
         unconstrained Taylor solve. Iteration drivers retain their usual
         convention of yielding only completed steps.
-    psi_plus, psi_minus : real scalar or domain vector, optional
+    psi_plus: ReadOnlyVector | float | None [default: None]
         Bound constraints, defaulting to the penalty's essential-domain bounds
         (including constr_u/constr_l). Finite bounds must be in its essential
         domain; infinite bounds require an unbounded domain in that direction.
-
-    cg_pars: dictionary, default: None
+    psi_minus: ReadOnlyVector | float | None [default: None]
+        Bound constraints, defaulting to the penalty's essential-domain bounds
+        (including constr_u/constr_l). Finite bounds must be in its essential
+        domain; infinite bounds require an unbounded domain in that direction.
+    cg_pars: dict[str, Any] | None [default: None]
         Additional CG parameters. The dictionary is copied. The reltolx value
         is supplied by cg_reltols, overriding any reltolx entry here; other
         stopping tolerances, such as tol and reltoly, remain unchanged.
-    cg_reltols : iterable of float or None, optional
+    logging_level: int | str [default: 'INFO']
+        default: logging:INFO
+    cg_logging_level: int | str [default: 'WARNING']
+        default: logging.INFO
+    cg_reltols: Iterable[float] | None [default: None]
         Positive finite relative domain tolerances for successive CG solves.
         None creates a fresh (1.0/3.0) ** Naturals(), yielding
         1, 1/3, 1/9, ... . The first value is used for the first Newton step, then
@@ -86,11 +111,13 @@ class SemiSmoothNewton(RegSolver):
         indices active consume no value. Values are validated when consumed.
         Exhaustion raises ValueError if another CG solve is needed; it does
         not imply convergence of the Newton iteration.
-    logging_level: Loglevel
-        default: logging:INFO
-    cg_logging_level: Loglevel
-        default: logging.INFO
-
+    is_primal: bool [default: True]
+        Whether iterates represent the original primal problem.
+        Pass False when solving its dual. This labels coordinates and does not
+        change the iteration formulas or construct a dual setting.
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
+    
     Notes
     -----
     A penalty with restricted essential domain must be an IntegralFunctionalBase
@@ -108,7 +135,7 @@ class SemiSmoothNewton(RegSolver):
     endpoints are extended quadratically at the actual constraint (not at an
     interior midpoint). Finite values and first and second derivatives are
     required at that point, even when it is a natural endpoint.
-
+    
     For a conjugate integral penalty, linear extensions of its private primal
     functional are replaced by quadratic extensions at the same primal joins.
     This extends the dual penalty quadratically beyond its original bounds.
@@ -119,7 +146,7 @@ class SemiSmoothNewton(RegSolver):
     the active-set constraints.
     Direct sums of these functionals are handled componentwise, recursively.
     The original setting penalty is not modified.
-
+    
     For separable fidelities, each Hessian must be represented as pointwise
     multiplication or a scalar multiple of Identity, with finite nonnegative
     entries. Positive-curvature coordinates define the inner CG data space.
@@ -128,7 +155,7 @@ class SemiSmoothNewton(RegSolver):
     using the shifted penalty reference, without consuming a CG tolerance.
     The penalty Taylor Hessian must still be invertible. Inner duals are lifted
     to the full codomain, using -S'/regpar on zero-curvature coordinates.
-
+    
     Initial multipliers use the same Hilbert-gradient coordinates as the
     subsequent steps: G^{-1}(T* S'(T x0) + regpar R'(x0)), where G is the
     domain Gram operator. On upper bounds lam_plus is minus this gradient;
@@ -137,7 +164,6 @@ class SemiSmoothNewton(RegSolver):
     multiplier releases that constraint in the next active set.
     Equal initial and predicted active sets do not mark the solver converged;
     an interior starting point may still require a Newton solve.
-
     """
 
     def __init__(self, 
@@ -145,13 +171,13 @@ class SemiSmoothNewton(RegSolver):
                  init: ReadOnlyVector | None = None,
                  psi_plus: ReadOnlyVector | float | None = None, 
                  psi_minus: ReadOnlyVector | float | None = None,
-                 cg_pars = None, 
-                 logging_level = "INFO", 
-                 cg_logging_level = "WARNING",
+                 cg_pars: dict[str, Any] | None = None, 
+                 logging_level: int | str = "INFO", 
+                 cg_logging_level: int | str = "WARNING",
                  cg_reltols: Iterable[float] | None = None,
                  is_primal: bool = True,
-                 **kwargs
-                 ):
+                 **kwargs: Any
+                 ) -> None:
         super().__init__(setting, is_primal=is_primal)
 
         out, _ = SemiSmoothNewton.check_applicability(self.setting)
@@ -211,7 +237,14 @@ class SemiSmoothNewton(RegSolver):
         self.active_minus = self.op.domain.geq_mask(self.lam_minus - self.regpar * (self.x - self.psi_minus), self.op.domain.zeros())
 
     def _next_cg_parameters(self) -> dict:
-        """Consume one relative tolerance for an actual CG solve."""
+        r"""Consume one relative tolerance for an actual CG solve.
+        
+        
+        Returns
+        -------
+        dict
+            Result described above.
+        """
         try:
             tolerance = next(self.cg_reltols)
         except StopIteration as error:
@@ -228,7 +261,7 @@ class SemiSmoothNewton(RegSolver):
         parameters['reltolx'] = tolerance
         return parameters
 
-    def _constraint_vector(self, value, name):
+    def _constraint_vector(self, value: Scalar | ArrayLike, name: str) -> Vector:
         space = self.op.domain
         if value is None:
             raise ValueError(f"{name} must be specified.")
@@ -245,7 +278,7 @@ class SemiSmoothNewton(RegSolver):
             raise ValueError(f"{name} must not contain NaN.")
         return result
 
-    def _validate_constraints(self, penalty):
+    def _validate_constraints(self, penalty: Functional) -> None:
         space = self.op.domain
         lower = self._constraint_vector(penalty.dom_l, "penalty lower bound")
         upper = self._constraint_vector(penalty.dom_u, "penalty upper bound")
@@ -267,8 +300,20 @@ class SemiSmoothNewton(RegSolver):
                     raise ValueError(f"{name} is not in the penalty's essential domain.")
 
     @staticmethod
-    def _check_extension_point(functional, threshold, mask, *, positive=False):
-        """Require finite Taylor data; dual quadratic tails need positive curvature."""
+    def _check_extension_point(functional: Functional, threshold: ReadOnlyVector | float, mask: Mask, *, positive: bool=False) -> None:
+        r"""Require finite Taylor data; dual quadratic tails need positive curvature.
+        
+        Parameters
+        ----------
+        functional: Functional
+            Functional to evaluate or transform.
+        threshold: ReadOnlyVector | float
+            Input vector; its coefficients are only read.
+        mask: Mask
+            Coordinate-selection mask in the format used by the vector space.
+        positive: bool [default: False]
+            Positive.
+        """
         for method in ('_f', '_f_deriv', '_f_second_deriv'):
             values = functional.domain.zeros()
             with np.errstate(all='ignore'):
@@ -287,22 +332,58 @@ class SemiSmoothNewton(RegSolver):
                 )
 
     @staticmethod
-    def _is_shifted_integral(penalty) -> bool:
-        """Recognize an integral functional beneath affine argument wrappers."""
+    def _is_shifted_integral(penalty: Functional) -> bool:
+        r"""Recognize an integral functional beneath affine argument wrappers.
+        
+        Parameters
+        ----------
+        penalty: Functional
+            Penalty.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         while isinstance(penalty, HorizontalShiftDilation):
             penalty = penalty.func
         return isinstance(penalty, IntegralFunctionalBase)
 
     @staticmethod
-    def _is_integral_conjugate(penalty) -> bool:
-        """Recognize shifts of conjugates and conjugates of shifted integrals."""
+    def _is_integral_conjugate(penalty: Functional) -> bool:
+        r"""Recognize shifts of conjugates and conjugates of shifted integrals.
+        
+        Parameters
+        ----------
+        penalty: Functional
+            Penalty.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         while isinstance(penalty, HorizontalShiftDilation):
             penalty = penalty.func
         return (isinstance(penalty, Conj)
                 and SemiSmoothNewton._is_shifted_integral(penalty.func))
 
-    def _extend_conjugate_primal(self, primal):
-        """Replace primal linear tails, preserving every affine wrapper."""
+    def _extend_conjugate_primal(self, primal: bool) -> Functional:
+        r"""Replace primal linear tails, preserving every affine wrapper.
+        
+        Parameters
+        ----------
+        primal: bool
+            Primal.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
         if isinstance(primal, HorizontalShiftDilation):
             result = deepcopy(primal)
             result.func = self._extend_conjugate_primal(primal.func)
@@ -324,8 +405,24 @@ class SemiSmoothNewton(RegSolver):
                 setattr(primal, 'quad_taylor_' + side, threshold)
         return primal
 
-    def _extended_penalty(self, penalty, lower=None, upper=None):
-        """Extend a private penalty while preserving the original active-set bounds."""
+    def _extended_penalty(self, penalty: Functional, lower: ReadOnlyVector | float | None=None, upper: ReadOnlyVector | float | None=None) -> Functional:
+        r"""Extend a private penalty while preserving the original active-set bounds.
+        
+        Parameters
+        ----------
+        penalty: Functional
+            Penalty.
+        lower: ReadOnlyVector | float | None [default: None]
+            Input vector; its coefficients are only read.
+        upper: ReadOnlyVector | float | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
         lower = self.psi_minus if lower is None else lower
         upper = self.psi_plus if upper is None else upper
         if isinstance(penalty, FunctionalOnDirectSum):
@@ -383,11 +480,17 @@ class SemiSmoothNewton(RegSolver):
             raise ValueError("The penalty could not be extended to the full domain space.")
         return result
 
-    def _fidelity_model(self):
-        """Return (quadratic fidelity, projected operator, projection, linear gradient).
-
+    def _fidelity_model(self) -> tuple[Any, Any, None, None] | tuple[None, None, None, Any] | tuple[Any, Any, Any, Any]:
+        r"""Return (quadratic fidelity, projected operator, projection, linear gradient).
+        
         The final vector is the full codomain covector on zero-curvature
         coordinates. No Hilbert Gram inverse is applied to this covector.
+        
+        
+        Returns
+        -------
+        tuple[Any, Any, None, None] | tuple[None, None, None, Any] | tuple[Any, Any, Any, Any]
+            Result described above.
         """
         if not self.S.is_separable:
             return quadTaylor(self.S, self.y), self.op, None, None
@@ -415,8 +518,9 @@ class SemiSmoothNewton(RegSolver):
         model = SquaredNorm(GramHilbertSpace(reduced_hessian), a=1., b=b, c=constant)
         return model, projection * self.op, projection, linear
 
-    def _next(self):
-        """compute active and inactive sets"""
+    def _next(self) -> None:
+        r"""compute active and inactive sets
+        """
         self.active_plus_old=self.active_plus
         self.active_minus_old=self.active_minus
         self.active = self.op.domain.logical_or(self.active_plus, self.active_minus)
@@ -518,8 +622,18 @@ class SemiSmoothNewton(RegSolver):
         if added_ind+removed_ind==0 and self.data_fid.is_quadratic and self.R.is_quadratic:
             self.converge()
 
-    def _store_cg_dual(self, solver, projection=None, linear=None) -> None:
-        """Snapshot the latest inner dual before its Taylor functional changes."""
+    def _store_cg_dual(self, solver: RegSolver, projection: Operator | None=None, linear: bool | None=None) -> None:
+        r"""Snapshot the latest inner dual before its Taylor functional changes.
+        
+        Parameters
+        ----------
+        solver: RegSolver
+            Solver.
+        projection: Operator | None [default: None]
+            Projection.
+        linear: bool | None [default: None]
+            Linear.
+        """
         pair = solver.dual()
         if pair is None or pair[0] is None:
             raise RuntimeError("The inner CG solver did not provide a dual iterate.")
@@ -530,12 +644,18 @@ class SemiSmoothNewton(RegSolver):
         self.op.codomain.copyto(self._cg_dual, value)
         self._cg_dual_adjoint = None
 
-    def dual(self):
-        """Return the dual pair used by duality-based stopping rules.
-
+    def dual(self) -> tuple[Vector | None, Vector | None]:
+        r"""Return the dual pair used by duality-based stopping rules.
+        
         At iteration zero, use the neutral dual point p=0. Afterward,
         reconstruct the dual pair exactly as the setting previously did
         when this solver exposed only primal(). The CG iteration is unchanged.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
         """
         if self.iteration_step_nr == 0:
             return (
@@ -549,9 +669,9 @@ class SemiSmoothNewton(RegSolver):
         )
         return dual
         
-    def dual_cg(self):
-        """Return the latest inner CG dual vector and its full adjoint image.
-
+    def dual_cg(self) -> tuple[Any, Any]:
+        r"""Return the latest inner CG dual vector and its full adjoint image.
+        
         At initialization use the neutral pair (0, 0). Inactive-set CG uses
         T composed with a coordinate mask, so its second dual component is
         projected and cannot be reused here. Compute T* p lazily and cache it.
@@ -559,6 +679,12 @@ class SemiSmoothNewton(RegSolver):
         previous dual pair. For nonquadratic fidelities p comes from the
         quadratic Taylor model; a smaller or finite original gap is not
         guaranteed. No projection or alteration of p is performed.
+        
+        
+        Returns
+        -------
+        tuple[Any, Any]
+            Result described above.
         """
         if self._cg_dual is None:
             self._cg_dual = self.op.codomain.zeros()
@@ -567,7 +693,15 @@ class SemiSmoothNewton(RegSolver):
             self._cg_dual_adjoint = self.op.adjoint(self._cg_dual)
         return self._cg_dual, self._cg_dual_adjoint
 
-    def primal(self):
+    def primal(self) -> tuple[Vector | None, Vector | None]:
+        r"""Return the current primal iterate and operator image, when available.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
+        """
         projected_x = self.op.domain.empty()
         self.op.domain.copyto(projected_x, self.x)
         self.op.domain.copyto(projected_x, self.psi_minus, where=self.active_minus)
@@ -575,7 +709,22 @@ class SemiSmoothNewton(RegSolver):
         return (projected_x, self.op(projected_x))
 
     @staticmethod
-    def check_applicability(setting,op_norm=None):
+    def check_applicability(setting: Setting,op_norm: float | None=None) -> tuple[dict[str, Any], dict[str, Any]]:
+        r"""Check the requirements of this solver for the supplied setting.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        
+        
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any]]
+            Result described above.
+        """
         out = {'info':''}
         if not setting.op.linear:
             out['info'] += 'Operator must be linear. '
@@ -601,13 +750,41 @@ class SemiSmoothNewton(RegSolver):
                 out['info'] += 'Separable fidelity requires a real ordered maskable codomain. ' 
             if setting.data_fid.Lipschitz==np.inf:
                 out['info'] += 'Data functional not Lipschitz continuous. '                
-        def check_penalty(penalty):
+        def check_penalty(penalty: Functional) -> bool:
+            r"""Check if penalty is separable and has a hessian.
+            
+            Parameters
+            ----------
+            penalty: Functional
+                Penalty.
+            
+            
+            Returns
+            -------
+            bool
+                Whether the stated condition is satisfied.
+            """
             if isinstance(penalty, FunctionalOnDirectSum):
                 return all(check_penalty(f) for f in penalty.funcs)
             if not penalty.is_separable or 'hessian' not in penalty.methods:
                 return False
             lower, upper = penalty.dom_l, penalty.dom_u
-            def infinite(bound, sign):
+            def infinite(bound: ReadOnlyVector | float, sign: int) -> bool:
+                r"""Infinite.
+                
+                Parameters
+                ----------
+                bound: ReadOnlyVector | float
+                    Input vector; its coefficients are only read.
+                sign: int
+                    Sign.
+                
+                
+                Returns
+                -------
+                bool
+                    Whether the stated condition is satisfied.
+                """
                 if bound is None:
                     return False
                 vals = (bound,) if np.isscalar(bound) else penalty.domain.iter_coefficients(bound)
@@ -622,15 +799,20 @@ class SemiSmoothNewton(RegSolver):
         out['rate'] = np.nan
         return out, None
 
-    def _get_second_R_derivatives_at_bound_constraints(self):
-        """
-        Since the (separable!) penalty functional R may not be defined outside of the feasible set and SemiSmoothNewton may produce infeasible iterates 
+    def _get_second_R_derivatives_at_bound_constraints(self) -> tuple[Any, Any]:
+        r"""Since the (separable!) penalty functional R may not be defined outside of the feasible set and SemiSmoothNewton may produce infeasible iterates 
         for which the gradient of the penalty must be evaluated, we extend the R by a quadratic function outside of the feasible interval in each variable.
         For the evaluation of the gradient of R, evaluations at the boundaries and knowledge of the second derivatives suffice. 
-
+        
         Returns: 
         Rpp_plus, Rpp_minus:
             Arrays of the the of the grid containing the second derivatives of the component functions of R at the upper and lower bound.  
+        
+        
+        Returns
+        -------
+        tuple[Any, Any]
+            Result described above.
         """
         space = self.op.domain
         lower = list(space.iter_coefficients(self.psi_minus))

@@ -3,6 +3,11 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.solvers.setting import Setting
+    from regpy.solvers.solver import RegSolver
+
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeAlias, cast, overload
@@ -14,8 +19,6 @@ from regpy.util import Errors
 from regpy.vecsps import ReadOnlyVector, Vector
 from .general import Schedule, MissingValueError, StopRule, _copy_vector
 
-if TYPE_CHECKING:
-    from regpy.solvers import RegSolver, Setting
 
 Norm: TypeAlias = Callable[[ReadOnlyVector], float]
 DistanceFunction: TypeAlias = Callable[
@@ -29,36 +32,34 @@ __all__: list[str] = [
 
 class Discrepancy(StopRule):
     r"""Morozov's discrepancy principle.
-
+    
     Stops at the first iterate at which the residual is smaller than a
     pre-determined multiple of the noise level::
-
+    
         ||y - data|| < tau * noiselevel
-
+    
     Parameters
     ----------
-    noiselevel : float
+    noiselevel: float
         An estimate of the distance from the noisy data to the exact data.
-    tau : float, optional
-        Multiplier of the noise level. Defaults to ``2`` and should be greater
-        than one.
-    setting : Setting | None, optional
+    tau: float [default: 2.0]
+        Multiplier of the noise level.
+    setting: Setting | None [default: None]
         Setting providing data and the codomain norm. If omitted, ``data`` and
         ``norm`` must be given explicitly.
-    data : ReadOnlyVector | ObsDataT | None, optional
-        The right-hand side (noisy data) or ``None`` (default).
+    data: ReadOnlyVector | ObsDataT | None [default: None]
+        The right-hand side (noisy data) or ``None``.
         By default, ``setting.data`` is used. The discrepancy calculation
         requires the selected representation to support subtraction from the
         solver's codomain vector.
-    norm : callable | None, optional
+    norm: Norm | None [default: None]
         The norm with respect to which the discrepancy should be measured or
-        ``None`` (default).
+        ``None``.
         In the default case, ``setting.h_codomain.norm`` is used.
-    noise_level_is_relative : bool, optional
+    noise_level_is_relative: bool [default: False]
         Whether ``noiselevel`` is relative to the norm of the observations.
-        Defaults to ``False``.
-    schedule : iterable of int or None, optional
-        Iterations at which the rule is evaluated. If ``None`` (default), it
+    schedule: Schedule | None [default: None]
+        Iterations at which the rule is evaluated. If ``None``, it
         is evaluated at every iteration.
     """
     @overload
@@ -71,7 +72,7 @@ class Discrepancy(StopRule):
         data: ReadOnlyVector | ObsDataT | None = None,
         norm: Norm | None = None,
         noise_level_is_relative: bool = False,
-        schedule: Schedule = None,
+        schedule: Schedule | None = None,
     ) -> None: ...
 
     @overload
@@ -84,7 +85,7 @@ class Discrepancy(StopRule):
         tau: float = 2.,
         setting: Setting | None = None,
         noise_level_is_relative: bool = False,
-        schedule: Schedule = None,
+        schedule: Schedule | None = None,
     ) -> None: ...
 
     @overload
@@ -97,7 +98,7 @@ class Discrepancy(StopRule):
         tau: float = 2.,
         setting: Setting | None = None,
         noise_level_is_relative: bool = False,
-        schedule: Schedule = None,
+        schedule: Schedule | None = None,
     ) -> None: ...
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -181,29 +182,29 @@ class Discrepancy(StopRule):
 
 class LCurve(StopRule):
     r"""L Curve method.
-
+    
     Computes ``||x||`` and ``||y-data||`` for all available parameters and
     returns the iterate minimizing their product (the currently implemented
     discrete L-curve criterion).
-
+    
     Parameters
     ----------
-    setting : Setting
+    setting: Setting
         Tikhonov setting supplying the data and Hilbert norms.
-    solver : RegSolver
+    solver: RegSolver
         Solver used for computing the reconstructions.
-    max_iter : int, optional
-        Maximum number of regularization parameters. Defaults to ``1000``.
-    schedule : iterable of int or None, optional
+    max_iter: int [default: 1000]
+        Maximum number of regularization parameters.
+    schedule: Schedule | None [default: None]
         Iterations at which the rule records and evaluates a parameter. If
-        ``None`` (default), every iteration is used.
+        ``None``, every iteration is used.
     """
     def __init__(
         self,
         setting: Setting,
         solver: RegSolver,
         max_iter: int = 1000,
-        schedule: Schedule = None,
+        schedule: Schedule | None = None,
     ) -> None:
         super().__init__(schedule=schedule)
         self.data: ReadOnlyVector | ObsDataT | None = setting.data
@@ -241,6 +242,14 @@ class LCurve(StopRule):
         return self.it >= self.max_iter
    
     def best_stopping_index(self) -> int:
+        r"""Best stopping index.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         res = self.history_dict["residual"]
         norm_x = self.history_dict["norm"]
         #alphas = self.history_dict["alphas"]
@@ -258,33 +267,41 @@ class LCurve(StopRule):
         return int(np.argmin(np.array(res)*np.array(norm_x)))
         
     def best_iterate(self) -> Vector:
+        r"""Best iterate.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         return self.recos[self.best_stopping_index()]
 
 class QuasiOpt(StopRule):
     r"""Quasi-optimality principle.
-
+    
     Computes x for all available parameters
     and returns as best iterate that x_{k+1} where the ||x_{k+1} - x_{k}|| 
     is minimal
-
+    
     Parameters
     ----------
-    setting : Setting
+    setting: Setting
         Tikhonov setting supplying the domain norm.
-    solver : RegSolver
+    solver: RegSolver
         Solver used for computing the reconstructions.
-    max_iter : int, optional
-        Maximum number of regularization parameters. Defaults to ``1000``.
-    schedule : iterable of int or None, optional
+    max_iter: int [default: 1000]
+        Maximum number of regularization parameters.
+    schedule: Schedule | None [default: None]
         Iterations at which the rule records and evaluates a parameter. If
-        ``None`` (default), every iteration is used.
+        ``None``, every iteration is used.
     """
     def __init__(
         self,
         setting: Setting,
         solver: RegSolver,
         max_iter: int = 1000,
-        schedule: Schedule = None,
+        schedule: Schedule | None = None,
     ) -> None:
         super().__init__(schedule=schedule)
         self.data: ReadOnlyVector | ObsDataT | None = setting.data
@@ -317,36 +334,50 @@ class QuasiOpt(StopRule):
         return self.it >= self.max_iter
     
     def best_stopping_index(self) -> int:
+        r"""Best stopping index.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         norm_diff = self.history_dict["norm_diff"]
         return int(np.argmin(norm_diff[1:])) + 1
 
     def best_iterate(self) -> Vector:
+        r"""Best iterate.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         return self.recos[self.best_stopping_index()]
     
 class Lepskii(StopRule):
     r"""Lepskiĭ's balancing principle.
-
+    
     The rule computes reconstructions for all considered parameters. Before
     applying the balancing criterion, it sorts the regularization parameters
     increasingly. The supplied error-propagation estimate must be decreasing
     along that order.
-
+    
     Parameters
     ----------
-    setting : Setting
+    setting: Setting
         Tikhonov setting supplying the domain norm.
-    solver : RegSolver
+    solver: RegSolver
         Solver used for computing the reconstructions.
-    error_prop : callable
+    error_prop: ErrorPropagation | None [default: None]
         Error-propagation estimate as a function of the regularization
-        parameter. Although the argument defaults to ``None`` for backward
-        compatibility, a callable must currently be supplied because
-        automatic estimation is not implemented.
-    max_iter : int, optional
-        Maximum number of regularization parameters. Defaults to ``100``.
-    schedule : iterable of int or None, optional
+        parameter. Although the argument
+    max_iter: int [default: 100]
+        Maximum number of regularization parameters.
+    schedule: Schedule | None [default: None]
         Iterations at which the rule records and evaluates a parameter. If
-        ``None`` (default), every iteration is used.
+        ``None``, every iteration is used.
     """
 
     def __init__(
@@ -355,7 +386,7 @@ class Lepskii(StopRule):
         solver: RegSolver,
         error_prop: ErrorPropagation | None = None,
         max_iter: int = 100,
-        schedule: Schedule = None,
+        schedule: Schedule | None = None,
     ) -> None:
         super().__init__(schedule=schedule)
         self.data: ReadOnlyVector | ObsDataT | None = setting.data
@@ -390,6 +421,14 @@ class Lepskii(StopRule):
         return self.it >= self.max_iter
 
     def best_stopping_index(self) -> int:
+        r"""Best stopping index.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         alphas = np.asarray(self.history_dict["alphas"])
         if not np.all(alphas[:-1] <= alphas[1:]):
             idx = np.argsort(alphas)
@@ -411,34 +450,41 @@ class Lepskii(StopRule):
         return int(idx[bark - 1])
 
     def best_iterate(self) -> Vector:
+        r"""Best iterate.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         return self.recos[self.best_stopping_index()]
 
 
 class Oracle(StopRule):
     r"""Oracle stoprule. Returns the iterate that is closest to the exact solution in terms of the given distance function.
     Useful for testing purposes and monitoring when the exact solution is known.
-
-
+    
+    
     Parameters
     ----------
-    setting : Setting
+    setting: Setting
         Setting whose operator domain contains the exact solution.
-    exact_solution : ReadOnlyVector | None, optional
+    exact_solution: ReadOnlyVector | None [default: None]
         Exact solution. If omitted, ``setting.exact_solution`` is used.
-    distance_function : callable | None, optional
+    distance_function: DistanceFunction | None [default: None]
         The distance function to measure the distance between the current iterate and the exact solution. 
         distance_function(x, exact_solution) -> float
-        Defaults to None, in which case the norm of the operator's domain is applied to x-exact_solution.
-    schedule : iterable of int or None, optional
+    schedule: Schedule | None [default: None]
         Iterations at which errors and reconstructions are recorded. If
-        ``None`` (default), every iteration is used.
+        ``None``, every iteration is used.
     """
     def __init__(
         self,
         setting: Setting,
         exact_solution: ReadOnlyVector | None = None,
         distance_function: DistanceFunction | None = None,
-        schedule: Schedule = None,
+        schedule: Schedule | None = None,
     ) -> None:
         super().__init__(schedule=schedule)
         self.data: ReadOnlyVector | ObsDataT | None = setting.data
@@ -474,9 +520,25 @@ class Oracle(StopRule):
         return False
 
     def best_stopping_index(self) -> int:
+        r"""Best stopping index.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         return int(np.argmin(self.history_dict["error"]))
 
     def best_iterate(self) -> Vector:
+        r"""Best iterate.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         return self.recos[self.best_stopping_index()]
     
 
@@ -484,12 +546,25 @@ class Oracle(StopRule):
 from .general import CountIterations_factory, _capped_factory
 
 
-def Discrepancy_factory(setting, params: dict) -> StopRule:
-    """Create Discrepancy plus an iteration cap (timing and counts enabled).
-
+def Discrepancy_factory(setting: Setting, params: dict) -> StopRule:
+    r"""Create Discrepancy plus an iteration cap (timing and counts enabled).
+    
     absolute_noise_level defaults to the setting's noise model; tau defaults
     to 2.1. rule_params can override constructor options, including noiselevel.
     The default selector handles unavailable noise and codomain-free settings.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    params: dict
+        Options for params.
+    
+    
+    Returns
+    -------
+    StopRule
+        Result described above.
     """
     options = {key: params[key] for key in
                ('tau', 'data', 'norm', 'noise_level_is_relative', 'schedule')

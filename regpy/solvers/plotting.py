@@ -1,5 +1,10 @@
 """Convergence plots; Matplotlib is imported only when plotting."""
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from regpy.solvers.setting import Setting
 from collections.abc import Iterator, Sequence
 from typing import TYPE_CHECKING
 import numpy as np
@@ -7,8 +12,6 @@ from regpy.stoprules import (
     CountIterations, DualityGapStopping, ErrorMonitor,
     OptimalityCondStopping, StopRule,
 )
-if TYPE_CHECKING:
-    from regpy.solvers import Setting
 
 __all__ = ['convergence_plots', 'op_eval_over_time_plot', 'plot_operator_evaluations', 'get_method_colors']
 
@@ -25,26 +28,39 @@ _PLOT_SPECS = (
 def get_method_colors(
     setting: Setting, methods: list[str] | None = None,
 ) -> dict[str, tuple[float, float, float, float]]:
-    """Return persistent method colors for convergence and application plots.
-
+    r"""Return persistent method colors for convergence and application plots.
+    
     ``methods`` contains short names from ``setting._methods``; None selects
     all registered methods. On first use, colors are allocated in the requested
     order from Matplotlib's current color cycle. Later calls reuse assigned
     colors regardless of selection, order, or changes to the color cycle.
     The palette repeats when exhausted. New methods receive the next color.
-
+    
     Colors and the initial palette are stored privately on the setting. The
     returned dictionary is a copy, with concrete RGBA tuples as values.
     No convergence plot needs to have been created first. Matplotlib is
     imported only when this helper is called.
-
+    
     Application code can use::
-
+    
         colors = get_method_colors(setting, list(reconstructions))
         ax.plot(grid, reconstructions[method], color=colors[method])
-
+    
     Raises TypeError for an invalid registry or methods argument and
     ValueError for unknown method names.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    methods: list[str] | None [default: None]
+        Names of the implemented functional operations.
+    
+    
+    Returns
+    -------
+    dict[str, tuple[float, float, float, float]]
+        Result described above.
     """
     import matplotlib.pyplot as plt
     from matplotlib.colors import to_rgba
@@ -75,15 +91,43 @@ def get_method_colors(
     return {name: colors[name] for name in names}
 
 
-def _history_keys(component, subplot_title, default_keys):
-    """Resolve the dynamically named additional gap histories."""
+def _history_keys(component: int, subplot_title: str, default_keys: list[str]) -> list[str]:
+    r"""Resolve the dynamically named additional gap histories.
+    
+    Parameters
+    ----------
+    component: int
+        Component.
+    subplot_title: str
+        Subplot title.
+    default_keys: list[str]
+        Default keys.
+    
+    
+    Returns
+    -------
+    list[str]
+        Result described above.
+    """
     if subplot_title == "Duality gap comparison":
         return ("duality gap",) + tuple(getattr(component, "additional_gap_keys", ()))
     return default_keys
 
 
 def _rule_components(rule: StopRule) -> Iterator[StopRule]:
-    """Yield a rule and all components of nested combined rules."""
+    r"""Yield a rule and all components of nested combined rules.
+    
+    Parameters
+    ----------
+    rule: StopRule
+        Rule.
+    
+    
+    Yields
+    ------
+    StopRule
+        Result described above.
+    """
     seen: set[int] = set()
     pending = [rule]
     while pending:
@@ -99,7 +143,23 @@ def _rule_components(rule: StopRule) -> Iterator[StopRule]:
 
 
 def _history_steps(rule: StopRule, key: str, length: int) -> np.ndarray:
-    """Return the iteration numbers belonging to one history."""
+    r"""Return the iteration numbers belonging to one history.
+    
+    Parameters
+    ----------
+    rule: StopRule
+        Rule.
+    key: str
+        Key.
+    length: int
+        Length.
+    
+    
+    Returns
+    -------
+    np.ndarray
+        Computed array.
+    """
     step_histories = getattr(rule, "history_step_dict", {})
     steps = step_histories.get(key)
     if steps is None:
@@ -113,7 +173,19 @@ def _history_steps(rule: StopRule, key: str, length: int) -> np.ndarray:
 
 
 def _timing_components(components: Sequence[StopRule]) -> list[CountIterations]:
-    """Return iteration counters that contain a nonempty timing history."""
+    r"""Return iteration counters that contain a nonempty timing history.
+    
+    Parameters
+    ----------
+    components: Sequence[StopRule]
+        Components.
+    
+    
+    Returns
+    -------
+    list[CountIterations]
+        Result described above.
+    """
     return [
         component
         for component in components
@@ -131,7 +203,25 @@ def _times_for_history(
     length: int,
     clocks: Sequence[CountIterations],
 ) -> np.ndarray:
-    """Align one rule history with an elapsed-time history."""
+    r"""Align one rule history with an elapsed-time history.
+    
+    Parameters
+    ----------
+    rule: StopRule
+        Rule.
+    key: str
+        Key.
+    length: int
+        Length.
+    clocks: Sequence[CountIterations]
+        Clocks.
+    
+    
+    Returns
+    -------
+    np.ndarray
+        Computed array.
+    """
     target_steps = _history_steps(rule, key, length)
 
     for clock in clocks:
@@ -160,8 +250,26 @@ def _times_for_history(
     )
 
 
-def _evals_for_history(rule, key, length, components) -> np.ndarray:
-    """Match cumulative weighted evaluation counts by recorded solver step."""
+def _evals_for_history(rule: StopRule, key: Any, length: int, components: list[str]) -> np.ndarray:
+    r"""Match cumulative weighted evaluation counts by recorded solver step.
+    
+    Parameters
+    ----------
+    rule: StopRule
+        Rule.
+    key: Any
+        Key.
+    length: int
+        Length.
+    components: list[str]
+        Components.
+    
+    
+    Returns
+    -------
+    np.ndarray
+        Computed array.
+    """
     target_steps = _history_steps(rule, key, length)
     for counter in components:
         if not isinstance(counter, CountIterations):
@@ -188,9 +296,9 @@ def convergence_plots(
     ref_err_x: float | None = None,
     ref_err_y: float | None = None,
     gap_pow: float = 2,
-) :
-    """Plot convergence histories for selected methods that have been run.
-
+)  -> tuple[Any, Any]:
+    r"""Plot convergence histories for selected methods that have been run.
+    
     The function inspects the stopping rule stored for every method in
     ``setting._methods``. Nested combined rules are searched recursively for
     :class:`ErrorMonitor`, :class:`DualityGapStopping`, and
@@ -209,46 +317,52 @@ def convergence_plots(
     Method colors are shared across subplots and retained on the setting.
     Application plots can retrieve them with ``get_method_colors(setting)``. Curve widths and marker sizes
     are half the Matplotlib defaults active when this function is called.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         Setting whose method histories should be plotted.
-    x_axis : {'its', 'time', 'op_evals'}, optional
-        Horizontal axis: iteration numbers (default), elapsed CPU time, or
+    x_axis: str [default: 'its']
+        Horizontal axis: iteration numbers, elapsed CPU time, or
         cumulative weighted operator evaluations. Time requires a
         CountIterations(timing=True) history; op_evals requires
         CountIterations(eval_count=True). Histories are aligned by solver
         iteration number. Normal-operator calls count twice. Counts exclude
         solver construction before the counting rule was attached.
-    methods : list of str or None, optional
+    methods: list[str] | None [default: None]
         Short names of methods to plot. If omitted, all methods with recorded
         histories are plotted. The order of the list determines the order of
         curves in each legend.
-    title : str or None, optional
+    title: str | None [default: None]
         Figure title. If omitted, no figure-level title is added.
-
-    ref_err_x, ref_err_y : float or None, optional
+    fontsize: int [default: 12]
+        Fontsize.
+    ref_err_x: float | None [default: None]
         Add reference lines to the merged errors subplot where the respective
         error history exists. The x reference is dashed; the y reference is
         dotted and scaled by the same factor as the y-error curves (1/sqrt(regpar)
         only for convex Tikhonov settings).
         Values should be positive to be visible on the logarithmic y-axis.
-        None (default) omits the respective reference line.
-
-    gap_pow : float, optional
+        None omits the respective reference line.
+    ref_err_y: float | None [default: None]
+        Add reference lines to the merged errors subplot where the respective
+        error history exists. The x reference is dashed; the y reference is
+        dotted and scaled by the same factor as the y-error curves (1/sqrt(regpar)
+        only for convex Tikhonov settings).
+        Values should be positive to be visible on the logarithmic y-axis.
+        None omits the respective reference line.
+    gap_pow: float [default: 2]
         Positive finite exponent denominator for duality-gap curves. Plot
-        gap**(1/gap_pow) for both gap panels, with matching subplot titles. Defaults to 2
-        (square root); use 1 to plot the untransformed gap. Stored histories
+        gap**(1/gap_pow) for both gap panels, with matching subplot titles. Stored histories
         and all other subplot values are unchanged.
-
+    
     Returns
     -------
     figure : matplotlib.figure.Figure
         The created figure.
     axes : numpy.ndarray
         One-dimensional array containing the created subplot axes.
-
+    
     Raises
     ------
     TypeError
@@ -432,7 +546,7 @@ def convergence_plots(
         axis.tick_params(axis="both", labelsize=fontsize-2)
         scale_samples = []
 
-        def include_for_scaling(values):
+        def include_for_scaling(values: np.ndarray) -> None:
             # Keep all plotted points, but ignore terminal drops/spikes when
             # choosing limits. A singleton has no earlier point to use.
             values = np.asarray(values, dtype=float)
@@ -504,26 +618,26 @@ def op_eval_over_time_plot(
     setting: Setting,
     methods: list[str] | None = None,
     title: str | None = None,
-):
-    """Plot cumulative weighted operator evaluations against elapsed CPU time.
-
+) -> tuple[Any, Any]:
+    r"""Plot cumulative weighted operator evaluations against elapsed CPU time.
+    
     Parameters
     ----------
-    setting : Setting
+    setting: Setting
         Setting containing executed stopping-rule histories.
-    methods : list of str or None, optional
+    methods: list[str] | None [default: None]
         Short method names in plotting order. None selects all executed
         methods. Selected methods that have not run are skipped.
-    title : str or None, optional
+    title: str | None [default: None]
         Optional figure title.
-
+    
     Returns
     -------
     figure : matplotlib.figure.Figure
         Created figure.
     axis : matplotlib.axes.Axes
         Axes containing one curve per method, with linear scales.
-
+    
     Notes
     -----
     Requires CountIterations histories with timing=True and eval_count=True.

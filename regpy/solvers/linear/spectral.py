@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.hilbert.base import HilbertSpace
+
 import inspect
 from numbers import Real
 from collections.abc import Callable, Iterable
@@ -47,7 +51,19 @@ __all__ = [
 
 
 def _positive_identity_factor(gram: Operator) -> float | None:
-    """Return c for gram == c*I, or None if this form is not recognized."""
+    r"""Return c for gram == c*I, or None if this form is not recognized.
+    
+    Parameters
+    ----------
+    gram: Operator
+        Gram.
+    
+    
+    Returns
+    -------
+    float | None
+        Result described above.
+    """
     if isinstance(gram, Identity):
         return 1.
     if isinstance(gram, LinearCombination):
@@ -80,11 +96,24 @@ def _real_nonnegative_singular_values(
     *,
     name: str = "singular-value multiplier",
 ) -> np.ndarray:
-    """Return a real copy of a numerically real, non-negative multiplier.
-
+    r"""Return a real copy of a numerically real, non-negative multiplier.
+    
     A complex storage dtype is permitted.  Its imaginary part must vanish up
     to a scale-aware rounding tolerance consistent with the other randomized
     SVD checks in this module.
+    
+    Parameters
+    ----------
+    multiplier: Any
+        Multiplier.
+    name: str [default: 'singular-value multiplier']
+        Name.
+    
+    
+    Returns
+    -------
+    np.ndarray
+        Computed array.
     """
     values = np.asarray(multiplier)
     if not np.all(np.isfinite(values)):
@@ -144,7 +173,19 @@ def _gram_operators_equal(first: Operator, second: Operator) -> bool:
 
 
 def _as_scipy_operator(op: Operator) -> SciPyLinearOperator:
-    """Use the shared adapter and the endpoint spaces' scalar-field coordinates."""
+    r"""Use the shared adapter and the endpoint spaces' scalar-field coordinates.
+    
+    Parameters
+    ----------
+    op: Operator
+        Operator used by this construction.
+    
+    
+    Returns
+    -------
+    SciPyLinearOperator
+        Result described above.
+    """
     return op.as_linear_operator()
 
 
@@ -156,7 +197,7 @@ def _assemble_matrix(op: Operator) -> np.ndarray:
     return np.asarray(linear_operator.matmat(identity))
 
 
-def _cholesky_factor(hilbert_space) -> Operator:
+def _cholesky_factor(hilbert_space: HilbertSpace) -> Operator:
     gram = hilbert_space.gram
     scalar_factor = _positive_identity_factor(gram)
     if scalar_factor is not None:
@@ -211,19 +252,19 @@ def _cholesky_factor(hilbert_space) -> Operator:
 
 class SVD(Composition):
     r"""Singular-value decomposition associated with a Hilbert setting.
-
+    
     The resulting operator is represented as
-
+    
     .. math::
         T = V M U^*,\qquad
         V^*G_YV=I,\quad U^*G_X^{-1}U=I.
-
+    
     Here, :math:`U` maps the reduced coordinate (spectral) space into the dual Hilbert
     space :math:`X^*`. Its Gram operator is :math:`G_X^{-1}`, which explains
     the second normalization. The entries ``G_X`` and ``G_Y`` in
     :attr:`svd_data` store the Gram operators actually used for ``U`` and
     ``V``; hence the former is :attr:`setting.h_domain.gram_inv`.
-
+    
     If ``setting.op`` is already a labelled :class:`Composition`, its factors
     are reused. Scalar identity Gram operators may differ; in that case ``U``,
     ``V``, and ``M`` are rescaled without recomputing an SVD. Non-scalar Gram
@@ -231,56 +272,64 @@ class SVD(Composition):
     labelled multiplier must be finite, non-negative, and real up to rounding
     errors. A complex storage dtype is allowed; accepted imaginary parts are
     discarded explicitly.
-
+    
     Otherwise a numerical generalized SVD is computed. If :math:`G=LL^*`
     denotes the Cholesky convention used by RegPy, the standard SVD is applied
     to
-
+    
     .. math::
         B=L_Y^*T L_X^{-*}.
-
+    
     Its Euclidean singular-vector operators :math:`U_0,V_0` are transformed
     back by :math:`U=L_XU_0` and
     :math:`V=L_Y^{-*}V_0`.
-
+    
     If ``as_eig=True``, the operator must be self-adjoint and positive
     semidefinite. The codomain is interpreted as :math:`X^*`, and the
     transformed operator :math:`L_X^{-1}TL_X^{-*}` is diagonalized with a
     Hermitian eigensolver. This mode is also available for codomain-free
     settings.
-
+    
     Genuinely complex-linear operators between complex vector spaces are
     passed to SciPy as complex operators, so their singular values are not
     duplicated by realification. Real operators use the generic
     :meth:`~regpy.vecsps.VectorSpaceBase.flatten` and ``fromflat`` coordinates.
     Domain and codomain must use the same scalar field. Both real and complex
     backends use flatten/fromflat; as_real_space selects the coordinates.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         Hilbert setting with a linear operator. A codomain-free setting is
         accepted only when ``as_eig=True``.
-    as_eig : bool [default: False]
+    as_eig: bool [default: False]
         Compute or reuse an eigenvalue decomposition of a self-adjoint,
         positive-semidefinite operator instead of a general SVD.
-    k : int or None [default: None]
+    k: int | None [default: None]
         If ``None``, compute a dense full SVD and retain all positive singular
         values. Otherwise compute a matrix-free partial SVD with ``k`` values.
-    which : {'LM', 'SM'} [default: 'LM']
+    which: str [default: 'LM']
         Largest or smallest singular values for a partial SVD.
-    solver : {'arpack', 'lobpcg', 'propack'} [default: 'arpack']
+    solver: str [default: 'arpack']
         SciPy solver for a partial SVD.
-    tol : float [default: 0]
+    tol: float [default: 0.0]
         Iterative tolerance passed to ``scipy.sparse.linalg.svds``.
-    maxiter, ncv, v0, rng, options
-        Further options passed to ``svds`` in the partial case.
-    singular_value_tolerance : float or None [default: None]
+    maxiter: int | None [default: None]
+        Maxiter.
+    ncv: int | None [default: None]
+        Ncv.
+    v0: np.ndarray | None [default: None]
+        V0.
+    rng: Any [default: None]
+        Rng.
+    options: dict | None [default: None]
+        Options for options.
+    singular_value_tolerance: float | None [default: None]
         Values not exceeding this threshold are omitted. By default a
         dimension- and precision-dependent threshold is used.
-    use_buffers : bool [default: True]
+    use_buffers: bool [default: True]
         Whether the resulting composition should reuse intermediate buffers.
-
+    
     Attributes
     ----------
     U, V : regpy.operators.Operator
@@ -732,7 +781,23 @@ def _filter_entry(
     C_r: float,
     C_q: float | str,
 ) -> dict[str, Any]:
-    """Construct one filter entry and derive ``r`` from ``q``."""
+    r"""Construct one filter entry and derive ``r`` from ``q``.
+    
+    Parameters
+    ----------
+    q: Callable[..., float]
+        Q.
+    C_r: float
+        C r.
+    C_q: float | str
+        C q.
+    
+    
+    Returns
+    -------
+    dict[str, Any]
+        Result described above.
+    """
     return {
         'q': q,
         'r': lambda lam, alpha, **parameters: (
@@ -774,7 +839,7 @@ class _SpectralFilterMixin:
 
     filters = _FILTERS
 
-    def _init_parameters(self, filter, regpar, filter_parameters):
+    def _init_parameters(self, filter: Callable[..., np.ndarray], regpar: float, filter_parameters: dict[str, Any]) -> None:
         self._filter_spec = filter
         self._parameters = dict(filter_parameters or {})
         self._count_parameter = isinstance(filter, str) and filter in ('Landweber', 'Lardy')
@@ -791,7 +856,7 @@ class _SpectralFilterMixin:
             raise ValueError("The regularization-parameter sequence must not be empty.") from error
         self._activate_parameter()
 
-    def _activate_parameter(self):
+    def _activate_parameter(self) -> None:
         value = self._pending_parameter
         parameters = dict(self._parameters)
         if self._count_parameter:
@@ -802,7 +867,7 @@ class _SpectralFilterMixin:
         else:
             self._set_filter(self._filter_spec, value, parameters)
 
-    def _advance_parameters(self):
+    def _advance_parameters(self) -> None:
         # Look ahead only after producing a solution, so the last finite
         # parameter terminates without emitting a duplicate iterate.
         try:
@@ -915,23 +980,23 @@ class _SpectralFilterMixin:
 
 class Spectral(_SpectralFilterMixin, RegSolver):
     r"""Spectral regularization of a linear Hilbert-space equation.
-
+    
     For :math:`T=VMU^*`, :math:`\lambda=M^2`, and a filter function
     :math:`q_\alpha`, the regularized inverse is
-
+    
     .. math::
         R_\alpha=G_X^{-1}U\,M q_\alpha(M^2)V^*G_Y.
-
+    
     Starting at ``init``, each solver step returns
     :math:`x_0+R_\alpha(data-Tx_0)`. The residual function is always derived
     from the filter by :math:`r_\alpha(t)=1-tq_\alpha(t)`.
-
+    
     For a codomain-free setting, ``data`` may be arbitrary observational data
     accepted by :meth:`Operator.adjoint_data`. The solver forms
     :math:`T^*data`, delegates the computation to
     :class:`Spectral_SelfAdjoint` with ``op.adjoint_eval`` as :math:`T^*T`,
     and never allocates a vector in the original codomain.
-
+    
     ``filter`` may be a key in :attr:`filters` or a callable accepting either
     one scalar spectral value or ``(spectral_value, regpar)``. Further custom
     parameters should be closed over the callable.
@@ -947,9 +1012,9 @@ class Spectral(_SpectralFilterMixin, RegSolver):
     Choose ``mu`` within the usual Landweber stability range for the operator.
     ``self.regpar`` is the alpha or k of the current solution. Finite
     sequences terminate after their final solution. The SVD is computed once.
-
+    
     The registered filters are
-
+    
     .. math::
         q_\alpha^{\rm Tik}(\lambda)
             &= (\lambda+\alpha)^{-1},\\
@@ -963,11 +1028,30 @@ class Spectral(_SpectralFilterMixin, RegSolver):
         q_{\alpha/k}^{\rm Lardy}(\lambda)
             &= \frac{(\lambda+\alpha)^k-\alpha^k}
                     {\lambda(\lambda+\alpha)^k}.
-
+    
     The remaining filters use respectively
     :math:`\lambda^{-1}\mathbf 1_{[\alpha,\infty)}`,
     :math:`\min(\lambda^{-1},(\lambda\alpha)^{-1/2})`, and
     :math:`\min(\lambda^{-1},\alpha^{-1})`.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    data: ReadOnlyVector | ObsDataT | None [default: None]
+        Observed data.
+    init: ReadOnlyVector | None [default: None]
+        Initial iterate in the operator domain.
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
+    filter: str | Callable[[float], float] [default: 'Spectral_CutOff']
+        Filter.
+    regpar: float | Iterable[float] | None [default: None]
+        Regularization parameter.
+    filter_parameters: dict[str, Any] | None [default: None]
+        Options for filter parameters.
+    svd_options: dict[str, Any] | None [default: None]
+        Options for svd options.
     """
 
     def __init__(
@@ -1045,7 +1129,7 @@ class Spectral(_SpectralFilterMixin, RegSolver):
         self.y = self.op.codomain.empty()
         self.op(self.x, out=self.y)
 
-    def _update_inverse(self):
+    def _update_inverse(self) -> None:
         coefficients = self._filter_coefficients(
             self.SVD.singular_values,
             lambda sigma: sigma,
@@ -1070,6 +1154,25 @@ class Spectral(_SpectralFilterMixin, RegSolver):
         user_init: ReadOnlyVector | None = None,
         **kwargs: Any,
     ) -> tuple[dict, dict]:
+        r"""Check the requirements of this solver for the supplied setting.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        user_data: ReadOnlyVector | ObsDataT | None [default: None]
+            Input vector; its coefficients are only read.
+        user_init: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         out, par = check_Hilbert_applicability_linear(
             setting,
             user_data=user_data,
@@ -1118,17 +1221,30 @@ class Spectral(_SpectralFilterMixin, RegSolver):
         self._advance_parameters()
 
     def regularized_inverse(self) -> Operator:
-        """Return the regularized inverse.
-
+        r"""Return the regularized inverse.
+        
         For a codomain-free setting this is the inverse filter for the normal
         operator, mapping the already backpropagated data to the solution.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
         """
         if self.setting.codomain_free:
             return self._self_adjoint_method.regularized_inverse()
         return self._regularized_inverse
 
     def residual_op(self) -> Operator:
-        """Return :math:`I-R_\alpha T`, the estimator's bias operator."""
+        r"""Return :math:`I-R_lpha T`, the estimator's bias operator.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if self.setting.codomain_free:
             return self._self_adjoint_method.residual_op()
         return self.op.domain.identity - self._regularized_inverse * self.op
@@ -1136,18 +1252,37 @@ class Spectral(_SpectralFilterMixin, RegSolver):
 
 class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
     r"""Spectral regularization for a self-adjoint equation :math:`Ax=b`.
-
+    
     If :math:`A=U\operatorname{diag}(\lambda)U^*` and
     :math:`U^*G_X^{-1}U=I`, this solver uses
-
+    
     .. math::
         R_\alpha=Uq_\alpha(M)U^*G_X^{-1},\qquad
         x=x_0+R_\alpha(b-Ax_0).
-
+    
     The decomposition is reused when the operator carries an eigenvalue/SVD
     label. Otherwise a numerical positive-semidefinite eigenvalue
     decomposition is computed. Codomain-free settings are supported because
     the codomain Hilbert structure is canonically interpreted as :math:`X^*`.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    data: ReadOnlyVector | None [default: None]
+        Observed data.
+    init: ReadOnlyVector | None [default: None]
+        Initial iterate in the operator domain.
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
+    filter: str | Callable[[float], float] [default: 'Tikhonov']
+        Filter.
+    regpar: float | Iterable[float] | None [default: None]
+        Regularization parameter.
+    filter_parameters: dict[str, Any] | None [default: None]
+        Options for filter parameters.
+    svd_options: dict[str, Any] | None [default: None]
+        Options for svd options.
     """
 
     def __init__(
@@ -1203,7 +1338,7 @@ class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
         self.y = self.op.codomain.empty()
         self.op(self.x, out=self.y)
 
-    def _update_inverse(self):
+    def _update_inverse(self) -> None:
         coefficients = self._filter_coefficients(
             self.SVD.singular_values,
             lambda eigenvalue: 1.,
@@ -1227,6 +1362,25 @@ class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
         user_init: ReadOnlyVector | None = None,
         **kwargs: Any,
     ) -> tuple[dict, dict]:
+        r"""Check the requirements of this solver for the supplied setting.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        user_data: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        user_init: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         out, par = check_Hilbert_applicability_linear(
             setting,
             user_data=user_data,
@@ -1261,18 +1415,42 @@ class Spectral_SelfAdjoint(_SpectralFilterMixin, RegSolver):
         self._advance_parameters()
 
     def regularized_inverse(self) -> Operator:
-        """Return :math:`Uq_\alpha(M)U^*G_X^{-1}`."""
+        r"""Return :math:`Uq_lpha(M)U^*G_X^{-1}`.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         return self._regularized_inverse
 
     def residual_op(self) -> Operator:
-        """Return :math:`I-R_\alpha A`."""
+        r"""Return :math:`I-R_lpha A`.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         return self.op.domain.identity - self._regularized_inverse * self.op
 
 
 class Spectral_Tikhonov(Spectral):
-    """Spectral Tikhonov regularization."""
+    r"""Spectral Tikhonov regularization.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    regpar: float | Iterable[float] | None [default: None]
+        Regularization parameter.
+    svd_options: dict[str, Any] | None [default: None]
+        Options for svd options.
+    """
 
-    def __init__(self, setting: Setting, regpar: float | Iterable[float] | None = None, *, svd_options=None):
+    def __init__(self, setting: Setting, regpar: float | Iterable[float] | None = None, *, svd_options: dict[str, Any] | None=None) -> None:
         super().__init__(
             setting, filter='Tikhonov', regpar=regpar,
             svd_options=svd_options
@@ -1280,14 +1458,26 @@ class Spectral_Tikhonov(Spectral):
 
 
 class Spectral_IteratedTikhonov(Spectral):
-    """Spectral iterated Tikhonov regularization."""
+    r"""Spectral iterated Tikhonov regularization.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    regpar: float | Iterable[float] | None [default: None]
+        Regularization parameter.
+    k: int [default: 1]
+        K.
+    svd_options: dict[str, Any] | None [default: None]
+        Options for svd options.
+    """
 
     def __init__(self, 
         setting: Setting, 
         regpar: float | Iterable[float] | None = None, 
         k: int = 1, *,
-        svd_options=None
-    ):
+        svd_options: dict[str, Any] | None=None
+    ) -> None:
         super().__init__(
             setting, filter='Iterated_Tikhonov', regpar=regpar,
             filter_parameters={'k': k}, svd_options=svd_options
@@ -1295,13 +1485,23 @@ class Spectral_IteratedTikhonov(Spectral):
 
 
 class Spectral_Showalter(Spectral):
-    """Showalter's spectral method."""
+    r"""Showalter's spectral method.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    regpar: float | Iterable[float] | None [default: None]
+        Regularization parameter.
+    svd_options: dict[str, Any] | None [default: None]
+        Options for svd options.
+    """
 
     def __init__(self, 
                  setting: Setting, 
                  regpar: float | Iterable[float] | None = None, 
                  *, 
-                 svd_options=None):
+                 svd_options: dict[str, Any] | None=None) -> None:
         super().__init__(
             setting, filter='Showalter', regpar=regpar,
             svd_options=svd_options
@@ -1309,19 +1509,29 @@ class Spectral_Showalter(Spectral):
 
 
 class Spectral_Landweber(Spectral):
-    """Landweber filter with fixed stepsize and a sequence of counts ``k``.
-
+    r"""Landweber filter with fixed stepsize and a sequence of counts ``k``.
+    
     ``k=None`` uses 2 ** Naturals(), mimicing the standard sampling of regularization parameters alpha in other spectral methods; pass Naturals(first=1) to mimic the behavior of the non-spectral Landweber iterator
     Each scalar k produces one solution. 
-
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    k: int | Iterable[int] | None [default: None]
+        K.
+    stepsize: float | None [default: None]
+        Stepsize.
+    svd_options: dict[str, Any] | None [default: None]
+        Options for svd options.
     """
 
     def __init__(self, 
                  setting: Setting, 
                  k: int | Iterable[int] | None = None,
                 stepsize: float | None = None, *, 
-                svd_options=None
-    ):
+                svd_options: dict[str, Any] | None=None
+    ) -> None:
         super().__init__(
             setting, filter='Landweber', 
             filter_parameters={'k': k, 'mu': stepsize},
@@ -1330,10 +1540,21 @@ class Spectral_Landweber(Spectral):
 
 
 class Spectral_Lardy(Spectral):
-    """Lardy filter with fixed alpha ``regpar`` (default 1) and varying ``k``.
-
+    r"""Lardy filter with fixed alpha ``regpar`` (default 1) and varying ``k``.
+    
     ``k=None`` uses 2 ** Naturals(); pass Naturals(first=1) for every count.
     A scalar k produces one solution.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    regpar: float | Iterable[float] | None [default: None]
+        Regularization parameter.
+    k: int | Iterable[int] | None [default: None]
+        K.
+    svd_options: dict[str, Any] | None [default: None]
+        Options for svd options.
     """
 
     def __init__(self, 
@@ -1341,8 +1562,8 @@ class Spectral_Lardy(Spectral):
                  regpar: float | Iterable[float] | None = None, 
                  k: int | Iterable[int] | None = None, 
                  *,
-                svd_options=None
-    ):
+                svd_options: dict[str, Any] | None=None
+    ) -> None:
         super().__init__(
             setting, filter='Lardy', regpar=regpar,
             filter_parameters={'k': k}, svd_options=svd_options
@@ -1350,9 +1571,19 @@ class Spectral_Lardy(Spectral):
 
 
 class Spectral_CutOff(Spectral):
-    """Truncated singular-value decomposition (spectral cut-off)."""
+    r"""Truncated singular-value decomposition (spectral cut-off).
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    regpar: float | Iterable[float] | None [default: None]
+        Regularization parameter.
+    svd_options: dict[str, Any] | None [default: None]
+        Options for svd options.
+    """
 
-    def __init__(self, setting: Setting, regpar: float | Iterable[float] | None = None, *, svd_options=None):
+    def __init__(self, setting: Setting, regpar: float | Iterable[float] | None = None, *, svd_options: dict[str, Any] | None=None) -> None:
         super().__init__(
             setting, filter='Spectral_CutOff', regpar=regpar,
             svd_options=svd_options
@@ -1360,12 +1591,22 @@ class Spectral_CutOff(Spectral):
 
 
 class Spectral_Seidman(Spectral):
-    """Seidman's optimal spectral filtering."""
+    r"""Seidman's optimal spectral filtering.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    regpar: float | Iterable[float] | None [default: None]
+        Regularization parameter.
+    svd_options: dict[str, Any] | None [default: None]
+        Options for svd options.
+    """
 
     def __init__(self, 
                  setting: Setting, 
                  regpar: float | Iterable[float] | None = None, 
-                 *, svd_options=None):
+                 *, svd_options: dict[str, Any] | None=None) -> None:
         super().__init__(
             setting, filter='Seidman', regpar=regpar,
             svd_options=svd_options
@@ -1373,12 +1614,22 @@ class Spectral_Seidman(Spectral):
 
 
 class Spectral_TruncatedSVD2(Spectral):
-    """Continuous truncated-SVD filter ``min(1/lambda, 1/alpha)``."""
+    r"""Continuous truncated-SVD filter ``min(1/lambda, 1/alpha)``.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    regpar: float | Iterable[float] | None [default: None]
+        Regularization parameter.
+    svd_options: dict[str, Any] | None [default: None]
+        Options for svd options.
+    """
 
     def __init__(self, 
                  setting: Setting, 
                  regpar: float | Iterable[float] | None = None, 
-                 *, svd_options=None):
+                 *, svd_options: dict[str, Any] | None=None) -> None:
         super().__init__(
             setting, filter='Truncated_SVD_2', regpar=regpar,
             svd_options=svd_options
@@ -1386,12 +1637,22 @@ class Spectral_TruncatedSVD2(Spectral):
 
 
 class SpectralSelfAdjoint_Lavrentiev(Spectral_SelfAdjoint):
-    """Lavrentiev regularization of a positive self-adjoint operator."""
+    r"""Lavrentiev regularization of a positive self-adjoint operator.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    regpar: float | Iterable[float] | None [default: None]
+        Regularization parameter.
+    svd_options: dict[str, Any] | None [default: None]
+        Options for svd options.
+    """
 
     def __init__(self, 
                  setting: Setting, 
                  regpar: float | Iterable[float] | None = None, 
-                 *, svd_options=None):
+                 *, svd_options: dict[str, Any] | None=None) -> None:
         super().__init__(
             setting, filter='Tikhonov', regpar=regpar,
             svd_options=svd_options
@@ -1399,14 +1660,28 @@ class SpectralSelfAdjoint_Lavrentiev(Spectral_SelfAdjoint):
 
 
 class SpectralSelfAdjoint_Richardson(Spectral_SelfAdjoint):
-    """Richardson iteration represented by its spectral filter."""
+    r"""Richardson iteration represented by its spectral filter.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    regpar: float | Iterable[float] | None [default: None]
+        Regularization parameter.
+    k: int | Iterable[int] | None [default: None]
+        K.
+    stepsize: float | None [default: None]
+        Stepsize.
+    svd_options: dict[str, Any] | None [default: None]
+        Options for svd options.
+    """
 
     def __init__(self, 
                  setting: Setting, 
                  regpar: float | Iterable[float] | None = None, 
                  k: int | Iterable[int] | None = None,
-                stepsize: float | None = None, *, svd_options=None
-    ):
+                stepsize: float | None = None, *, svd_options: dict[str, Any] | None=None
+    ) -> None:
         super().__init__(
             setting, filter='Landweber', regpar=regpar,
             filter_parameters={'k': k, 'mu': stepsize},

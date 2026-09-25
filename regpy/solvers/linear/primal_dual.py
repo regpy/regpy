@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
 import math as ma
 import numpy as np
 
@@ -13,38 +18,34 @@ __all__ = ["PDHG","DouglasRachford"]
 class PDHG(RegSolver):
     r"""The Primal-Dual Hybrid Gradient (PDHG) or Chambolle-Pock Algorithm
     For :math:`\theta=0` this is the Arrow-Hurwicz-Uzawa algorithm.
-
+    
     Solves the minimization problem: :math:`\frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf)+\mathcal{R}(f)`
     by solving the saddle-point problem: 
     
     .. math::
         \inf_f \sup_p [ - \langle Tf,p\rangle + \mathcal{R}(f)- \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) ].
-
+    
     Here :math:`\mathcal{S}_{g^{\delta}}^\ast` denotes the Fenchel conjugate functional.
-
+    
     Note: Due to a different sign convention for the dual variables, some signs in the iteration formula differ from 
     the original paper and most of the literature.
-
+    
     Parameters
     ----------
-    is_primal : bool, optional
-        Whether iterates represent the original primal problem (default True).
-        Pass False when solving its dual. This labels coordinates and does not
-        change the iteration formulas or construct a dual setting.
-    setting : regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem. The operator needs to be linear and
         "penalty.proximal" and "data_fid.conj.proximal" need to be implemented.
-    init_domain : ReadOnlyVector or None [default: None]
+    init_domain: ReadOnlyVector | None [default: None]
         User-supplied initial value for the primal variable ``x``. It must
         belong to ``setting.op.domain`` and is copied. If it is the only
         explicitly supplied initial value, ``pstar`` is computed with
         :meth:`Setting.primal_to_dual`.
-    init_codomain_star : ReadOnlyVector or None [default: None]
+    init_codomain_star: ReadOnlyVector | None [default: None]
         User-supplied initial value for the dual variable ``pstar``. It must
         belong to ``setting.op.codomain`` and is copied. If it is the only
         explicitly supplied initial value, ``x`` is computed with
         :meth:`Setting.dual_to_primal`.
-
+        
         If neither initial value is supplied, the neutral primal-dual pair is
         used. For a primal setting this is ``x = setting.init`` and
         ``pstar = 0``. For a transformed dual setting the equivalent pair is
@@ -53,24 +54,30 @@ class PDHG(RegSolver):
         ``alpha_d = 1 / alpha_p``. This avoids initial dual variables of size
         ``1 / alpha_p`` while representing the same original saddle pair in
         primal and transformed-dual coordinates.
-    tau : float [default: 0.]
+    tau: float [default: 0.0]
         The parameter to compute the proximal operator of the penalty term. Stepsize of the primal step.
         Must be non-negative. If 0, a positive value is selected automatically based on the operator norm and the value of sigma.
-    sigma : float [default: 0.]
+    sigma: float [default: 0.0]
         The parameter to compute the proximal operator of the data-fidelity term. Stepsize of the dual step.
         Must be non-negative. If 0, a positive value is selected automatically based on the operator norm and the value of tau
-    theta : float [default: -1.]
+    theta: float [default: -1.0]
         Relaxation parameter. For theta==0 PDHG is the Arrow-Hurwicz-Uzawa algorithm.
         If -1, a suitable value is selected automatically based on the convexity parameters of penalty and data fidelity term.
-    op_norm : float or None [default: None]
+    op_norm: float | None [default: None]
         The operator norm of the forward operator. If None, it is computed numerically.
-    proximal_pars_data_fidelity_conjugate : dict, optional
+    proximal_pars_data_fidelity_conjugate: dict | None [default: None]
         Parameter dictionary passed to the computation of the prox-operator of the data fidelity functional.
-    proximal_pars_penalty : dict, optional
+    proximal_pars_penalty: dict | None [default: None]
         Parameter dictionary passed to the computation of the prox-operator of the penalty functional.
-    compute_y : boolean [True]
+    compute_y: bool [default: False]
         If True, the images y_k=T(x_k) are computed in each iteration. As they are not needed in the algorithm, 
-        so this may considerably increase computational costs. If False, None is returned for y_k. 
+        so this may considerably increase computational costs. If False, None is returned for y_k.
+    logging_level: str [default: 'INFO']
+        Logging level for this object.
+    is_primal: bool [default: True]
+        Whether iterates represent the original primal problem.
+        Pass False when solving its dual. This labels coordinates and does not
+        change the iteration formulas or construct a dual setting.
     """
     def __init__(self,  
                  setting : Setting, 
@@ -83,7 +90,7 @@ class PDHG(RegSolver):
                  compute_y: bool = False, 
                  logging_level: str = "INFO",
                  is_primal: bool = True,
-                 ):
+                 ) -> None:
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("PDHG requires the setting to contain a regularization parameter!"))
         super().__init__(setting, is_primal=is_primal)
@@ -177,19 +184,54 @@ class PDHG(RegSolver):
             self._primal_y = self.op.codomain.empty()
 
     def _initialize_pstar_from_x(self, setting: Setting) -> None:
-        """Initialize ``pstar`` from ``x`` through the setting's duality map."""
+        r"""Initialize ``pstar`` from ``x`` through the setting's duality map.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        """
         image = self.op(self.x)
         pstar = setting.primal_to_dual((self.x, image))
         self.op.codomain.copyto(self.pstar, pstar)
 
     def _initialize_x_from_pstar(self, setting: Setting) -> None:
-        """Initialize ``x`` from ``pstar`` through the setting's duality map."""
+        r"""Initialize ``x`` from ``pstar`` through the setting's duality map.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        """
         adjoint_image = self.op.adjoint(self.pstar)
         x = setting.dual_to_primal((self.pstar, adjoint_image))
         self.op.domain.copyto(self.x, x)
 
     @staticmethod
-    def check_applicability(setting,op_norm=None,tau=0,sigma=0,theta=-1)->tuple[dict,dict]:
+    def check_applicability(setting: Setting,op_norm: float | None=None,tau: int=0,sigma: int=0,theta: float=-1)->tuple[dict,dict]:
+        r"""Check the requirements of this solver for the supplied setting and compute parameters of the
+        method based on the operator norm and Lipschitz and convexity constants of the penalty and data fidelity functionals.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        tau: int [default: 0]
+            Proximal or iteration step size.
+        sigma: int [default: 0]
+            Sigma.
+        theta: float [default: -1]
+            Theta.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            The first dictionary contains applicability information and expected rates, 
+            the second contains method parameters. 
+        """
         out = {'info':''}; par = {}
         if not setting.is_tikhonov:
             out['info'] += 'Setting has no regularization parameter. '
@@ -241,16 +283,32 @@ class PDHG(RegSolver):
                 par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':muR, 'muSstar':muSstar}
         return out, par
 
-    def primal(self):
+    def primal(self) -> tuple[Vector | None, Vector | None]:
+        r"""Return the current primal iterate and operator image, when available.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
+        """
         if not self.compute_y:
             self.op(self.x, out=self._primal_y)
             return (self.x, self._primal_y)
         return (self.x, self.y)
 
-    def dual(self):
+    def dual(self) -> tuple[Vector | None, Vector | None]:
+        r"""Return the current dual iterate and adjoint image, when available.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
+        """
         return (self.pstar,self.Tpstar)
 
-    def _next(self):
+    def _next(self) -> None:
         # primal_step = x + tau * G_X^{-1} T^* pstar
         self.h_domain.gram_inv(self.Tpstar, out=self._domain_work)
         self.op.domain.copyto(self._primal_step, self.x)
@@ -309,27 +367,27 @@ class PDHG(RegSolver):
 
 class DouglasRachford(RegSolver):
     r"""The Douglas-Rashford Splitting Algorithm
-
+    
     Minimizes :math:`\mathcal{S}(Tf)+\alpha*\mathcal{R}(f)`
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem, both penalty and data fidelity need prox-operators. The operator needs to be linear.
         And the data_fid term contains the the operator for example `data_fid = HilbertNorm(h_space=L2) * (op - data)`, i.e. it 
         is mapping from the domain of the operator.
-    init_h : Vector
+    init_h: Vector
         The initial guess "f". Must be in setting.op.domain.
-    tau : float , optional
-        The parameter to compute the proximal operator of the penalty term. Must be positive. (Default: 1)
-    regpar : float, optional
-        The regularization parameter. Must be positive. (Default: 1)
-    proximal_pars_data_fidelity : dict, optional
-        Parameter dictionary passed to the computation of the prox-operator of the data fidelity functional. (Default: None)
-    proximal_pars_penalty : dict, optional
-        Parameter dictionary passed to the computation of the prox-operator of the penalty functional. (Default: None))
+    tau: float [default: 1]
+        The parameter to compute the proximal operator of the penalty term. Must be positive.
+    regpar: float [default: 1]
+        The regularization parameter. Must be positive.
+    proximal_pars_data_fidelity: dict[str, Any] | None [default: None]
+        Parameter dictionary passed to the computation of the prox-operator of the data fidelity functional.
+    proximal_pars_penalty: dict[str, Any] | None [default: None]
+        Parameter dictionary passed to the computation of the prox-operator of the penalty functional.)
     """
-    def __init__(self,  setting, init_h, tau = 1, regpar = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None):
+    def __init__(self,  setting: Setting, init_h: Vector, tau: float = 1, regpar: float = 1, proximal_pars_data_fidelity: dict[str, Any] | None = None, proximal_pars_penalty: dict[str, Any] | None = None) -> None:
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="DouglasRachford requires the operator to be linear!"))
@@ -375,7 +433,7 @@ class DouglasRachford(RegSolver):
         )
         self.op(self.x, out=self.y)
 
-    def _next(self):
+    def _next(self) -> None:
         # reflection = 2*x - h
         self.op.domain.copyto(self._reflection, self.x)
         self._reflection *= 2

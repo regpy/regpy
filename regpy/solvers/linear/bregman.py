@@ -1,6 +1,12 @@
 """Bregman iterations with a configurable convex inner minimizer."""
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.vecsps.base import ReadOnlyVector, Vector
+    from regpy.functionals.base import Functional
+    from regpy.solvers.setting import Setting
+
 from collections.abc import Callable, Iterable
 from copy import deepcopy
 from itertools import repeat
@@ -11,10 +17,6 @@ from typing import TYPE_CHECKING, Any
 from ..solver import RegSolver
 from ..sequences import Sequence
 
-if TYPE_CHECKING:
-    from regpy.vecsps import Vector, ReadOnlyVector
-    from regpy.functionals.base import Functional
-    from ..setting import Setting
 
 __all__ = ["Bregman", "RunOnAlphaGrid"]
 
@@ -23,43 +25,43 @@ _END = object()
 
 class Bregman(RegSolver):
     r"""Minimize successive Bregman-regularized data-fidelity problems.
-
+    
     Starting at ``setting.init`` (or ``init``) as f_0, outer step n >= 1
     computes an approximate minimizer
-
+    
     .. math::
         f_n \in \operatorname{argmin}_f
         \left\{\alpha_n^{-1} S(Tf)
         + \Delta_R^{q_{n-1}}(f,f_{n-1})\right\}.
-
+    
     By default, the first divergence uses ``R.subgradient(f_0)``. For the
     (n+1)th divergence, the choice is
-
+    
     .. math::
         q_n = T^*p_n, \qquad -\alpha_n p_n \in \partial S(Tf_n),
-
+    
     using ``S.subgradient(Tf_n)`` and the parameter alpha_n of the completed
     nth solve, not the parameter of the upcoming solve. If S does not
     implement a subgradient, ``R.subgradient(f_n)`` is used instead.
     A custom ``select_subgradient`` overrides this default at every base
     point, including initialization. Each divergence is constructed from
     the original R with ``R.bregman_func``.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.setting.Setting
+    setting: Setting
         Linear operator and convex penalty and fidelity. A regularization
         parameter is optional when ``regpars`` is supplied. Explicit
         codomain vectors and an explicit data-fidelity functional are required.
         Data already incorporated into the fidelity are retained unchanged.
-    regpars : Sequence or iterable of float or None, optional
+    regpars: Sequence | Iterable[float] | None [default: None]
         Finite or infinite sequence of finite, strictly positive parameters.
         Any iterable is accepted, including RegPy's arithmetic Sequences.
         Values are validated when used. An empty sequence raises ValueError.
         If None, repeat ``setting.regpar`` ``nr_its`` times.
-    inner_solver : str or dict or None, optional
+    inner_solver: str | dict[str, Any] | None [default: None]
         Convex method abbreviation, or a method dictionary
-        as stored in ``setting._methods`` or None (default). 
+        as stored in ``setting._methods`` or None. 
         If None, the default inner solver of the setting is used.
         Dictionaries must contain 'class'
         and may specify 'primal', 'full', 'method_params', and 'stoprule_params'.
@@ -70,15 +72,15 @@ class Bregman(RegSolver):
         taken from ``setting._convex_solvers``, including stopping parameters.
         Dual methods are supported through Setting.run(), which returns a
         reconstruction in primal coordinates of the supplied setting.
-    nr_its : int, optional
-        Number of outer steps for a constant parameter, default 2. Must be
+    nr_its: int [default: 2]
+        Number of outer steps for a constant parameter. Must be
         positive. Used only when regpars is None, in which case the setting
         must be a convex Tikhonov setting.
-    init : Vector or None, optional
+    init: ReadOnlyVector | None [default: None]
         Initial Bregman base point, default setting.init. It must have finite
         penalty value and admit a subgradient. Initialization does not shift
         the supplied penalty.
-    select_subgradient : callable or None, optional
+    select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None [default: None]
         Called as ``select_subgradient(setting, x)`` with the original
         setting and a read-only view of the current outer iterate. Return a
         dual covector in ``setting.penalty``'s subdifferential at x, using the
@@ -89,13 +91,13 @@ class Bregman(RegSolver):
         otherwise it uses ``T.adjoint(-S.subgradient(Tx) / alpha_previous)``.
         Selection occurs once at initialization and once before each later
         inner solve, never speculatively after the last completed step.
-    logging_level : int or str, optional
-        Outer logging level, default 'INFO'. Inner logging may be configured
+    logging_level: int | str [default: 'INFO']
+        Outer logging level. Inner logging may be configured
         in the inner method's method_params.
-    is_primal : bool, optional
-        Coordinate label for compatibility with RegSolver, default True.
+    is_primal: bool [default: True]
+        Coordinate label for compatibility with RegSolver.
         This does not change which inner problem is solved.
-
+    
     Notes
     -----
     The equivalent inner objective is
@@ -104,21 +106,21 @@ class Bregman(RegSolver):
     ``inner_setting`` and ``inner_method_name`` identify the most recent
     subproblem, whose executed rule is available through ``get_stoprule``.
     Inner stopping tolerances control the accuracy of the outer iteration.
-
+    
     ``x`` and ``y`` expose the initial pair immediately. Each solver step
     performs one inner solve; inherited iteration yields its result as
     read-only views. Finite sequences end without yielding a duplicate final
     iterate. One parameter is buffered in advance to recognize exhaustion.
     ``regpar`` records the parameter of the most recently completed step
     (the first parameter before any step).
-
+    
     The original setting, its initialization and its configuration dictionaries
     are not modified. Operator and fidelity objects are shared; do not mutate
     them externally while the solver is running. Inner-method parameters such
     as a data override change the stated subproblem and are rejected. Initial
     guesses configured directly in method_params take precedence over the
     inner setting's default warm start and use that inner method's coordinates.
-
+    
     Examples
     --------
     >>> solver = Bregman(setting, nr_its=2, inner_solver='PDHG')
@@ -136,7 +138,7 @@ class Bregman(RegSolver):
         inner_solver: str | dict[str, Any] | None = None,
         *,
         nr_its: int = 2,
-        init: Vector | None = None,
+        init: ReadOnlyVector | None = None,
         select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None = None,
         logging_level: int | str = 'INFO',
         is_primal: bool = True,
@@ -234,7 +236,23 @@ class Bregman(RegSolver):
         setting: Setting, op_norm: float | None = None,
         select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None = None,
     ) -> tuple[dict, dict]:
-        """Check outer requirements; each inner problem checks its own method."""
+        r"""Check outer requirements; each inner problem checks its own method.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         info = []
         if not setting.op.linear:
             info.append('The forward operator must be linear.')
@@ -259,8 +277,18 @@ class Bregman(RegSolver):
             self._bregman_penalty = self._make_bregman_penalty(self.regpar)
         self._run_inner(alpha, self._bregman_penalty, self.x)
 
-    def _run_inner(self, alpha: float, penalty: Functional, init: Vector) -> None:
-        """Execute a fresh inner problem and advance the parameter iterator."""
+    def _run_inner(self, alpha: float, penalty: Functional, init: ReadOnlyVector) -> None:
+        r"""Execute a fresh inner problem and advance the parameter iterator.
+        
+        Parameters
+        ----------
+        alpha: float
+            Alpha.
+        penalty: Functional
+            Penalty.
+        init: ReadOnlyVector
+            Initial iterate in the operator domain.
+        """
         from ..setting import Setting
 
         inner = Setting(
@@ -295,11 +323,30 @@ class Bregman(RegSolver):
             self.converge()
 
     def primal(self) -> tuple[Vector, Vector]:
-        """Current pair in the coordinates of the supplied setting."""
+        r"""Current pair in the coordinates of the supplied setting.
+        
+        
+        Returns
+        -------
+        tuple[Vector, Vector]
+            Result described above.
+        """
         return self.x, self.y
 
     def _make_bregman_penalty(self, previous_alpha: float | None = None) -> Functional:
-        """Build at the current iterate using the last completed solve's alpha."""
+        r"""Build at the current iterate using the last completed solve's alpha.
+        
+        Parameters
+        ----------
+        previous_alpha: float | None [default: None]
+            Previous alpha.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
         if self.select_subgradient is None:
             if previous_alpha is None or 'subgradient' not in self.data_fid.methods:
                 return self.penalty.bregman_func(self.x)
@@ -318,33 +365,33 @@ class Bregman(RegSolver):
 
 
 class RunOnAlphaGrid(RegSolver):
-    """Solve independent convex Tikhonov problems on a parameter grid.
-
+    r"""Solve independent convex Tikhonov problems on a parameter grid.
+    
     Each step minimizes ``S(Tf) + alpha * R(f)`` using a fresh inner setting,
     solver, and stopping history. The original penalty and the same initial
     guess are used at every step; there is no warm start between grid points.
-
+    
     This method is used to select the regularization parameter by a parameter choice rule. 
-
+    
     Parameters
     ----------
-    setting : Setting
+    setting: Setting
         Must have no regularization parameter, a linear operator, convex
         penalty and fidelity, and an explicit codomain and fidelity.
-    regpars : Sequence or iterable of float
+    regpars: Sequence | Iterable[float]
         Nonempty, finite or infinite iterable of finite positive parameters.
         Parameters are validated lazily, as in Bregman.
-    inner_solver : str or dict or None, optional
+    inner_solver: str | dict[str, Any] | None [default: None]
         Convex solver label or method dictionary or None, as in
         Bregman. Labels retain configuration from ``setting._convex_solvers``.
-    init : Vector or None, optional
+    init: ReadOnlyVector | None [default: None]
         Fixed initial guess for every solve, default ``setting.init``.
         An explicit inner method initialization takes precedence.
-    logging_level : int or str, optional
-        Outer logging level, default 'INFO'.
-    is_primal : bool, optional
-        Coordinate label for RegSolver, default True.
-
+    logging_level: int | str [default: 'INFO']
+        Outer logging level.
+    is_primal: bool [default: True]
+        Coordinate label for RegSolver.
+    
     Notes
     -----
     Iteration yields one result per parameter; ``run()`` returns the last pair.
@@ -364,7 +411,7 @@ class RunOnAlphaGrid(RegSolver):
         regpars: Sequence | Iterable[float],
         inner_solver: str | dict[str, Any] | None = None,
         *,
-        init: Vector | None = None,
+        init: ReadOnlyVector | None = None,
         logging_level: int | str = 'INFO',
         is_primal: bool = True,
     ) -> None:
@@ -395,7 +442,21 @@ class RunOnAlphaGrid(RegSolver):
     def check_applicability(
         setting: Setting, op_norm: float | None = None,
     ) -> tuple[dict, dict]:
-        """Check convexity and absence of a fixed regularization parameter."""
+        r"""Check convexity and absence of a fixed regularization parameter.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         info = []
         if setting.is_tikhonov:
             info.append('The setting must have no regularization parameter.')

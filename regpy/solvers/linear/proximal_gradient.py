@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.vecsps.base import ReadOnlyVector
 import math as ma
 import numpy as np
 from typing import Any
@@ -13,49 +18,49 @@ from ..setting import Setting
 __all__ = ["ForwardBackwardSplitting","FISTA"]
 
 class ForwardBackwardSplitting(RegSolver):
-    r"""    Minimizes 
-
+    r"""Minimizes 
+    
     .. math::
         \mathcal{S}(Tf)+\alpha*\mathcal{R}(f)
-
+    
     by forward backward splitting. 
-
+    
     Parameters
     ----------
-    is_primal : bool, optional
-        Whether iterates represent the original primal problem (default True).
-        Pass False when solving its dual. This labels coordinates and does not
-        change the iteration formulas or construct a dual setting.
-    setting : regpy.solvers.Setting
-        The setting of the forward problem. Includes both penalty :math:`\mathcal{R}` and data fidelity :math:`\mathcal{S}` functional. 
-    init : setting.domain [default: None]
+    setting: Setting
+        The setting of the forward problem. Includes both penalty :math:`\mathcal{R}` and data fidelity :math:`\mathcal{S}` functional.
+    init: ReadOnlyVector | None [default: None]
         The initial guess. In None, the reference vector of the penalty functional is used.
-    tau : float , optional
+    tau: float | None [default: None]
         The step size parameter. Must be positive. 
-        Default is the reciprocal of the operator norm of :math:`T^*T` 
-    op_norm : float or None [default: None]
+        Default is the reciprocal of the operator norm of :math:`T^*T`
+    proximal_pars: dict | None [default: None]
+        Parameter dictionary passed to the computation of the prox-operator.
+    logging_level: int | str [default: 'INFO']
+        logging level
+    op_norm: float | None [default: None]
         Norm of the forward operator. If supplied, it is used to compute the
         default step size ``1 / (op_norm**2 * data_fid.Lipschitz)`` instead of
         estimating the norm numerically. An explicitly supplied ``tau`` takes
         precedence.
-    proximal_pars: dict, optional
-        Parameter dictionary passed to the computation of the prox-operator.
-    logging_level: int [default: logging.INFO]
-        logging level
-    update_setting : bool [default: False]
+    update_setting: bool [default: False]
         If True, explicitly supplied data and initial guess are stored in the setting.
+    is_primal: bool [default: True]
+        Whether iterates represent the original primal problem.
+        Pass False when solving its dual. This labels coordinates and does not
+        change the iteration formulas or construct a dual setting.
     """
 
     def __init__(self, 
                  setting: Setting, 
-                 init: Vector| None =None, 
-                 tau: float = None, 
-                 proximal_pars: dict = None, 
+                 init: ReadOnlyVector | None =None, 
+                 tau: float | None = None, 
+                 proximal_pars: dict | None = None, 
                  logging_level: int|str = "INFO",
                  op_norm: float | None = None, 
                  update_setting: bool = False,
                  is_primal: bool = True,
-                 ):
+                 ) -> None:
         super().__init__(setting, is_primal=is_primal)
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
@@ -83,7 +88,24 @@ class ForwardBackwardSplitting(RegSolver):
         self._dual_variables_computed = False
 
     @staticmethod
-    def check_applicability(setting, op_norm=None, op_lower_bound=0.):
+    def check_applicability(setting: Setting, op_norm: float | None=None, op_lower_bound: float=0.) -> tuple[dict[str, Any], dict[str, Any]]:
+        r"""Check the requirements of this solver for the supplied setting.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        op_lower_bound: float [default: 0.0]
+            Op lower bound.
+        
+        
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any]]
+            The first dictionary contains applicability information, the second a computed step size parameter.
+        """
         out = {'info':''}; par={}
         if not setting.is_tikhonov:
             out['info'] += 'Setting has no regularization parameter. '
@@ -112,10 +134,27 @@ class ForwardBackwardSplitting(RegSolver):
 
         return out, par
 
-    def primal(self): # for stopping rules and monitoring
+    def primal(self) -> tuple[Vector | None, Vector | None]: 
+        r"""Return the current primal iterate and operator image for stopping rules and monitoring.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
+        """
         return (self.x,self.y)
 
-    def dual(self): # for stopping rules and monitoring
+    def dual(self) -> tuple[Vector | None, Vector | None]: 
+        r"""Returns the dual vectors and its adjoint operator image for stopping rules and monitoring.
+        (The dual vectors appearing in iteration formula must be rescaled by (-1/alpha)!) 
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
+        """
         if self._dual_variables_computed==False:
             scale = -1./self.regpar
             self.p *= scale
@@ -124,7 +163,7 @@ class ForwardBackwardSplitting(RegSolver):
         return (self.p,self.Tp)
 
 
-    def _next(self):
+    def _next(self) -> None:
         self._dual_variables_computed = False
         self.data_fid.subgradient(self.y, out=self.p)
         self.op.adjoint(self.p, out=self.Tp)
@@ -138,12 +177,11 @@ class ForwardBackwardSplitting(RegSolver):
         self.op(self.x, out=self.y)
  
 class FISTA(RegSolver):
-    r"""
-    The generalized FISTA algorithm for minimization of Tikhonov functionals
-
+    r"""The generalized FISTA algorithm for minimization of Tikhonov functionals
+    
     .. math::
         \mathcal{S}_{g^{\delta}}(F(f)) + \alpha \mathcal{R}(f).
-
+    
     Gradient steps are performed on the first term, and proximal steps on the
     second term. For a setting without a regularization parameter, FISTA
     instead minimizes only the data-fidelity term. This is admissible when the
@@ -153,46 +191,46 @@ class FISTA(RegSolver):
     
     Parameters
     ----------
-    is_primal : bool, optional
-        Whether iterates represent the original primal problem (default True).
-        Pass False when solving its dual. This labels coordinates and does not
-        change the iteration formulas or construct a dual setting.
-    setting : regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem. Includes the penalty and data
         fidelity functionals. If ``setting.regpar`` is ``None``, the setting
         penalty must be of squared-norm type or a
         :class:`~regpy.functionals.base.NullFunctional`; it then determines
         ``setting.h_domain`` but is not part of the minimized objective.
-    init : Vector or None [default: None]
-        The initial guess. 
-    tau : float [default: None]
+    init: ReadOnlyVector | None [default: None]
+        The initial guess.
+    tau: float | None [default: None]
         Step size of minimization procedure. In the default case the reciprocal of the operator norm of $T^*T$ is used.
-    op_norm : float or None [default: None]
+    op_lower_bound: float [default: 0.0]
+        lower bound of the operator: :math:`|op(f)|\geq op_lower_bound * |f|`\.
+        Used to define convexity parameter of data functional.
+    proximal_pars: dict | None [default: None]
+        Parameter dictionary passed to the computation of the prox-operator for the penalty term.
+    data: Vector | ObsDataT | None [default: None]
+        The observed data. Only relevant if ``setting.codomain_free`` is True. 
+        Can be an operator-specific handle accepted by ``op.adjoint_data``.
+    op_norm: float | None [default: None]
         Norm of the forward operator. If supplied, it is used to compute the
         default step size ``1 / (op_norm**2 * data_fid.Lipschitz)`` instead of
         estimating the norm numerically. For codomain-free settings, the data
         fidelity Lipschitz factor is one. An explicitly supplied ``tau`` takes
         precedence.
-    op_lower_bound : float [default: 0]
-        lower bound of the operator: :math:`|op(f)|\geq op_lower_bound * |f|`\.
-        Used to define convexity parameter of data functional.     
-    proximal_pars : dict [default: {}]
-        Parameter dictionary passed to the computation of the prox-operator for the penalty term. 
-    data : ObsDataT or None [default: None]
-        The observed data. Only relevant if ``setting.codomain_free`` is True. 
-        Can be an operator-specific handle accepted by ``op.adjoint_data``.
-    logging_level: [default: logging.INFO]
+    logging_level: int | str [default: 'INFO']
         logging level
-    update_setting : bool [default: False]
+    update_setting: bool [default: False]
         If True, explicitly supplied data and initial guess are stored in the setting.
-
+    is_primal: bool [default: True]
+        Whether iterates represent the original primal problem.
+        Pass False when solving its dual. This labels coordinates and does not
+        change the iteration formulas or construct a dual setting.
+    
     Notes
     -----
     In the unregularized mode, the iteration minimizes
-
+    
     .. math::
         \mathcal{S}_{g^{\delta}}(F(f)) + 0.
-
+    
     This use as an iterative regularization method is exposed by
     :class:`~regpy.solvers.Setting` under the short method name ``"FISTA"``
     for applicable linear settings.
@@ -200,7 +238,7 @@ class FISTA(RegSolver):
     def __init__(
             self,
             setting: Setting,
-            init: Vector | None = None,
+            init: ReadOnlyVector | None = None,
             tau: float | None = None,
             op_lower_bound: float = 0.,
             proximal_pars: dict | None = None,
@@ -209,7 +247,7 @@ class FISTA(RegSolver):
             logging_level: int | str = "INFO",
             update_setting: bool = False,
                  is_primal: bool = True,
-                 ):
+                 ) -> None:
         super().__init__(setting, is_primal=is_primal)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="For nonlinear operators the FISTA method in regpy.solvers.nonlinear must be used."))
@@ -269,13 +307,29 @@ class FISTA(RegSolver):
         self._dual_variables_computed = False
         
     @staticmethod
-    def check_applicability(setting, op_lower_bound=0., op_norm=None):
-        """Check the requirements for either supported use of linear FISTA.
-
+    def check_applicability(setting: Setting, op_lower_bound: float=0., op_norm: float | None=None) -> tuple[dict[str, Any], dict[str, Any]]:
+        r"""Check the requirements for either supported use of linear FISTA.
+        
         A Tikhonov setting must provide the proximal map of its penalty. A
         setting without a regularization parameter is accepted only if its
         penalty is of squared-norm type or is a :class:`NullFunctional`; the
         solver substitutes a :class:`NullFunctional` in that case.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_lower_bound: float [default: 0.0]
+            Op lower bound.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        
+        
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any]]
+            The first dictionary contains applicability information, the second parameters used 
+            in the method. 
         """
         out = {'info':''}; par={}
         without_regpar = not setting.is_tikhonov
@@ -326,14 +380,31 @@ class FISTA(RegSolver):
                 out['rate'] = -2
         return out, par
 
-    def primal(self): # for stopping rules and monitoring
+    def primal(self) -> tuple[Vector | None, Vector | None]: 
         #if self.codomain_free:
         #    raise RuntimeError(Errors.runtime_error("Primal variables not available when FISTA is run without codomain vectors!"))
+        r"""Return the current primal iterate and None for stopping rules and monitoring. 
+        (By default the operator image of the current iterate is not computed!)
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
+        """
         return (self.x,None)
     
-    def dual(self): # for stopping rules and monitoring
+    def dual(self) -> tuple[Vector | None, Vector | None]: 
+        r"""Return the current dual iterate and adjoint image for stopping rules and monitoring, when available .
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
+        """
         if self.codomain_free:
-            raise RuntimeError(Errors.runtime_error("Primal variables not available when FISTA is run without codomain vectors!"))
+            raise RuntimeError(Errors.runtime_error("Dual variables not available when FISTA is run without codomain vectors!"))
         if self._dual_variables_computed==False:
             scale = -1./self.regpar
             self.p *= scale
@@ -341,7 +412,7 @@ class FISTA(RegSolver):
             self._dual_variables_computed = True
         return (self.p,self.Tp)
 
-    def _next(self):
+    def _next(self) -> None:
         if self.mu == 0:
             self.t = (1 + ma.sqrt(1+4*self.t_old**2))/2
             beta = (self.t_old-1) / self.t

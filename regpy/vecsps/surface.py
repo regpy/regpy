@@ -1,4 +1,10 @@
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from regpy.vecsps.base import ReadOnlyVector, Vector
+    from regpy.functionals.base import Functional
 import math
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
@@ -12,8 +18,20 @@ from regpy.operators import Operator
 from regpy.util import Errors
 
 
-def _angles_and_frame(directions: np.ndarray):
-    """Return spherical angles and the orthonormal frame for unit directions."""
+def _angles_and_frame(directions: np.ndarray) -> tuple[Any, Any, Any, Any, Any, Any]:
+    r"""Return spherical angles and the orthonormal frame for unit directions.
+    
+    Parameters
+    ----------
+    directions: np.ndarray
+        Directions.
+    
+    
+    Returns
+    -------
+    tuple[Any, Any, Any, Any, Any, Any]
+        Result described above.
+    """
     directions = np.asarray(directions, dtype=float)
     if directions.ndim < 1 or directions.shape[-1] != 3:
         raise ValueError(
@@ -37,12 +55,27 @@ def _angles_and_frame(directions: np.ndarray):
 
 
 def _complex_spherical_harmonics(
-        degree: int, directions: np.ndarray, derivatives: bool = False):
-    """Complex spherical harmonics in ``l*l + l + m`` ordering.
-
+        degree: int, directions: np.ndarray, derivatives: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray]:
+    r"""Complex spherical harmonics in ``l*l + l + m`` ordering.
+    
     If ``derivatives`` is true, the returned derivatives are with respect to
     theta and the unit ``Ephi`` direction, i.e.
     ``(1/sin(theta))*d/dphi``.
+    
+    Parameters
+    ----------
+    degree: int
+        Degree.
+    directions: np.ndarray
+        Directions.
+    derivatives: bool [default: False]
+        Derivatives.
+    
+    
+    Returns
+    -------
+    np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray]
+        Result described above.
     """
     from scipy.special import sph_harm_y
 
@@ -87,8 +120,24 @@ def _complex_spherical_harmonics(
 
 
 def _real_spherical_harmonics(
-        degree: int, directions: np.ndarray, derivatives: bool = False):
-    """Real basis used by :class:`StarSHSurfaceSpc`."""
+        degree: int, directions: np.ndarray, derivatives: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray]:
+    r"""Real basis used by :class:`StarSHSurfaceSpc`.
+    
+    Parameters
+    ----------
+    degree: int
+        Degree.
+    directions: np.ndarray
+        Directions.
+    derivatives: bool [default: False]
+        Derivatives.
+    
+    
+    Returns
+    -------
+    np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray]
+        Result described above.
+    """
     if derivatives:
         yc, ytheta, yphi = _complex_spherical_harmonics(
             degree, directions, derivatives=True
@@ -127,12 +176,29 @@ def _divide_by_sin_with_pole_limit(
         dvalue_dtheta: np.ndarray,
         theta: np.ndarray,
         sin_theta: np.ndarray) -> np.ndarray:
-    """Return ``value/sin(theta)`` with the differentiable pole limits.
-
+    r"""Return ``value/sin(theta)`` with the differentiable pole limits.
+    
     This is useful for axisymmetric parameterizations written as
     ``(x(theta), h(theta) sin(phi), h(theta) cos(phi))``.  If ``h`` vanishes
     at a pole, then h/sin(theta) tends to h'(0) at the north pole and to
     -h'(pi) at the south pole.
+    
+    Parameters
+    ----------
+    value: np.ndarray
+        Value.
+    dvalue_dtheta: np.ndarray
+        Dvalue dtheta.
+    theta: np.ndarray
+        Theta.
+    sin_theta: np.ndarray
+        Sin theta.
+    
+    
+    Returns
+    -------
+    np.ndarray
+        Computed array.
     """
     value = np.asarray(value, dtype=float)
     dvalue_dtheta = np.asarray(dvalue_dtheta, dtype=float)
@@ -151,16 +217,17 @@ def _divide_by_sin_with_pole_limit(
 
 
 class S2Surface(ABC):
-    """ Surfaces parameterized by the unit sphere :math:`S^2`. 
+    r"""Surfaces parameterized by the unit sphere :math:`S^2`. 
     More precisely, the surface is given by :math:`q(S^2)` for some smooth and smoothly invertible function 
-    :math:`q:S^2\to R^3`. 
+    :math:`q:S^2        o R^3`. 
     This function is prepresented by its values on a Gauss-Legendre grid of :math:`(n+1) (2n+2)` 
     quadrature points in :math:`(theta,phi)` coordinates. 
-
-    Parameters:
-    -----------
+    
+    Parameters
+    ----------
     n: int
-
+        N.
+    
     Properties:
     --------
     n: int
@@ -190,10 +257,8 @@ class S2Surface(ABC):
         unit normal vector on the surface.  shape (n+1,2n+2,3)
     Jacobian: nd_array
         determinant of the Jacobian.  shape (n+1,2n+2)
-
-
     """
-    def __init__(self, n: int):
+    def __init__(self, n: int) -> None:
         # During construction the grid must be initialized before the
         # subclass-specific geometry can be evaluated.  Subsequent assignments
         # to ``n`` go through the same setter and additionally refresh all
@@ -205,11 +270,16 @@ class S2Surface(ABC):
         self._surface_initialized = True
 
     class sphere_quad_data:
-        """ compute data for Gauss-Legendre quadrature on grid of :math:`(n+1) (2n+2)` 
+        r"""compute data for Gauss-Legendre quadrature on grid of :math:`(n+1) (2n+2)` 
         quadrature points in :math:`(theta,phi)` coordinates. 
         For parametric surfaces these data are set up only once in the parameter vector space.
+        
+        Parameters
+        ----------
+        n: int
+            N.
         """
-        def __init__(self, n:int):
+        def __init__(self, n:int) -> None:
             sh = (n+1,2*n+2)
             # Gauss–Legendre in μ = cos(θ)
             mu, self._alpha = np.polynomial.legendre.leggauss(n+1)
@@ -229,9 +299,24 @@ class S2Surface(ABC):
 
     @property
     def n(self)->int:
+        r"""N.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         return self._n
     @n.setter
-    def n(self,n_new:int):
+    def n(self,n_new:int) -> None:
+        r"""N.
+        
+        Parameters
+        ----------
+        n_new: int
+            N new.
+        """
         if not isinstance(n_new, (int, np.integer)) or n_new < 0:
             raise ValueError("n must be a non-negative integer.")
 
@@ -253,80 +338,246 @@ class S2Surface(ABC):
 
     @property
     def grid_shape(self)->tuple[int]:
+        r"""Grid shape.
+        
+        
+        Returns
+        -------
+        tuple[int]
+            Result described above.
+        """
         return (self.n+1,2*self.n+2)
     @property
     def theta(self)->np.ndarray:
+        r"""Theta.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._theta
     @property
     def phi(self)->np.ndarray:
+        r"""Phi.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._phi
     @property
     def xhat(self)->np.ndarray:
+        r"""Xhat.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._Erho
     @property
     def theta_coo(self)->np.ndarray:
+        r"""Theta coo.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return np.broadcast_to(self._theta[:,None],self.grid_shape)
     @property
     def phi_coo(self)->np.ndarray:
+        r"""Phi coo.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return np.broadcast_to(self._phi[None,:],self.grid_shape)        
     @property
     def quadweights(self)->np.ndarray:
+        r"""Quadweights.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return np.broadcast_to((np.pi/(self.n+1))*self._alpha[:,None],self.grid_shape)
     @property
     def st(self)->np.ndarray:
+        r"""St.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._st
     @property
     def ct(self)->np.ndarray:
+        r"""Ct.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._ct
     @property
     def sp(self)->np.ndarray:
+        r"""Sp.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._sp
     @property
     def cp(self)->np.ndarray:
+        r"""Cp.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._cp
     @property
     def Erho(self)->np.ndarray:
+        r"""Erho.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._Erho
     @property
     def Ephi(self)->np.ndarray:
+        r"""Ephi.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._Ephi
     @property
     def Etheta(self)->np.ndarray:
+        r"""Etheta.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._Etheta            
     @property
     def q(self)->np.ndarray:
+        r"""Q.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._q   
     @property
     def Jacobian(self)->np.ndarray:
+        r"""Jacobian.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._Jacobian
     @property
     def Ttheta(self)->np.ndarray:
+        r"""Ttheta.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._Ttheta           
     @property
     def Tphi(self)->np.ndarray:
+        r"""Tphi.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._Tphi
     @property
     def normal(self)->np.ndarray:
+        r"""Normal.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._normal 
 
     @abstractmethod
     def _evaluate(self)->None:
-        """Initialize ``q``, ``Ttheta`` and ``Tphi`` on the standard grid."""
+        r"""Initialize ``q``, ``Ttheta`` and ``Tphi`` on the standard grid.
+        """
 
-    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         r"""Evaluate the surface geometry at arbitrary points of :math:`S^2`.
-
+        
         ``Ttheta`` is the derivative in the unit ``Etheta`` direction and
         ``Tphi`` is the derivative in the unit ``Ephi`` direction, i.e.
         ``(1/sin(theta))*d/dphi``.  Consequently ``Jacobian`` is the surface
         Jacobian relative to the area element on the unit sphere.  
-
+        
         The base implementation uses the degree-``n`` spherical-harmonic
         interpolant of the sampled parametrization ``q``.  Concrete surfaces
         may override this method when an exact evaluation is available.
         With ``full=False`` only ``(q, Jacobian, normal)`` is returned.
         ``full=True`` additionally returns ``Ttheta``, ``Tphi`` and the
         spherical frame ``Erho``, ``Etheta``, ``Ephi``.
+        
+        Parameters
+        ----------
+        directions: np.ndarray
+            Directions.
+        full: bool [default: False]
+            Full.
+        
+        
+        Returns
+        -------
+        np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+            Result described above.
         """
         directions = np.asarray(directions, dtype=float)
         if not hasattr(self, "_q_sh_coeff"):
@@ -355,7 +606,7 @@ class S2Surface(ABC):
 
     @staticmethod
     def _finish_direction_evaluation(
-            q, Ttheta, Tphi, Erho, Etheta, Ephi, full=False):
+            q: float, Ttheta: np.ndarray, Tphi: np.ndarray, Erho: np.ndarray, Etheta: np.ndarray, Ephi: np.ndarray, full: bool=False) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         normal = np.cross(Ttheta, Tphi)
         Jacobian = np.linalg.norm(normal, axis=-1)
         if np.any(Jacobian <= 0):
@@ -366,7 +617,8 @@ class S2Surface(ABC):
         return q, Jacobian, normal
 
     def _complete_evaluation(self)->None:
-        """Compute Jacobian and unit normal from the tangent vectors."""
+        r"""Compute Jacobian and unit normal from the tangent vectors.
+        """
         self._normal = np.cross(self.Ttheta, self.Tphi)
         self._Jacobian = np.linalg.norm(self._normal, axis=2)
         if np.any(self._Jacobian <= 0):
@@ -374,31 +626,61 @@ class S2Surface(ABC):
         self._normal /= self._Jacobian[:,:,None]
 
     def grid_space(self)->GridFcts:
-        """ returns the GridFcts space of the quadrature grid.
+        r"""returns the GridFcts space of the quadrature grid.
+                
+        
+        Returns
+        -------
+        GridFcts
+            Result described above.
         """
         return MeasureSpaceFcts(self.quadweights)
 
     def area(self)->float:
-        """returns area of the surface
+        r"""returns area of the surface
+                
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
         """
         return np.sum(self.Jacobian * self.quadweights)
     
     def center_of_gravity(self)->np.ndarray:
-        """returns center of gravity of the surface, a np.ndarray of shape (3,)
+        r"""returns center of gravity of the surface, a np.ndarray of shape (3,)
+                
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
         """
         return np.sum(self.q * self.Jacobian[:,:,None] * self.quadweights[:,:,None], axis=(0,1)) / self.area()
     
 
 class StarSurface(S2Surface, ABC):
-    """ star-shape S2Surface with parameterization given by
+    r"""star-shape S2Surface with parameterization given by
     :math:`q(xhat) = r(xhat)xhat`
+    
+    Parameters
+    ----------
+    n: int
+        N.
     """
-    def __init__(self, n:int):
+    def __init__(self, n:int) -> None:
         super().__init__(n)
 
     @abstractmethod
     def radius_and_derivatives(self)->tuple[np.ndarray,np.ndarray,np.ndarray]:
-        """Return r, dr/dθ, dr/dφ"""
+        r"""Return r, dr/dθ, dr/dφ
+        
+        
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            Result described above.
+        """
 
     def _evaluate(self)->None:
         r, dr_dtheta, dr_dphi = self.radius_and_derivatives()
@@ -407,15 +689,47 @@ class StarSurface(S2Surface, ABC):
         self._Tphi   = dr_dphi[:,:,None]   * self.Erho + r[:,:,None] * self.Ephi
 
 class Sphere(StarSurface):
-    def __init__(self, n:int, R=0.5):
+    r"""Sphere interface.
+    
+    Parameters
+    ----------
+    n: int
+        N.
+    R: Functional [default: 0.5]
+        R.
+    """
+    def __init__(self, n:int, R: Functional=0.5) -> None:
         self.R = R
         super().__init__(n)
 
     def radius_and_derivatives(self)->tuple[np.ndarray,np.ndarray,np.ndarray]:
+        r"""Radius and derivatives.
+        
+        
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            Result described above.
+        """
         r = self.R * np.ones(self.grid_shape)
         return r, np.zeros(self.grid_shape), np.zeros(self.grid_shape)
 
-    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        r"""Evaluate directions.
+        
+        Parameters
+        ----------
+        directions: np.ndarray
+            Directions.
+        full: bool [default: False]
+            Full.
+        
+        
+        Returns
+        -------
+        np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+            Result described above.
+        """
         _, _, _, Erho, Etheta, Ephi = _angles_and_frame(directions)
         q = self.R * Erho
         Ttheta = self.R * Etheta
@@ -426,13 +740,26 @@ class Sphere(StarSurface):
 
 
 class Ellipsoid(S2Surface):
-    def __init__(self,n:int,a: float,b: float,c: float):
+    r"""Ellipsoid interface.
+    
+    Parameters
+    ----------
+    n: int
+        N.
+    a: float
+        A.
+    b: float
+        B.
+    c: float
+        C.
+    """
+    def __init__(self,n:int,a: float,b: float,c: float) -> None:
         self.axes = np.asarray([a, b, c], dtype=float)
         if np.any(self.axes <= 0):
             raise ValueError("ellipsoid semi-axes must be positive.")
         super().__init__(n)
 
-    def _evaluate(self):
+    def _evaluate(self) -> None:
         # Keep the historical ``scaling`` attribute, but rebuild its broadcast
         # view for the current quadrature order.
         self.scaling = np.broadcast_to(
@@ -442,7 +769,22 @@ class Ellipsoid(S2Surface):
         self._Ttheta = self.scaling * self.Etheta
         self._Tphi = self.scaling * self.Ephi
 
-    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        r"""Evaluate directions.
+        
+        Parameters
+        ----------
+        directions: np.ndarray
+            Directions.
+        full: bool [default: False]
+            Full.
+        
+        
+        Returns
+        -------
+        np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+            Result described above.
+        """
         _, _, _, Erho, Etheta, Ephi = _angles_and_frame(directions)
         q = self.axes * Erho
         Ttheta = self.axes * Etheta
@@ -454,26 +796,48 @@ class Ellipsoid(S2Surface):
 
 class Peanut(S2Surface):
     r"""The ``peanut`` surface from the original MATLAB 3D toolbox.
-
+    
     The old MATLAB surface is not a radial star surface in Euclidean
     coordinates: its second Cartesian coordinate is stretched by a factor
     two.  The previous Python version omitted this factor and therefore
     represented a different obstacle.
+    
+    Parameters
+    ----------
+    n: int
+        N.
+    alpha: float [default: 0.25]
+        Alpha.
     """
 
-    def __init__(self, n:int, alpha=0.25):
+    def __init__(self, n:int, alpha: float=0.25) -> None:
         if alpha <= 0:
             raise ValueError("alpha must be positive.")
         self.alpha = float(alpha)
         super().__init__(n)
 
-    def _evaluate(self):
+    def _evaluate(self) -> None:
         (
             self._q, _, _, self._Ttheta, self._Tphi,
             _, _, _
         ) = self.evaluate_directions(self.xhat, full=True)
 
-    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        r"""Evaluate directions.
+        
+        Parameters
+        ----------
+        directions: np.ndarray
+            Directions.
+        full: bool [default: False]
+            Full.
+        
+        
+        Returns
+        -------
+        np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+            Result described above.
+        """
         theta, _, st, Erho, Etheta, Ephi = _angles_and_frame(directions)
         ct = np.cos(theta)
         s2 = 2*st*ct
@@ -508,28 +872,43 @@ class Peanut(S2Surface):
 
 class Bean(S2Surface):
     r"""The ``bean`` surface from the original MATLAB ``S2_surface.m``.
-
+    
     Parameters
     ----------
-    n : int
+    n: int
         Quadrature order.
-    R : float, optional
+    R: float [default: 0.5]
         Overall scaling.  MATLAB default: ``0.5``.
     """
 
-    def __init__(self, n: int, R: float = 0.5):
+    def __init__(self, n: int, R: float = 0.5) -> None:
         if R <= 0:
             raise ValueError("R must be positive.")
         self.R = float(R)
         super().__init__(n)
 
-    def _evaluate(self):
+    def _evaluate(self) -> None:
         (
             self._q, _, _, self._Ttheta, self._Tphi,
             _, _, _
         ) = self.evaluate_directions(self.xhat, full=True)
 
-    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        r"""Evaluate directions.
+        
+        Parameters
+        ----------
+        directions: np.ndarray
+            Directions.
+        full: bool [default: False]
+            Full.
+        
+        
+        Returns
+        -------
+        np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+            Result described above.
+        """
         theta, phi, st, Erho, Etheta, Ephi = _angles_and_frame(directions)
         ct = np.cos(theta)
         sp, cp = np.sin(phi), np.cos(phi)
@@ -575,14 +954,23 @@ class Bean(S2Surface):
 
 class Ogive(S2Surface):
     r"""The ``ogive`` surface from the original MATLAB ``S2_surface.m``.
-
+    
     This surface has the conical singularities of the MATLAB model.
+    
+    Parameters
+    ----------
+    n: int
+        N.
+    angle: float [default: np.pi * 22.62 / 180.0]
+        Angle.
+    length: float [default: 1.0]
+        Length.
     """
 
     def __init__(
             self, n: int,
             angle: float = np.pi * 22.62 / 180.0,
-            length: float = 1.0):
+            length: float = 1.0) -> None:
         if not 0 < angle < np.pi/2:
             raise ValueError("angle must lie in (0, pi/2).")
         if length <= 0:
@@ -591,13 +979,28 @@ class Ogive(S2Surface):
         self.length = float(length)
         super().__init__(n)
 
-    def _evaluate(self):
+    def _evaluate(self) -> None:
         (
             self._q, _, _, self._Ttheta, self._Tphi,
             _, _, _
         ) = self.evaluate_directions(self.xhat, full=True)
 
-    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        r"""Evaluate directions.
+        
+        Parameters
+        ----------
+        directions: np.ndarray
+            Directions.
+        full: bool [default: False]
+            Full.
+        
+        
+        Returns
+        -------
+        np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+            Result described above.
+        """
         theta, phi, st, Erho, Etheta, Ephi = _angles_and_frame(directions)
         sp, cp = np.sin(phi), np.cos(phi)
         length = self.length
@@ -644,12 +1047,22 @@ class Ogive(S2Surface):
 
 
 class OgiveCos(S2Surface):
-    r"""The ``ogive_cos`` surface from the original MATLAB ``S2_surface.m``."""
+    r"""The ``ogive_cos`` surface from the original MATLAB ``S2_surface.m``.
+    
+    Parameters
+    ----------
+    n: int
+        N.
+    angle: float [default: np.pi * 22.62 / 180.0]
+        Angle.
+    length: float [default: 1.0]
+        Length.
+    """
 
     def __init__(
             self, n: int,
             angle: float = np.pi * 22.62 / 180.0,
-            length: float = 1.0):
+            length: float = 1.0) -> None:
         if not 0 < angle < np.pi/2:
             raise ValueError("angle must lie in (0, pi/2).")
         if length <= 0:
@@ -658,13 +1071,28 @@ class OgiveCos(S2Surface):
         self.length = float(length)
         super().__init__(n)
 
-    def _evaluate(self):
+    def _evaluate(self) -> None:
         (
             self._q, _, _, self._Ttheta, self._Tphi,
             _, _, _
         ) = self.evaluate_directions(self.xhat, full=True)
 
-    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        r"""Evaluate directions.
+        
+        Parameters
+        ----------
+        directions: np.ndarray
+            Directions.
+        full: bool [default: False]
+            Full.
+        
+        
+        Returns
+        -------
+        np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+            Result described above.
+        """
         theta, phi, st, Erho, Etheta, Ephi = _angles_and_frame(directions)
         sp, cp = np.sin(phi), np.cos(phi)
         length = self.length
@@ -707,16 +1135,29 @@ class OgiveCos(S2Surface):
 
 class ConeSphere(S2Surface):
     r"""The ``cone_sphere`` surface from the original MATLAB toolbox.
-
+    
     A cone is glued C1-smoothly to a sphere.  The default unscaled MATLAB
     parameters ``alpha=23.821``, ``beta=3.306`` and ``gamma=2.947`` are
     rescaled so that ``alpha + beta == length``.
+    
+    Parameters
+    ----------
+    n: int
+        N.
+    length: float [default: 1.0]
+        Length.
+    alpha: float [default: 23.821]
+        Alpha.
+    beta: float [default: 3.306]
+        Beta.
+    gamma: float [default: 2.947]
+        Gamma.
     """
 
     def __init__(
             self, n: int, length: float = 1.0,
             alpha: float = 23.821, beta: float = 3.306,
-            gamma: float = 2.947):
+            gamma: float = 2.947) -> None:
         if length <= 0:
             raise ValueError("length must be positive.")
         if alpha <= 0 or beta <= 0 or gamma <= 0:
@@ -729,13 +1170,28 @@ class ConeSphere(S2Surface):
         self.length = float(length)
         super().__init__(n)
 
-    def _evaluate(self):
+    def _evaluate(self) -> None:
         (
             self._q, _, _, self._Ttheta, self._Tphi,
             _, _, _
         ) = self.evaluate_directions(self.xhat, full=True)
 
-    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        r"""Evaluate directions.
+        
+        Parameters
+        ----------
+        directions: np.ndarray
+            Directions.
+        full: bool [default: False]
+            Full.
+        
+        
+        Returns
+        -------
+        np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+            Result described above.
+        """
         theta, phi, st, Erho, Etheta, Ephi = _angles_and_frame(directions)
         sp, cp = np.sin(phi), np.cos(phi)
 
@@ -798,20 +1254,29 @@ class ConeSphere(S2Surface):
 
 class ParameterizedSurface():
     r"""Surface represented by coefficients in a vector space.
-
+    
     Many forward maps are naturally defined on a shape space and are invariant
     under reparameterization. Because a shape space is not itself a vector
     space, RegPy represents a chosen class of surfaces by coefficient vectors;
     star-shaped surfaces, for example, can use spherical-harmonic coefficients.
-
+    
     Implementations commonly discretize a continuous shape derivative instead
     of differentiating a discrete coefficient-to-surface composition. The
     derivative depends only on the normal component of a surface perturbation,
     so derivatives of parameterized forward maps are composed with
     ``self.der_normal``.
+    
+    Parameters
+    ----------
+    coeff: np.ndarray
+        Coeff.
+    der_normal: Operator
+        Der normal.
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
     """
     from regpy.operators import Operator
-    def __init__(self,coeff:np.ndarray,der_normal:Operator,**kwargs):
+    def __init__(self,coeff:np.ndarray,der_normal:Operator,**kwargs: Any) -> None:
         if not coeff in der_normal.domain:
             raise ValueError(Errors.not_a_vecsp(coeff,der_normal.domain))
         if not isinstance(der_normal.domain,ParameterizedSurfaceSpc):
@@ -829,17 +1294,46 @@ class ParameterizedSurface():
 
 
 class ParameterizedSurfaceSpc(ABC):
-    r"""Base class for coefficient spaces of :class:`ParameterizedSurface`."""
-    def __init__(self,**kwargs):
+    r"""Base class for coefficient spaces of :class:`ParameterizedSurface`.
+    
+    Parameters
+    ----------
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
+    """
+    def __init__(self,**kwargs: Any) -> None:
         pass
 
     @abstractmethod
     def coeff2surface(self, coeff : np.ndarray, nderivs : int =0)->ParameterizedSurface:
-        r"""Compute a surface for the given coefficients."""
+        r"""Compute a surface for the given coefficients.
+        
+        Parameters
+        ----------
+        coeff: np.ndarray
+            Coeff.
+        nderivs: int [default: 0]
+            Number of derivatives to compute.
+        
+        
+        Returns
+        -------
+        ParameterizedSurface
+            Result described above.
+        """
         pass
 
 class StarSHSurfaceSpc(ParameterizedSurfaceSpc,MeasureSpaceFcts):
-    def __init__(self, n:int, sh_deg:int=3):
+    r"""StarSHSurfaceSpc interface.
+    
+    Parameters
+    ----------
+    n: int
+        N.
+    sh_deg: int [default: 3]
+        Sh deg.
+    """
+    def __init__(self, n:int, sh_deg:int=3) -> None:
         if not isinstance(n,int) or not isinstance(sh_deg,int):
             raise TypeError(Errors.type_error(f'n and sh_deg must be integers. {n},{sh_deg}'))
         if sh_deg < 0 or sh_deg>n or n<0:
@@ -860,7 +1354,7 @@ class StarSHSurfaceSpc(ParameterizedSurfaceSpc,MeasureSpaceFcts):
         self.__dict__.update(dat.__dict__)
         self._compute_SH_basis()
 
-    def _compute_SH_basis(self):
+    def _compute_SH_basis(self) -> None:
         (
             self.basis,
             self.basis_theta,
@@ -870,13 +1364,37 @@ class StarSHSurfaceSpc(ParameterizedSurfaceSpc,MeasureSpaceFcts):
         )
 
     def coeff2surface(self,coeff:np.ndarray)->StarSHSurface:
+        r"""Coeff2surface.
+        
+        Parameters
+        ----------
+        coeff: np.ndarray
+            Coeff.
+        
+        
+        Returns
+        -------
+        StarSHSurface
+            Result described above.
+        """
         if len(coeff.shape)!=1 or len(coeff) != (self.sh_deg+1)**2:
             raise ValueError(f'coefficient vector must have shape ((sh_deg+1)**2,). sh_deg={self.sh_deg}, {coeff.shape}')
         return StarSHSurface(self,coeff)
 
     def sphere(self,radius:float=1.)->StarSHSurface:
-        """ Return a StarSHSurface which is a sphere of a given radius. 
+        r"""Return a StarSHSurface which is a sphere of a given radius. 
         This can be used as an initial guess.
+        
+        Parameters
+        ----------
+        radius: float [default: 1.0]
+            Radius.
+        
+        
+        Returns
+        -------
+        StarSHSurface
+            Result described above.
         """
         coeff = self.zeros()
         coeff[0]=radius *np.sqrt(4*np.pi)
@@ -884,44 +1402,50 @@ class StarSHSurfaceSpc(ParameterizedSurfaceSpc,MeasureSpaceFcts):
 
 
 class StarSHSurface(StarSurface,ParameterizedSurface):
-    """
-    StarSurface with radial function given by spherical harmonics. 
-
-    Parameters:
-    -----------
-
+    r"""StarSurface with radial function given by spherical harmonics. 
+    
+    Parameters
+    ----------
     spc: StarSHSurfaceSpc
-        The underlying vector space of SH coefficients. 
-    n: int
-        Parameter of quadrature grid 
+        The underlying vector space of SH coefficients.
     coeff: np.ndarray
         coefficient vector
     """
 
     class der_normal_StarSHSurface(Operator):
-        def __init__(self,spc:StarSHSurfaceSpc,surf:StarSHSurface):
+        r"""der_normal_StarSHSurface interface.
+        
+        Parameters
+        ----------
+        spc: StarSHSurfaceSpc
+            Spc.
+        surf: StarSHSurface
+            Surf.
+        """
+        def __init__(self,spc:StarSHSurfaceSpc,surf:StarSHSurface) -> None:
                 super().__init__(domain= spc,codomain=surf.grid_space(), linear=True)
                 self.basis = spc.basis
                 self.xhat_dot_normal = np.sum(surf.normal*surf.xhat,axis=2)
 
-        def _eval(self,coeff):
+        def _eval(self,coeff: ReadOnlyVector) -> Vector:
             radial = np.sum(coeff[None,None,:] * self.basis,axis=2)
             radial *= self.xhat_dot_normal
             return radial
 
-        def _adjoint(self, y):
+        def _adjoint(self, y: ReadOnlyVector) -> Vector:
             aux = y*self.xhat_dot_normal
             return np.sum(aux[:,:,None]*self.basis,axis=(0,1))
 
-    def __init__(self, spc:StarSHSurfaceSpc, coeff:np.ndarray):
-        """
-        StarSurface with radial function r given by a linear combination of spherical harmonics 
+    def __init__(self, spc:StarSHSurfaceSpc, coeff:np.ndarray) -> None:
+        r"""StarSurface with radial function r given by a linear combination of spherical harmonics 
         of some maximal degree.
-
+        
         Parameters
         ----------
-        sh_deg: int
-            Maximum harmonic degree
+        spc: StarSHSurfaceSpc
+            Spc.
+        coeff: np.ndarray
+            Coeff.
         """
 
         if not isinstance(coeff,np.ndarray):
@@ -936,7 +1460,14 @@ class StarSHSurface(StarSurface,ParameterizedSurface):
         ParameterizedSurface.__init__(self,coeff,der_normal=der_normal)
 
     @S2Surface.n.setter
-    def n(self,n_new:int):
+    def n(self,n_new:int) -> None:
+        r"""N.
+        
+        Parameters
+        ----------
+        n_new: int
+            N new.
+        """
         if not isinstance(n_new, (int, np.integer)) or n_new < 0:
             raise ValueError("n must be a non-negative integer.")
         n_new = int(n_new)
@@ -956,13 +1487,13 @@ class StarSHSurface(StarSurface,ParameterizedSurface):
             self._complete_evaluation()
 
     def radius_and_derivatives(self)->tuple[np.ndarray,np.ndarray,np.ndarray]:
-        """
-        Evaluate spherical harmonic field and its surface gradient
-
-        Parameters
-        ----------
-        coeff : ((N+1)^2,) array
-            Spherical harmonic coefficients in MATLAB ordering: index = l^2 + l + m
+        r"""Evaluate spherical harmonic field and its surface gradient
+        
+        
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            Result described above.
         """
 
         r      = np.sum(self.coeff[None,None,:] * self.spc.basis,axis=2)
@@ -971,7 +1502,22 @@ class StarSHSurface(StarSurface,ParameterizedSurface):
 
         return r, rtheta, rphi
 
-    def evaluate_directions(self, directions: np.ndarray, full: bool = False):
+    def evaluate_directions(self, directions: np.ndarray, full: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        r"""Evaluate directions.
+        
+        Parameters
+        ----------
+        directions: np.ndarray
+            Directions.
+        full: bool [default: False]
+            Full.
+        
+        
+        Returns
+        -------
+        np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+            Result described above.
+        """
         basis, btheta, bphi = _real_spherical_harmonics(
             self.spc.sh_deg, directions, derivatives=True
         )
@@ -987,14 +1533,15 @@ class StarSHSurface(StarSurface,ParameterizedSurface):
         )
 
     def field2SHcoeffs(self,u:np.ndarray)->np.ndarray:
-        """ Computes the spherical harmonics coefficients of a real-valued field on the sphere given 
+        r"""Computes the spherical harmonics coefficients of a real-valued field on the sphere given 
         at the quadrature points.
-
-        Parameters:
+        
+        Parameters
         ----------
         u: np.ndarray
-
-        Returns:
+            U.
+        
+        Returns
         ------------
         np.ndarray
         """

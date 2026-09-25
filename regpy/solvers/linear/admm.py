@@ -1,3 +1,9 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from regpy.vecsps.base import ReadOnlyVector, Vector
 import logging
 import numpy as np
 
@@ -13,16 +19,16 @@ __all__ = ["ADMM"]
 class ADMM(RegSolver):
     r"""The ADMM method for minimizing :math:`\frac{1}{\alpha}S(Tf) + R(f)`. 
     ADMM solves the problem :math:`\min_{u,v}[F(u)+G(v)]` under the constraint that :math:`Au+Bv=b`. Choosing 
-
+    
     .. math::
         A&:=\begin{pmatrix} T \\ I \end{pmatrix} ,\; \\
         B&:=\begin{pmatrix} -I & 0 \\ 0 & -I \end{pmatrix}, \; \\
         b&:=\begin{pmatrix} 0 \\ 0 \end{pmatrix} ,\; \\
         F(f)&:= 0,\; \\
         G\begin{pmatrix} v_1 \\ v_2 \end{pmatrix}&:=\frac{1}{\alpha}S(v_1)+R(v_2) ,\; \\
-
+    
     leads to a nice splitting of the operator :math:`T` and the functional :math:`R` seen in the Lagrangian
-
+    
     .. math::
         L_\gamma(f,v_1,v_2,p_1,p_2):=& \\
         &\frac{1}{\alpha}S(v_1) + R(v_2) \\
@@ -30,7 +36,7 @@ class ADMM(RegSolver):
         &- \langle\gamma p_2,f-v_2\rangle \\
         &+ \frac{\gamma}{2} \Vert Tf - v_1 \Vert^2 \\
         &+ \frac{\gamma}{2} \Vert f - v_2 \Vert^2.
-
+    
     The minimization for :math:`f` reduces to the minimization of a quadratic Tikhonov functional.  
     This can be achieved by the CG method, but ADMM is usually only competitive if 
     a closed-form expression for the Tikhonov regularizer is available. 
@@ -39,41 +45,41 @@ class ADMM(RegSolver):
     A regularized inverse in form of a `regpy.operators.operator` can also be passed as argument. 
     Splitting up the minimization for :math:`v_1` and :math:`v_2` one gets the algorithm below requiring the proximal 
     operators for the penalty and data fidelity functional. 
-
+    
     Parameters
     ----------
-    is_primal : bool, optional
-        Whether iterates represent the original primal problem (default True).
-        Pass False when solving its dual. This labels coordinates and does not
-        change the iteration formulas or construct a dual setting.
-    setting : regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem. Includes the penalty and data fidelity functionals.
-    init : dict [default: {}]
+    init: ReadOnlyVector | None [default: None]
         The initial guess. Relevant keys are v1, v2, p1 and p2. If a key does not exist or if the value in None, 
-        the corresponding variable is initialized by zero. 
-    gamma : float [default: 1]
-        Augmentation to the Lagrangian. Must be strictly greater than zero. 
-    proximal_pars_data_fidelity : dict [default: {}]
+        the corresponding variable is initialized by zero.
+    gamma: float [default: 1]
+        Augmentation to the Lagrangian. Must be strictly greater than zero.
+    proximal_pars_data_fidelity: dict[str, Any] | None [default: None]
         Parameter dictionary passed to the computation of the prox-operator for the data fidelity term
-    proximal_pars_penalty : dict [default: {}]
+    proximal_pars_penalty: dict[str, Any] | None [default: None]
         Parameter dictionary passed to the computation of the prox-operator for the penalty term
-    regularizedInverse: `regpy.operators.Operator` [default: None]
+    regularizedInverse: Operator | None [default: None]
         The operator (T^dagger T+I)^-1 on the domain Hilbert space, where
         T^dagger=G_X^-1 T* G_Y. A supplied operator takes precedence.
         Otherwise a labelled SVD is used to precompute the inverse. Without
         either option, applicability checking reports a caveat and CG is used. The
         regularization parameter of this inner inverse is 1, independent
         of the outer Tikhonov parameter and gamma.
-    cg_pars : dict [default: {}]
+    cg_pars: dict[str, Any] | None [default: None]
         Parameter dictionary passed to the inner `regpy.solvers.linear.tikhonov.TikhonovCG` solver.
-    logging_level: [default: logging.INFO]
+    logging_level: int | str [default: 'INFO']
         logging level
+    is_primal: bool [default: True]
+        Whether iterates represent the original primal problem.
+        Pass False when solving its dual. This labels coordinates and does not
+        change the iteration formulas or construct a dual setting.
     """
 
-    def __init__(self,  setting, init=None, gamma = 1, proximal_pars_data_fidelity = None, proximal_pars_penalty = None, 
-                 regularizedInverse=None, cg_pars = None,logging_level = "INFO",
+    def __init__(self,  setting: Setting, init: ReadOnlyVector | None=None, gamma: float = 1, proximal_pars_data_fidelity: dict[str, Any] | None = None, proximal_pars_penalty: dict[str, Any] | None = None, 
+                 regularizedInverse: Operator | None=None, cg_pars: dict[str, Any] | None = None,logging_level: int | str = "INFO",
                  is_primal: bool = True,
-                 ):
+                 ) -> None:
         init = {} if init is None else init
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error("ADMM requires the setting to contain a regularization parameter!"))       
@@ -141,7 +147,24 @@ class ADMM(RegSolver):
             self.y = self.op(self.x)
 
     @staticmethod
-    def check_applicability(setting, regularizedInverse = None,op_norm=None):
+    def check_applicability(setting: Setting, regularizedInverse: Operator | None = None,op_norm: float | None=None) -> tuple[dict[str, Any], dict[str, Any]]:
+        r"""Check the requirements of this solver for the supplied setting.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        regularizedInverse: Operator | None [default: None]
+            Regularizedinverse.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        
+        
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any]]
+            The first dictionary contains information on applicability, the second is empty here. 
+        """
         out = {'info': ''}; par = {}
         if not setting.is_tikhonov:
             out['info'] += 'Setting has no regularization parameter. '
@@ -173,11 +196,26 @@ class ADMM(RegSolver):
             out['rate'] = -1.
         return out, par
 
-    def primal(self):
+    def primal(self) -> tuple[Vector | None, Vector | None]:
+        r"""Return the current primal iterate and operator image, when available.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
+        """
         return (self.x, self.y)
 
-    def dual(self):
-        """Use p=0 at iteration zero; reconstruct the usual dual pair later."""
+    def dual(self) -> tuple[Vector | None, Vector | None]:
+        r"""Use p=0 at iteration zero; reconstruct the usual dual pair later.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
+        """
         if self.iteration_step_nr == 0:
             return self.op.codomain.zeros(), self.op.domain.zeros()
         _, dual = self.setting._complete_primal_dual_tuples(
@@ -185,7 +223,7 @@ class ADMM(RegSolver):
         )
         return dual
 
-    def _next(self):
+    def _next(self) -> None:
         self.v1 = self.data_fid.proximal(self.y-self.p1, 1/(self.gamma*self.setting.regpar), self.proximal_pars_data_fidelity)
         self.v2 = self.penalty.proximal(self.x-self.p2, 1/self.gamma, self.proximal_pars_penalty)
         self.p1 -= self.gamma*(self.y-self.v1)

@@ -1,28 +1,38 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from regpy.vecsps.base import ReadOnlyVector, Vector, VectorSpaceBase
+    from regpy.functionals.base import Functional
 from random import uniform
 
 import numpy as np
 
 from .general import Errors
 
-def sample_essential_domain(func,u=None,eps_perturbation=None):
-    r""" Returns a grid function in the essential domain of an IntegralFunctional. 
+def sample_essential_domain(func: Functional,
+                            u: Vector | None=None,
+                            eps_perturbation: float | None=None
+                            ) -> Vector | tuple[Vector, Vector]:
+    r"""Returns a grid function in the essential domain of an IntegralFunctional. 
     The values of this grid function are chosen to roughly span the essential domain of the function defining the 
     integral functional.
-
+    
     Parameters
     ----------
-    func : regpy.functionals.Functional
+    func: Functional
         The functional. Needs to be separable!
-    u : array-like or None, optional
+    u: Vector | None [default: None]
         A supplied point is retained and must satisfy the coordinate bounds.
         Otherwise, sample each coordinate in its own interval.
-    eps_perturbation : float or None, optional
+    eps_perturbation: float | None [default: None]
         Nonnegative perturbation length. If provided, also return a direction h.
         Coordinates with equal lower and upper bounds have h=0.
-        
+    
     Returns
     -------
-    array-like
+    Vector | tuple[Vector, Vector]
         An element u of func.domain
         If eps_perturbation is not None, return (u, h), with
         u + eps_perturbation*h satisfying the coordinate domain bounds.
@@ -124,26 +134,24 @@ def sample_essential_domain(func,u=None,eps_perturbation=None):
             return func.domain.join(*xx), func.domain.join(*hh)
     
 
-def sample_vector_in_domain(func, dist = 1e-10):
-    r"""
-    Samples a vector in the domain of an VectorIntegralFunctional such that the taking the norm
+def sample_vector_in_domain(func: Functional, dist: float = 1e-10) -> Vector:
+    r"""Samples a vector in the domain of an VectorIntegralFunctional such that the taking the norm
     in the vector dimension :math:`lower<|v|<upper` satisfies with a given distance `dist` 
     to the upper bounds.
-
+    
     Note that if lower is below zero it is treated as zero.
-
+    
     Parameters
     ----------
-    func : regpy.functionals.VectorIntegralFunctional
+    func: Functional
         The vector integral functional.
-    dist : float, optional
-        Distance to the upper and lower bound. Defaults to 1e-10.
-
+    dist: float [default: 1e-10]
+        Distance to the upper and lower bound.
+    
     Returns
     -------
-    array-like
+    Vector
         A vector in the domain satisfying the norm constraints.
-
     """
     from regpy.functionals.base import Conj
     if isinstance(func,Conj):
@@ -184,28 +192,32 @@ def sample_vector_in_domain(func, dist = 1e-10):
     return result
 
 
-def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
+def test_moreaus_identity(func: Functional,
+                          u: ReadOnlyVector | None=None,
+                          tau: float=1.0,
+                          tolerance: float=1e-10
+                          ) -> bool:
     r"""Numerically test the validity of Moreau's identity for a given functional
-
+    
     Checks if:
-
+    
     .. math::
         u=prox_{\tau F}(u)+\tau prox_{\frac{1}{\tau}F^*}(\frac{u}{\tau}).
-
+    
     Parameters
     ----------
-    func : regpy.functionals.Functional
+    func: Functional
         The functional.
-    u : any
-        Element in domain of func, if None it is chosen at random. Defaults to None.
-    tau : float, optional
+    u: ReadOnlyVector | None [default: None]
+        Element in domain of func, if None it is chosen at random.
+    tau: float [default: 1.0]
         Positive number tau in prox
-    tolerance : float, optional
-        The maximum allowed error in norm. Defaults to 1e-10.
-
+    tolerance: float [default: 1e-10]
+        The maximum allowed error in norm.
+    
     Returns
     -------
-    boolean
+    bool
         False, if the test fails and True otherwise.
     """
     if(u is None):
@@ -224,24 +236,30 @@ def test_moreaus_identity(func,u=None,tau=1.0,tolerance=1e-10):
         func.log.warning(f"Failed Moreaus identity with: err={err}, tolerance={tolerance}")
         return False
 
-def test_prox_optimality_cond(func,tau=1,u=None,tol=1e-10):
+def test_prox_optimality_cond(func: Functional,
+                              tau: float=1,
+                              u: ReadOnlyVector | None=None,
+                              tol: float=1e-10
+                              ) -> bool:
     r"""Numerically test validity of the optimality condition characterizing the prox operator: 
-
+    
     .. math::
         (u-prox_{\tau F}(u))/tau \in  \partial F(prox_{\tau F}(u))
-
+    
     Parameters
     ----------
-    func : regpy.functionals.Functional
+    func: Functional
         The functional.
-    tau : float, optional
-        Positive number tau in prox. Defaults to 1.
-    u : array-like
-        Element in domain of func, if None it is chosen at random. Defaults to None.
+    tau: float [default: 1]
+        Positive number tau in prox.
+    u: ReadOnlyVector | None [default: None]
+        Element in domain of func, if None it is chosen at random.
+    tol: float [default: 1e-10]
+        Tolerance for the stopping or comparison criterion.
     
     Returns
     -------
-    boolean
+    bool
         False, if the test fails and True otherwise.
     """
     if u is None:
@@ -258,30 +276,35 @@ def test_prox_optimality_cond(func,tau=1,u=None,tol=1e-10):
 
 
 
-def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-2,tol_convex=1e-3):
+def test_subgradient(func: Functional,
+                     u: ReadOnlyVector | None=None,
+                     h_length: float=1e-8,
+                     tol_smooth: float=1e-2,
+                     tol_convex: float=1e-3
+                     ) -> bool:
     r"""Numerically test validity of subgradient for a given functional
-
+    
     Checks if:
-
+    
     .. math::
         0\geq F(u)-F(v)+\langle \grad F(u),v-u \rangle
-
+    
     Parameters
     ----------
-    func : regpy.functionals.Functional
+    func: Functional
         The functional.
-    u : any, optional
-        Element in essential domain of func, where gradient is computed. If None it is chosen at random. Defaults to None.
-    h_length : float, optional
-        Positive number determining the length of the perturbation vector. Defaults to 1e-8.
-    tol_convex : float, optional
-        The maximum allowed violation of the convexity condition. Defaults to 1e-3.
-    tol_smooth: float, optional
-        The maximum violation of the differentiability condition. Defaults to 1e-2.
-
+    u: ReadOnlyVector | None [default: None]
+        Element in essential domain of func, where gradient is computed. If None it is chosen at random.
+    h_length: float [default: 1e-08]
+        Positive number determining the length of the perturbation vector.
+    tol_smooth: float [default: 0.01]
+        The maximum violation of the differentiability condition.
+    tol_convex: float [default: 0.001]
+        The maximum allowed violation of the convexity condition.
+    
     Returns
     -------
-    boolean
+    bool
         False, if the test fails and True otherwise.
     """
     if (not func.is_separable):
@@ -308,37 +331,43 @@ def test_subgradient(func,u=None,h_length=1e-8,tol_smooth=1e-2,tol_convex=1e-3):
         return False
 
 def test_gradient_as_operator(
-        func, u=None, h=None, eps=1e-8, tolerance=1e-2,
-        abs_tol=1e-6, test_inplace=True, test_inplace_aliasing=True,
-        inplace_tolerance=1e-10):
+        func: Functional, u: ReadOnlyVector | None=None, 
+        h: ReadOnlyVector | None=None, 
+        eps: float=1e-8, 
+        tolerance: float=1e-2,
+        abs_tol: float=1e-6, 
+        test_inplace: bool=True, 
+        test_inplace_aliasing: bool=True,
+        inplace_tolerance: float=1e-10
+        ) -> bool:
     r"""Test :meth:`Functional.gradient_as_operator` and its derivative.
-
+    
     The operator evaluation is compared with :meth:`Functional.subgradient`.
     Its derivative is checked by a difference quotient of the gradient and
     must be marked as self-adjoint, since it represents the Hessian. When
     requested, the generic operator tests additionally exercise allocating,
     ``out=`` and aliasing paths of the gradient operator and its derivative.
-
+    
     Parameters
     ----------
-    func : regpy.functionals.Functional
+    func: Functional
         The functional.
-    u : any, optional
+    u: ReadOnlyVector | None [default: None]
         Element in the essential domain of ``func``. If ``None``, it is
         sampled automatically.
-    h : any, optional
+    h: ReadOnlyVector | None [default: None]
         Perturbation direction. If ``None``, it is sampled automatically.
-    eps : float, optional
-        Perturbation length. Defaults to 1e-8.
-    tolerance : float, optional
+    eps: float [default: 1e-08]
+        Perturbation length.
+    tolerance: float [default: 0.01]
         The maximum relative violation of the condition.
-    abs_tol : float, optional
+    abs_tol: float [default: 1e-06]
         The maximum absolute violation of the condition.
-    test_inplace : bool, optional
+    test_inplace: bool [default: True]
         Whether to run the generic allocating/``out=`` operator tests.
-    test_inplace_aliasing : bool, optional
+    test_inplace_aliasing: bool [default: True]
         Whether the generic operator test should include ``out is input``.
-    inplace_tolerance : float, optional
+    inplace_tolerance: float [default: 1e-10]
         Tolerance for allocating/``out=`` comparisons.
     
     Returns
@@ -417,9 +446,9 @@ def test_gradient_as_operator(
 
 
 def test_reference_vector(
-        func, check_minimizer=True, tolerance=1e-10, test_inplace=True):
+        func: Functional, check_minimizer: bool=True, tolerance: float=1e-10, test_inplace: bool=True) -> bool:
     r"""Test :meth:`Functional.reference_vector`.
-
+    
     Every reference vector must belong to the functional's domain and be
     feasible, i.e. the functional value at that vector must be finite. If
     ``check_minimizer`` is true and :meth:`Functional.dist_subdiff` is
@@ -427,19 +456,20 @@ def test_reference_vector(
     subdifferential at the reference vector. The latter is deliberately
     optional because minimization is stronger than the public
     reference-vector contract.
-
+    
     Parameters
     ----------
-    func : regpy.functionals.Functional
+    func: Functional
         The functional.
-    check_minimizer : bool, optional
+    check_minimizer: bool [default: True]
         Whether to check that zero belongs to the subdifferential at the
-        reference vector. Defaults to ``True``.
-    tolerance : float, optional
+        reference vector.
+    tolerance: float [default: 1e-10]
         Absolute tolerance for the distance to the subdifferential. Defaults
         to 1e-10.
-    test_inplace : bool, optional
-        Whether to test the ``out=`` variant. Defaults to ``True``.
+    test_inplace: bool [default: True]
+        Whether to test the ``out=`` variant.
+    
     Returns
     -------
     bool
@@ -500,19 +530,19 @@ def test_reference_vector(
     return True
 
 
-def zero_in_essential_domain(func):
+def zero_in_essential_domain(func: Functional) -> bool:
     r"""Return whether zero belongs to a functional's essential domain.
-
+    
     The check is based on finiteness of the functional value and therefore
     also applies to nonseparable functionals for which pointwise domain bounds
     are unavailable. If evaluation is not advertised, membership cannot be
     verified and ``False`` is returned.
-
+    
     Parameters
     ----------
-    func : regpy.functionals.Functional
+    func: Functional
         Functional whose essential domain is checked.
-
+    
     Returns
     -------
     bool
@@ -529,20 +559,21 @@ def zero_in_essential_domain(func):
     except NotInEssentialDomainError:
         return False
 
-def test_Lipschitz_convexity(func,u=None,safety=1.5):
-    """Tests the Lipschitz convexity of the Functional!
-
+def test_Lipschitz_convexity(func: Functional,u: ReadOnlyVector | None=None,safety: float=1.5) -> bool:
+    r"""Tests the Lipschitz convexity of the Functional!
+    
     Parameters
     ----------
-    func : regpy.functionals.Functional
+    func: Functional
         The functional.
-    u : any, optional
-        Element in essential domain of func. If None it is chosen at random. Defaults to None.
-    safety : float, optional
+    u: ReadOnlyVector | None [default: None]
+        Element in essential domain of func. If None it is chosen at random.
+    safety: float [default: 1.5]
+        Safety.
     
     Returns
     -------
-    boolean
+    bool
         False, if the test fails and True otherwise.
     """
     from regpy.vecsps import MeasureSpaceFcts
@@ -568,7 +599,24 @@ def test_Lipschitz_convexity(func,u=None,safety=1.5):
     func.log.info("Passed Lipschitz test!")
     return True
 
-def test_subgradient_conj_subgradient_dist_subdiff(func,u=None,tol=1e-6):
+def test_subgradient_conj_subgradient_dist_subdiff(func: Functional,u: ReadOnlyVector | None=None,tol: float=1e-6) -> bool:
+    r"""Check subgradient conj subgradient dist subdiff.
+    
+    Parameters
+    ----------
+    func: Functional
+        Functional to evaluate or transform.
+    u: ReadOnlyVector | None [default: None]
+        Input vector; its coefficients are only read.
+    tol: float [default: 1e-06]
+        Tolerance for the stopping or comparison criterion.
+    
+    
+    Returns
+    -------
+    bool
+        Whether the stated condition is satisfied.
+    """
     if(u is None):
         if func.is_separable:
             u=sample_essential_domain(func)
@@ -581,28 +629,28 @@ def test_subgradient_conj_subgradient_dist_subdiff(func,u=None,tol=1e-6):
     func.log.info("Passed subgradient_conj_subgradient_dist_subdiff test!")
     return True
 
-def test_young_equality(func,u=None,tolerance=1e-10):
+def test_young_equality(func: Functional,u: ReadOnlyVector | None=None,tolerance: float=1e-10) -> bool:
     r"""Numerically test validity of Young's equality for a given functional
-
+    
     Checks if:
-
+    
     .. math::
         F(u)+F^\ast(u^\ast)=\langle u^\ast,u \rangle.
     
     where :math:`u^\ast` is in the subgradient of :math:`F` at :math:`u`.
-
+    
     Parameters
     ----------
-    func : regpy.functionals.Functional
+    func: Functional
         The functional.
-    u : any, optional
-        Element in essential domain of func, where gradient is computed. If None it is chosen at random. Defaults to None.
-    tolerance : float, optional
-        The maximum allowed error. Defaults to 1e-10.
-
+    u: ReadOnlyVector | None [default: None]
+        Element in essential domain of func, where gradient is computed. If None it is chosen at random.
+    tolerance: float [default: 1e-10]
+        The maximum allowed error.
+    
     Returns
     -------
-    boolean
+    bool
         False, if the test fails and True otherwise.
     """
     if(u is None):
@@ -623,22 +671,66 @@ def test_young_equality(func,u=None,tolerance=1e-10):
         return False
 
 
-def _copy_domain_vector(domain, x):
-    """Return an independent copy of ``x`` using the vector-space interface."""
+def _copy_domain_vector(domain: VectorSpaceBase, x: ReadOnlyVector) -> Vector:
+    r"""Return an independent copy of ``x`` using the vector-space interface.
+    
+    Parameters
+    ----------
+    domain: VectorSpaceBase
+        Domain vector space.
+    x: ReadOnlyVector
+        Input vector; its coefficients are only read.
+    
+    
+    Returns
+    -------
+    Vector
+        Writable result vector.
+    """
     result = domain.empty()
     domain.copyto(result, x)
     return result
 
 
-def _vector_difference_within_tolerance(domain, actual, expected, tolerance):
-    """Return ``(passed, error, scale)`` for two vectors in ``domain``."""
+def _vector_difference_within_tolerance(domain: VectorSpaceBase, actual: ReadOnlyVector, expected: ReadOnlyVector, tolerance: float) -> tuple[bool, Any, Any]:
+    r"""Return ``(passed, error, scale)`` for two vectors in ``domain``.
+    
+    Parameters
+    ----------
+    domain: VectorSpaceBase
+        Domain vector space.
+    actual: ReadOnlyVector
+        Input vector; its coefficients are only read.
+    expected: ReadOnlyVector
+        Input vector; its coefficients are only read.
+    tolerance: float
+        Tolerance used in the consistency check.
+    
+    
+    Returns
+    -------
+    tuple[bool, Any, Any]
+        Result described above.
+    """
     error = domain.norm(actual - expected)
     scale = max(1., domain.norm(expected))
     return error <= tolerance * scale, error, scale
 
 
-def _has_own_dist_subdiff(func):
-    """Recognize inherited overrides, looking through the conjugate proxy."""
+def _has_own_dist_subdiff(func: Functional) -> bool:
+    r"""Recognize inherited overrides, looking through the conjugate proxy.
+    
+    Parameters
+    ----------
+    func: Functional
+        Functional to evaluate or transform.
+    
+    
+    Returns
+    -------
+    bool
+        Whether the stated condition is satisfied.
+    """
     from regpy.functionals.base import Functional, Conj
 
     method = getattr(func.dist_subdiff, '__func__', func.dist_subdiff)
@@ -651,45 +743,45 @@ def _has_own_dist_subdiff(func):
     return method is not Functional.dist_subdiff
 
 
-def test_dist_subdiff(func, u=None, vstar=None, tolerance=1e-10,
-                     test_aliasing=True, check_young=True):
+def test_dist_subdiff(func: Functional, u: ReadOnlyVector | None=None, vstar: ReadOnlyVector | None=None, tolerance: float=1e-10,
+                     test_aliasing: bool=True, check_young: bool=True) -> bool:
     r"""Test the projection output and scalar distance of ``dist_subdiff``.
-
+    
     Compare calls with and without ``best_approx`` and verify that the
     returned distance equals the dual Hilbert norm of ``vstar-best_approx``.
     Non-aliasing calls must preserve both inputs. If requested, test
     ``best_approx is vstar``, ``best_approx is u``, and partially overlapping
     NumPy views of either input.
-
+    
     For a specialized implementation (including an inherited override), also
     check Young's equality for the projected vector p:
-
+    
     .. math::
         F(u) + F^*(p) = \operatorname{Re}\langle p, u\rangle.
-
+    
     The conjugate proxy is inspected through its underlying
     ``_conj_dist_subdiff`` implementation. Young's equality is skipped for
     the generic subgradient fallback and when either evaluation is missing.
     It verifies membership in the subdifferential, not nearest-point
     optimality on its own.
-
+    
     Parameters
     ----------
-    func : regpy.functionals.Functional
+    func: Functional
         Functional advertising ``dist_subdiff``; may also be a conjugate.
-    u : element of ``func.domain``, optional
+    u: ReadOnlyVector | None [default: None]
         Point in the essential domain. Sampled automatically if omitted.
         Supply boundary or nonsmooth points to exercise multivalued cases.
-    vstar : element of ``func.domain``, optional
+    vstar: ReadOnlyVector | None [default: None]
         Vector to project; sampled independently of u if omitted.
-    tolerance : float, optional
+    tolerance: float [default: 1e-10]
         Relative tolerance with an absolute scale floor of one.
-    test_aliasing : bool, optional
-        Also exercise shared input/output storage. Defaults to True.
-    check_young : bool, optional
+    test_aliasing: bool [default: True]
+        Also exercise shared input/output storage.
+    check_young: bool [default: True]
         Check Young's equality for specialized implementations when both
-        evaluations are available. Defaults to True.
-
+        evaluations are available.
+    
     Returns
     -------
     bool
@@ -711,7 +803,24 @@ def test_dist_subdiff(func, u=None, vstar=None, tolerance=1e-10,
     u_ref = _copy_domain_vector(domain, u)
     v_ref = _copy_domain_vector(domain, vstar)
 
-    def vectors_agree(actual, expected, label):
+    def vectors_agree(actual: ReadOnlyVector, expected: ReadOnlyVector, label: str) -> bool:
+        r"""Vectors agree.
+        
+        Parameters
+        ----------
+        actual: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        expected: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        label: str
+            Label.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         passed, error, scale = _vector_difference_within_tolerance(
             domain, actual, expected, tolerance)
         if not passed:
@@ -719,7 +828,24 @@ def test_dist_subdiff(func, u=None, vstar=None, tolerance=1e-10,
                              f'tolerance={tolerance * scale}.')
         return passed
 
-    def distances_agree(actual, expected, label):
+    def distances_agree(actual: ReadOnlyVector, expected: ReadOnlyVector, label: str) -> bool:
+        r"""Distances agree.
+        
+        Parameters
+        ----------
+        actual: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        expected: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        label: str
+            Label.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         passed = (np.isscalar(actual) and np.isrealobj(actual)
                   and not isinstance(actual, (bool, np.bool_))
                   and np.isfinite(actual) and actual >= 0
@@ -798,9 +924,31 @@ def test_dist_subdiff(func, u=None, vstar=None, tolerance=1e-10,
     return True
 
 
-def _test_allocating_vs_inplace_call(func, method_name, x, method_args,
-                                     tolerance, test_aliasing=True):
-    """Compare one allocating functional call with its ``out=`` variants."""
+def _test_allocating_vs_inplace_call(func: Functional, method_name: str, x: ReadOnlyVector, method_args: tuple[Any, ...],
+                                     tolerance: float, test_aliasing: bool=True) -> bool:
+    r"""Compare one allocating functional call with its ``out=`` variants.
+    
+    Parameters
+    ----------
+    func: Functional
+        Functional to evaluate or transform.
+    method_name: str
+        Method name.
+    x: ReadOnlyVector
+        Input vector; its coefficients are only read.
+    method_args: tuple[Any, ...]
+        Method args.
+    tolerance: float
+        Tolerance used in the consistency check.
+    test_aliasing: bool [default: True]
+        Whether to test aliased input and output buffers.
+    
+    
+    Returns
+    -------
+    bool
+        Whether the stated condition is satisfied.
+    """
     method = getattr(func, method_name)
     domain = func.domain
 
@@ -868,14 +1016,20 @@ def _test_allocating_vs_inplace_call(func, method_name, x, method_args,
     return True
 
 
-def test_inplace_functional_methods(func, u=None, ustar=None, tau=1.,
-                                    tolerance=1e-10, test_primal=True,
-                                    test_conjugate=True, test_aliasing=True):
+def test_inplace_functional_methods(func: Functional, 
+                                    u: ReadOnlyVector | None=None, 
+                                    ustar: ReadOnlyVector | None=None, 
+                                    tau: float=1.,
+                                    tolerance: float=1e-10, 
+                                    test_primal: bool=True,
+                                    test_conjugate: bool=True, 
+                                    test_aliasing: bool=True
+                                    ) -> bool:
     r"""Compare allocating and ``out=`` variants of functional methods.
-
+    
     The following pairs are checked whenever the corresponding method is
     advertised by the functional:
-
+    
     * ``subgradient(x)`` and ``subgradient(x, out=out)``
     * ``proximal(x, tau)`` and ``proximal(x, tau, out=out)``
     * ``conj_subgradient(xstar)`` and
@@ -884,29 +1038,35 @@ def test_inplace_functional_methods(func, u=None, ustar=None, tau=1.,
       ``conj_proximal(xstar, tau, out=out)``
     * ``dist_subdiff(vstar, x)`` with and without ``best_approx``
       for the functional and its conjugate
-
+    
     In addition, the test checks the supported aliasing case ``out is x`` and
     verifies that non-aliasing calls leave their input unchanged. For
     ``dist_subdiff``, both inputs are checked as output aliases, including
     partially overlapping NumPy views.
-
+    
     Parameters
     ----------
-    func : regpy.functionals.Functional
+    func: Functional
         Functional whose methods are tested.
-    u, ustar : element of ``func.domain``, optional
+    u: ReadOnlyVector | None [default: None]
         Test arguments for the functional and its conjugate. Missing arguments
         are sampled from the corresponding essential domain when separable,
         and randomly otherwise.
-    tau : float, optional
-        Positive proximal parameter. Defaults to 1.
-    tolerance : float, optional
+    ustar: ReadOnlyVector | None [default: None]
+        Test arguments for the functional and its conjugate. Missing arguments
+        are sampled from the corresponding essential domain when separable,
+        and randomly otherwise.
+    tau: float [default: 1.0]
+        Positive proximal parameter.
+    tolerance: float [default: 1e-10]
         Relative tolerance, with an absolute scale floor of one.
-    test_primal, test_conjugate : bool, optional
+    test_primal: bool [default: True]
         Select whether primal and/or conjugate methods are checked.
-    test_aliasing : bool, optional
+    test_conjugate: bool [default: True]
+        Select whether primal and/or conjugate methods are checked.
+    test_aliasing: bool [default: True]
         Also check calls with the input itself as output buffer.
-
+    
     Returns
     -------
     bool
@@ -964,87 +1124,98 @@ def test_inplace_functional_methods(func, u=None, ustar=None, tau=1.,
     )
     return True
 
-def test_functional(func,u_s=None,sample_N=5,
-                    test_conj=True,
-                    u_stars=None,sample_conj_N=5,
-                    test_second_deriv=None, test_second_deriv_conj=None,
-                    test_inplace=True, test_inplace_aliasing=True,
-                    tolerance=1e-10, msg='',
-                    test_gradient_operator=True,
-                    test_gradient_operator_conj=True,
-                    test_reference=True, test_reference_conj=True,
-                    reference_is_minimizer=None,
-                    reference_is_minimizer_conj=None):
+def test_functional(func: Functional,u_s: list[ReadOnlyVector] | None=None,sample_N: int=5,
+                    test_conj: bool=True,
+                    u_stars: list[ReadOnlyVector] | None=None,
+                    sample_conj_N: int=5,
+                    test_second_deriv: bool | None=None, test_second_deriv_conj: bool | None=None,
+                    test_inplace: bool=True, test_inplace_aliasing: bool=True,
+                    tolerance: float=1e-10, msg: str='',
+                    test_gradient_operator: bool=True,
+                    test_gradient_operator_conj: bool=True,
+                    test_reference: bool=True, test_reference_conj: bool=True,
+                    reference_is_minimizer: bool | None=None,
+                    reference_is_minimizer_conj: bool | None=None) -> None:
     r"""Runs all implemented tests for a given functional. By default tests that cannot be verified because of 
     missing implementations are ignored.
-
-
+    
+    
     Parameters
     ----------
-    func : regpy.functionals.Functional
+    func: Functional
         The functional.
-    u_s : list of any, optional
+    u_s: list[ReadOnlyVector] | None [default: None]
         List of elements in essential domain of func. 
-        If None, one sample is chosen by sample_essential_domain. 
-        Defaults to None.
-    sample_N : int, optional
-        If u_s i None this is the number of randomly generated elements in u_s. Defaults to 5.
-    test_conj : bool, optional
-        Determines wether the conjugate functional should be tested aswell. Defaults to True.
-    u_stars : list of any, optional
-        Same as u_s but for conjugate functional. Defaults to None.
-    sample_conj_N : int, optional
-        Same as sample_N but for conjugate functional. Defaults to 5.
-    test_second_deriv, test_second_deriv_conj : bool or None, optional
+        If None, one sample is chosen by sample_essential_domain.
+    sample_N: int [default: 5]
+        If u_s i None this is the number of randomly generated elements in u_s.
+    test_conj: bool [default: True]
+        Determines wether the conjugate functional should be tested aswell.
+    u_stars: list[ReadOnlyVector] | None [default: None]
+        Same as u_s but for conjugate functional.
+    sample_conj_N: int [default: 5]
+        Same as sample_N but for conjugate functional.
+    test_second_deriv: bool | None [default: None]
         Deprecated aliases for ``test_gradient_operator`` and
         ``test_gradient_operator_conj``. They are retained so existing test
         suites can migrate without an immediate API break.
-    test_inplace : bool, optional
+    test_second_deriv_conj: bool | None [default: None]
+        Deprecated aliases for ``test_gradient_operator`` and
+        ``test_gradient_operator_conj``. They are retained so existing test
+        suites can migrate without an immediate API break.
+    test_inplace: bool [default: True]
         Compare allocating and ``out=`` variants of subgradient, proximal,
         conjugate subgradient, and conjugate proximal methods, and compare
         ``dist_subdiff`` calls with/without ``best_approx`` for both the
-        functional and its conjugate. Defaults to True.
-    test_inplace_aliasing : bool, optional
+        functional and its conjugate.
+    test_inplace_aliasing: bool [default: True]
         Also test the supported aliasing case where the output buffer is the
         input vector itself. For ``dist_subdiff``, check either input and
-        partially overlapping NumPy views. Defaults to True.
-    tolerance : float, optional
-        The maximum allowed relative error. Defaults to 1e-10.
-    test_gradient_operator, test_gradient_operator_conj : bool, optional
+        partially overlapping NumPy views.
+    tolerance: float [default: 1e-10]
+        The maximum allowed relative error.
+    msg: str [default: '']
+        Msg.
+    test_gradient_operator: bool [default: True]
         Test :meth:`Functional.gradient_as_operator`, especially its
-        derivative, for the functional and its conjugate. Defaults to True.
-    test_reference, test_reference_conj : bool, optional
+        derivative, for the functional and its conjugate.
+    test_gradient_operator_conj: bool [default: True]
+        Test :meth:`Functional.gradient_as_operator`, especially its
+        derivative, for the functional and its conjugate.
+    test_reference: bool [default: True]
         Test :meth:`Functional.reference_vector` for the functional and its
-        conjugate. Defaults to True.
-    reference_is_minimizer : bool or None, optional
+        conjugate.
+    test_reference_conj: bool [default: True]
+        Test :meth:`Functional.reference_vector` for the functional and its
+        conjugate.
+    reference_is_minimizer: bool | None [default: None]
         Whether the primal reference vector must minimize the primal
         functional. If ``None`` (the default), minimality is required exactly
         when zero belongs to the essential domain of the conjugate functional.
         In that case a conjugate subgradient at zero, and hence a minimizer of
         the primal functional, should be available. Explicit ``True`` or
         ``False`` values override this automatic rule.
-    reference_is_minimizer_conj : bool or None, optional
+    reference_is_minimizer_conj: bool | None [default: None]
         Whether the conjugate reference vector must minimize the conjugate
         functional. If ``None`` (the default), minimality is required exactly
         when zero belongs to the essential domain of the primal functional.
         In that case a primal subgradient at zero, and hence a minimizer of the
         conjugate, should be available. Explicit ``True`` or ``False`` values
         override this automatic rule.
-
+    
     Raises
     ------
     AssertionError
         If the test fails.
-
+    
     Notes
     -----
     Specialized ``dist_subdiff`` implementations also undergo Young-equality
     tests using their projected vectors, whenever both functional and
     conjugate evaluation are available. This check is independent of
     ``test_inplace`` and does not require a subgradient implementation.
-
-    The tests results are logged with further details when the tests failed 
-
+    
+    The tests results are logged with further details when the tests failed
     """
     if test_second_deriv is not None:
         test_gradient_operator = test_second_deriv

@@ -4,6 +4,11 @@ This module contains the base class, rule combinators, and the iteration-count r
 """
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.operators.base import Operator
+    from regpy.solvers.setting import Setting
 from copy import deepcopy
 from numpy import sqrt
 import logging
@@ -45,14 +50,34 @@ class MissingValueError(Exception):
 def _copy_vector(
     space: VectorSpaceBase, vector: ReadOnlyVector
 ) -> Vector:
-    """Return a writable copy of ``vector`` allocated in ``space``."""
+    r"""Return a writable copy of ``vector`` allocated in ``space``.
+    
+    Parameters
+    ----------
+    space: VectorSpaceBase
+        Space.
+    vector: ReadOnlyVector
+        Input vector; its coefficients are only read.
+    
+    
+    Returns
+    -------
+    Vector
+        Writable result vector.
+    """
     result = space.empty()
     space.copyto(result, vector)
     return result
 
 
 class _ApplicationSchedule(Iterable[int]):
-    """Lazily validate and replay the steps of an ``schedule`` iterable."""
+    r"""Lazily validate and replay the steps of an ``schedule`` iterable.
+    
+    Parameters
+    ----------
+    values: Iterable[int]
+        Values.
+    """
 
     def __init__(self, values: Iterable[int]) -> None:
         try:
@@ -98,7 +123,19 @@ class _ApplicationSchedule(Iterable[int]):
         return len(self._cache) > index
 
     def contains(self, step: int) -> bool:
-        """Return whether ``step`` is the next scheduled application step."""
+        r"""Return whether ``step`` is the next scheduled application step.
+        
+        Parameters
+        ----------
+        step: int
+            Step.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         # A combined rule may retry a component after computing a missing
         # operator value. Such a retry belongs to the same iteration and must
         # not consume the next scheduled value.
@@ -120,7 +157,8 @@ class _ApplicationSchedule(Iterable[int]):
         return self._last_query_result
 
     def reset(self) -> None:
-        """Replay the schedule from its beginning."""
+        r"""Replay the schedule from its beginning.
+        """
         self._cursor = 0
         self._last_query_step = None
         self._last_query_result = False
@@ -147,21 +185,21 @@ class _ApplicationSchedule(Iterable[int]):
 
 class StopRule:
     r"""Abstract base class for stopping rules.
-
+    
     A solver attaches itself with :meth:`_complete_init_with_solver` before the
     iteration starts. :meth:`stop` then delegates the decision to
     :meth:`_stop`. If this is the main rule, a positive decision stores the
     current iterate through :meth:`trigger`.
-
+    
     Parameters
     ----------
-    logging_level : int | str, optional
-        Logging level. Defaults to ``"INFO"``.
-    schedule : iterable of int or None, optional
+    logging_level: LoggingLevel [default: 'INFO']
+        Logging level.
+    schedule: Schedule | None [default: None]
         Strictly increasing, nonnegative iteration numbers at which the rule
         is evaluated. Iterators, including infinite iterators, are consumed
         lazily. On other iterations the most recent decision is reused. If
-        ``None`` (default), the rule is evaluated on every call.
+        ``None``, the rule is evaluated on every call.
         This is useful for expensive stopping criteria that do not need to be checked on every iteration.
     """
 
@@ -174,7 +212,7 @@ class StopRule:
     def __init__(
         self,
         logging_level: LoggingLevel = "INFO",
-        schedule: Schedule = None,
+        schedule: Schedule | None = None,
     ) -> None:
         self.solver: Solver | None = None
 
@@ -200,14 +238,14 @@ class StopRule:
         self.log.setLevel(logging_level)
 
     def _complete_init_with_solver(self, solver: Solver) -> None:
-        """Attach a solver and complete rule-specific initialization.
-
+        r"""Attach a solver and complete rule-specific initialization.
+        
         Subclasses may override this hook when their criterion needs
         information from the concrete solver.
-
+        
         Parameters
         ----------
-        solver : regpy.solvers.Solver
+        solver: Solver
             Solver to which this rule is attached.
         """
         if self.solver is not None:
@@ -215,14 +253,21 @@ class StopRule:
         self.solver = solver
 
     def copy_and_reset(self) -> Self:
-        """Return an independent copy reset to its initial state."""
+        r"""Return an independent copy reset to its initial state.
+        
+        
+        Returns
+        -------
+        Self
+            Result described above.
+        """
         rule = self.copy()
         rule.reset()
         return rule
     
     def reset(self) -> None:
-        """Reset the rule to its initial state.
-
+        r"""Reset the rule to its initial state.
+        
         Subclasses that maintain additional state must override this method and
         reset that state as well.
         """
@@ -246,17 +291,25 @@ class StopRule:
             self.history_step_dict[key] = []
 
     def copy(self) -> Self:
+        r"""Copy.
+        
+        
+        Returns
+        -------
+        Self
+            Result described above.
+        """
         return cast(Self, deepcopy(self))
 
     def stop(self) -> bool:
-        """Check whether to stop iterations.
-
+        r"""Check whether to stop iterations.
+        
         If :attr:`schedule` is set, :meth:`_stop` is called only at the
         selected solver iteration numbers. Between these iterations the last
         decision is returned without recomputing the criterion. A subclass
         may override :meth:`_skip` to update inexpensive internal state on
         skipped iterations.
-
+        
         Returns
         -------
         bool
@@ -297,20 +350,27 @@ class StopRule:
         return should_stop
 
     def _skip(self) -> None:
-        """Update state when the rule is not evaluated at the current step.
-
+        r"""Update state when the rule is not evaluated at the current step.
+        
         The default implementation does nothing. Subclasses may override this
         hook for inexpensive bookkeeping that must happen on every iteration.
         """
 
     @property
     def log_current_step(self) -> bool:
-        """Whether a combined rule should log this component at this step."""
+        r"""Whether a combined rule should log this component at this step.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self._log_current_step
 
     def trigger(self) -> None:
-        """Force the stoprule to trigger at the current iterate.
-
+        r"""Force the stoprule to trigger at the current iterate.
+        
         This sets the :attr:`triggered` attribute to ``True`` and stores
         the current iterate in :attr:`x` and :attr:`y`.
         """
@@ -323,19 +383,19 @@ class StopRule:
         self.y = self.solver.y if hasattr(self.solver,"y") else None
 
     def best_iterate(self) -> BestIterate | None:
-        """Return the best iterate selected by this stopping rule.
-
+        r"""Return the best iterate selected by this stopping rule.
+        
         The default implementation returns the last iterate available when
         the rule triggered or the solver converged. Parameter-choice rules may
         override this method and return only the selected solution vector.
-
+        
         Returns
         -------
-        tuple[ReadOnlyVector, ReadOnlyVector | None], Vector, or None
+        BestIterate | None
             The selected solution and, for ordinary stopping rules, its
             operator value if available. ``None`` is returned if neither the
             solver converged nor the rule triggered.
-
+        
         Raises
         ------
         RuntimeError
@@ -356,13 +416,18 @@ class StopRule:
         return self.x, self.y
 
     def _stop(self) -> bool:
-        """Check whether to stop iterations.
-
+        r"""Check whether to stop iterations.
+        
         This is an abstract method. Child classes should override it.
-
+        
         Parameters and return values are the same as for the public interface
         method :meth:`stop`.
-
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
         """
         raise NotImplementedError
 
@@ -383,12 +448,17 @@ class StopRule:
 
 class NoneRule(StopRule):
     r"""Default rule that never stops an iteration.
-
+    
     This rule is intended for solvers that terminate by marking themselves as
     converged rather than through an external stopping criterion.
+    
+    Parameters
+    ----------
+    schedule: Schedule | None [default: None]
+        Schedule.
     """
 
-    def __init__(self, schedule: Schedule = None) -> None:
+    def __init__(self, schedule: Schedule | None = None) -> None:
         super().__init__(schedule=schedule)
         self.triggered = True
 
@@ -396,6 +466,14 @@ class NoneRule(StopRule):
         return False
     
     def best_iterate(self) -> Iterate:
+        r"""Best iterate.
+        
+        
+        Returns
+        -------
+        Iterate
+            Result described above.
+        """
         if self.solver is None or self.solver.x is None:
             raise MissingValueError(
                 "NoneRule has not been attached to a solver with an iterate."
@@ -405,23 +483,27 @@ class NoneRule(StopRule):
 
 class ErrorMonitor(StopRule):
     r"""Record errors to a known reference solution without stopping.
-
+    
     Parameters
     ----------
-    exact_sol : ReadOnlyVector or tuple[ReadOnlyVector | None, ReadOnlyVector]
+    exact_sol: ReadOnlyVector | tuple[ReadOnlyVector | None, ReadOnlyVector]
         A reference for the solver iterates ``x``, or references ``(x, y)``
         for both the iterates and their operator values.  In the tuple form,
         the first entry may be ``None`` to monitor only ``y``.
-    dist_x, dist_y : callable, optional
+    dist_x: Distance | None [default: None]
         Distance functions called as ``dist((current, reference))``.  If a
         required distance is omitted, the norm of ``solver.setting.h_domain``
         or ``solver.setting.h_codomain``, respectively, is used.
-    logging_level : int or str, optional
-        Logging level. Defaults to ``"INFO"``.
-    schedule : iterable of int or None, optional
-        Iterations at which errors are recorded. If ``None`` (default), errors
+    dist_y: Distance | None [default: None]
+        Distance functions called as ``dist((current, reference))``.  If a
+        required distance is omitted, the norm of ``solver.setting.h_domain``
+        or ``solver.setting.h_codomain``, respectively, is used.
+    logging_level: LoggingLevel [default: 'INFO']
+        Logging level.
+    schedule: Schedule | None [default: None]
+        Iterations at which errors are recorded. If ``None``, errors
         are recorded at every call.
-
+    
     Notes
     -----
     This rule always returns ``False`` and therefore never stops a solver.
@@ -438,7 +520,7 @@ class ErrorMonitor(StopRule):
         dist_x: Distance | None = None,
         dist_y: Distance | None = None,
         logging_level: LoggingLevel = "INFO",
-        schedule: Schedule = None,
+        schedule: Schedule | None = None,
     ) -> None:
         super().__init__(logging_level=logging_level, schedule=schedule)
         if isinstance(exact_sol, tuple):
@@ -565,18 +647,18 @@ class ErrorMonitor(StopRule):
 
 class CombineRules(StopRule):
     r"""Combine several stopping rules into one that stops if one of the rules stops. (logical OR)
-
+    
     The resulting rule triggers when any of the given rules triggers. The
     first rule that triggers is responsible for selecting the best solution.
-
+    
     Parameters
     ----------
-    rules : sequence of StopRule
+    rules: Sequence[StopRule]
         The rules to be combined.
-    logging_level : int | str | None, optional
+    logging_level: LoggingLevel | None [default: None]
         Logging level. If ``None``, the minimum level of the component rules
         is used.
-    schedule : iterable of int or None, optional
+    schedule: Schedule | None [default: None]
         Optional schedule for the combined rule as a whole. Component rules
         retain and apply their own independent schedules.
     """
@@ -585,7 +667,7 @@ class CombineRules(StopRule):
         self,
         rules: Sequence[StopRule],
         logging_level: LoggingLevel | None = None,
-        schedule: Schedule = None,
+        schedule: Schedule | None = None,
     ) -> None:
         if not isinstance(rules, Sequence) or any(
             not isinstance(rule, StopRule) for rule in rules
@@ -625,6 +707,8 @@ class CombineRules(StopRule):
         return 'CombineRules({})'.format(self.rules)
     
     def reset(self) -> None:
+        r"""Reset the state for a new run.
+        """
         self.active_rule = None
         super().reset()
         for rule in self.rules:
@@ -682,18 +766,18 @@ class CombineRules(StopRule):
 
 class AndCombineRules(StopRule):
     r"""Combine several stopping rules into one that stops if all of the rules stop.
-
+    
     The resulting rule triggers when all of the given rules trigger. 
     It delegates selecting the solution to the first rule.
-
+    
     Parameters
     ----------
-    rules : sequence of StopRule
+    rules: Sequence[StopRule]
         The rules to be combined.
-    logging_level : int | str | None, optional
+    logging_level: LoggingLevel | None [default: None]
         Logging level. If ``None``, the minimum level of the component rules
         is used.
-    schedule : iterable of int or None, optional
+    schedule: Schedule | None [default: None]
         Optional schedule for the combined rule as a whole. Component rules
         retain and apply their own independent schedules.
     """
@@ -702,7 +786,7 @@ class AndCombineRules(StopRule):
         self,
         rules: Sequence[StopRule],
         logging_level: LoggingLevel | None = None,
-        schedule: Schedule = None,
+        schedule: Schedule | None = None,
     ) -> None:
         if not isinstance(rules, Sequence) or any(
             not isinstance(rule, StopRule) for rule in rules
@@ -738,6 +822,8 @@ class AndCombineRules(StopRule):
         return 'AndCombineRules({})'.format(self.rules)
     
     def reset(self) -> None:
+        r"""Reset the state for a new run.
+        """
         self.active_rule = None
         super().reset()
         for rule in self.rules:
@@ -794,28 +880,27 @@ class AndCombineRules(StopRule):
 
 class CountIterations(StopRule):
     r"""Stopping rule based on number of iterations.
-
+    
     Each call to :meth:`stop` increments the iteration count by one.
-
+    
     Parameters
     ----------
-    max_op_evals : int or None, optional
-        Stop when the weighted operator evaluation total reaches this cap,
-        or when max_iterations is reached. None disables this additional cap.
-        Supplying a cap automatically enables evaluation counting. Uses
-        Operator.total_eval_count(), including its doubled weights for
-        adjoint_eval and adjoint_deriv. Checked when this rule is evaluated;
-        constructor work or one iteration can overshoot the cap. A schedule
-        can delay checking until the next scheduled application.
-    max_iterations : int
+    max_iterations: int
         The number of iterations after which to stop.
-    while_type : bool, optional
-        Indicates whether the rule is used in a ``while`` loop (default) or an
+    while_type: bool [default: True]
+        Indicates whether the rule is used in a ``while`` loop or an
         ``until`` loop.
-    timing : bool, optional
+    timing: bool [default: False]
         If ``True``, the CPU time elapsed since the start of the iteration is
-        saved in :attr:`history_dict`. Defaults to ``False``.
-    eval_count : bool, optional
+        saved in :attr:`history_dict`.
+    logging_level: LoggingLevel [default: 'INFO']
+        Logging level.
+    schedule: Schedule | None [default: None]
+        Iterations at which the limit is checked and timing information is
+        stored. The iteration counter is updated on every call. If the limit
+        is reached at an omitted step, the rule stops at the next scheduled
+        step. If ``None``, the limit is checked on every call.
+    eval_count: bool [default: False]
         If True, enable counting only on solver.op and reset its counters
         when attaching the rule, then store
         cumulative snapshots in eval_counts, a dictionary of integer lists
@@ -827,15 +912,14 @@ class CountIterations(StopRule):
         unless prepare_run was called beforehand. Counting remains enabled after
         the run for inspection; use solver.op.disable_eval_count() to remove
         instrumentation. False leaves existing operator counting unchanged.
-        Defaults to False.
-    logging_level : int | str, optional
-        Logging level. Defaults to ``"INFO"``.
-    schedule : iterable of int or None, optional
-        Iterations at which the limit is checked and timing information is
-        stored. The iteration counter is updated on every call. If the limit
-        is reached at an omitted step, the rule stops at the next scheduled
-        step. If ``None`` (default), the limit is checked on every call.
-
+    max_op_evals: int | None [default: None]
+        Stop when the weighted operator evaluation total reaches this cap,
+        or when max_iterations is reached. None disables this additional cap.
+        Supplying a cap automatically enables evaluation counting. Uses
+        Operator.total_eval_count(), including its doubled weights for
+        adjoint_eval and adjoint_deriv. Checked when this rule is evaluated;
+        constructor work or one iteration can overshoot the cap. A schedule
+        can delay checking until the next scheduled application.
     """
 
     # The evaluation cap is checked between iterations, not inside operator
@@ -846,7 +930,7 @@ class CountIterations(StopRule):
         while_type: bool = True,
         timing: bool = False,
         logging_level: LoggingLevel = "INFO",
-        schedule: Schedule = None,
+        schedule: Schedule | None = None,
         eval_count: bool = False,
         max_op_evals: int | None = None,
     ) -> None:
@@ -885,6 +969,8 @@ class CountIterations(StopRule):
         return f'CountIterations(max_iterations={self.max_iterations}{cap})' 
     
     def reset(self) -> None:
+        r"""Reset the state for a new run.
+        """
         super().reset()
         self._prepared_operator = None
         self.iteration = 0
@@ -893,11 +979,16 @@ class CountIterations(StopRule):
         if self.timing:
             self.start_time = time.process_time()
 
-    def prepare_run(self, operator) -> None:
-        """Start measurements before constructing a solver (used by Setting).
-
+    def prepare_run(self, operator: Operator) -> None:
+        r"""Start measurements before constructing a solver (used by Setting).
+        
         Attachment to the same operator preserves construction-time work.
         Direct solver.run calls instead start measurements at attachment.
+        
+        Parameters
+        ----------
+        operator: Operator
+            Operator to inspect or evaluate.
         """
         if self.timing:
             self.start_time = time.process_time()
@@ -958,7 +1049,8 @@ class CountIterations(StopRule):
         return triggered
 
     def _skip(self) -> None:
-        """Count an iteration without checking the limit or storing timing."""
+        r"""Count an iteration without checking the limit or storing timing.
+        """
         self._record_eval_counts()
         self.iteration += 1
         self._log_current_step = False
@@ -969,12 +1061,25 @@ class CountIterations(StopRule):
 
 
 
-def CountIterations_factory(setting, params: dict) -> StopRule:
-    """Create a timed cap on iterations and weighted operator evaluations.
-
+def CountIterations_factory(setting: Setting, params: dict) -> StopRule:
+    r"""Create a timed cap on iterations and weighted operator evaluations.
+    
     max_it defaults to 1000; max_op_evals defaults to 2000. Explicitly set
     max_op_evals=None to disable the evaluation cap. setting is accepted for
     the uniform factory interface. All default factories use this cap.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    params: dict
+        Options for params.
+    
+    
+    Returns
+    -------
+    StopRule
+        Result described above.
     """
     from numbers import Integral
     max_it = params.get('max_it', 1000)
@@ -987,20 +1092,47 @@ def CountIterations_factory(setting, params: dict) -> StopRule:
                            logging_level=params.get('logging_level', 'INFO'))
 
 
-def _capped_factory(rule_class):
-    """Build a factory for a concrete rule, preserving its constructor defaults.
-
+def _capped_factory(rule_class: type[StopRule]) -> Callable[[Setting, dict], StopRule]:
+    r"""Build a factory for a concrete rule, preserving its constructor defaults.
+    
     Factories accept (setting, params). Recognized constructor arguments can
     be supplied directly in params; rule_params supplies explicit arguments
     and takes precedence. max_it controls the added cap. Parameters belonging
     to the default-selector factory are not passed to the rule constructor.
     Rules requiring a solver can receive it through params['solver']; otherwise
     normal attachment supplies it after construction.
+    
+    Parameters
+    ----------
+    rule_class: type[StopRule]
+        Rule class.
+    
+    
+    Returns
+    -------
+    Callable[[Setting, dict], StopRule]
+        Factory combining the requested stopping rule with an iteration cap.
     """
     from inspect import signature
     names = set(signature(rule_class).parameters)
 
-    def factory(setting, params: dict) -> StopRule:
+    def factory(setting: Setting, params: dict) -> StopRule:
+        r"""Create a StopRule instance from a parameter dictionary and potentially further 
+        information contained in the setting. 
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        params: dict
+            Options for params.
+        
+        
+        Returns
+        -------
+        StopRule
+            A CombinedSetting consisting of the actualy StopRule and a CountIterations instance. 
+        """
         options = {key: value for key, value in params.items() if key in names}
         if 'setting' in names:
             options['setting'] = setting

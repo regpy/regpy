@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.vecsps.base import ReadOnlyVector
 from typing import Any
 
 from regpy.vecsps import Vector
@@ -11,42 +16,44 @@ __all__ = ["Richardson", "NuMethodSelfAdjoint", "NuMethod", "Landweber"]
 
 class Richardson(RegSolver):
     r"""Richardson iteration for a linear self-adjoint operator.
-
+    
     This method solves
-
+    
     .. math::
         A x = data
-
+    
     by the iteration
-
+    
     .. math::
         x_{k+1}=x_k-\mu G^{-1}\left(Ax_k-data\right),
-
+    
     where :math:`A` must be linear and self-adjoint and :math:`G` is the Gram
     operator of the Hilbert space.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         Setting whose forward operator is linear and self-adjoint.
-    data : Vector or None [default: None]
+    data: ReadOnlyVector | None [default: None]
         Right-hand side. If omitted, it is resolved from the setting.
-    init : Vector or None [default: None]
+    init: Vector | None [default: None]
         Initial guess. If omitted, it is resolved from the setting.
-    change_init : bool [default: True]
+    change_init: bool [default: True]
         If true, ``init`` is used directly as iteration vector. Otherwise it
         is copied.
-    stepsize : float or None [default: None]
+    stepsize: float | None [default: None]
         Step size :math:`\mu`. By default, ``1 / op_norm`` is used.
-    op_norm : float or None [default: None]
+    op_norm: float | None [default: None]
         Norm of :math:`A`. If omitted and ``stepsize`` is not supplied, it is
         estimated numerically.
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
     """
 
     def __init__(
         self,
         setting: Setting,
-        data: Vector | None = None,
+        data: ReadOnlyVector | None = None,
         init: Vector | None = None,
         change_init: bool = True,
         stepsize: float | None = None,
@@ -106,12 +113,32 @@ class Richardson(RegSolver):
     @staticmethod
     def check_applicability(
         setting: Setting,
-        user_data: Vector | None = None,
-        user_init: Vector | None = None,
+        user_data: ReadOnlyVector | None = None,
+        user_init: ReadOnlyVector | None = None,
         op_norm: float | None = None,
         **kwargs: Any,
     ) -> tuple[dict, dict]:
-        r"""Check Hilbert applicability and self-adjointness of the operator."""
+        r"""Check Hilbert applicability and self-adjointness of the operator.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        user_data: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        user_init: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         out, par = check_Hilbert_applicability_linear(
             setting,
             user_data=user_data,
@@ -138,36 +165,39 @@ class Richardson(RegSolver):
 
 class Landweber(RegSolver):
     r"""The linear Landweber method. Solves the linear, ill-posed equation
-
+    
     .. math::
         Tx = data
-
+    
     by gradient descent for
     :math:`\lVert T(x)-g^\delta\rVert_{Y}^{2}`:
-
+    
     .. math::
         x_{k+1}
         = x_k-\mu G_X^{-1}T^*G_Y(Tx_k-data).
-
+    
     The reciprocal of the number of iterations takes the role of the
     regularization parameter.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         Setting of the inverse problem.
-    data : Vector or ObsDataT or None [default: None]
+    data: Vector | ObsDataT | None [default: None]
         Right-hand side. In the default case, ``setting.data`` is used. 
         General ObsDataT objects are only admissible in a codomain-free setting.
-    init : Vector or None [default: None]
-        Initial guess. In the default case, it is taken from the setting. 
-    change_init : bool [default: True]
-        If true, ``init`` (if provided) is used as iteration vector. Otherwise it is copied. 
-    op_norm : float [default: None]
-        The operator norm of the forward operator. If None, it is computed numerically unless stepsize is provided
-    stepsize : float or None [default: None]
+    init: Vector | None [default: None]
+        Initial guess. If omitted, it is taken from the setting.
+        Must be writable when ``change_init=True``; otherwise a copy is used.
+    change_init: bool [default: True]
+        If true, ``init`` (if provided) is used as iteration vector. Otherwise it is copied.
+    stepsize: float | None [default: None]
         Step size :math:`\mu`. In the default case ``1 / op_norm**2`` is used.
-
+    op_norm: float | None [default: None]
+        The operator norm of the forward operator. If None, it is computed numerically unless stepsize is provided
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
+    
     Notes
     -----
     For a codomain-free setting, Landweber backpropagates the data once and
@@ -255,7 +285,7 @@ class Landweber(RegSolver):
 
     check_applicability = staticmethod(check_Hilbert_applicability_linear)
 
-    def _next(self):
+    def _next(self) -> None:
         if self.setting.codomain_free:
             self._richardson.x = self.x
             self._richardson.stepsize = self.stepsize
@@ -278,68 +308,69 @@ class Landweber(RegSolver):
         
 class NuMethodSelfAdjoint(RegSolver):
     r"""The :math:`\nu`-method for a linear self-adjoint operator.
-
+    
     This class implements the actual :math:`\nu`-method recurrence. In the
     application to :math:`T x=y^\delta`, its operator is
     :math:`A=T^*T` and its right-hand side is :math:`T^*y^\delta`. Thus it
     solves
-
+    
     .. math::
         A x = data
-
+    
     for a linear self-adjoint operator :math:`A` by
-
+    
     .. math::
         x_k = x_{k-1}
         + \theta_k (x_{k-1}-x_{k-2})
         - \omega_k\mu G^{-1}(A x_{k-1}-data),
-
+    
     where :math:`G` is the Gram operator of the domain Hilbert space and
-
+    
     .. math::
         \theta_k &={ (k-1)(2k-3)(2k+2\nu-1) \over
         (k+2\nu-1)(2k+4\nu-1)(2k+2\nu-3)},\\
         \omega_k &=4{(2k+2\nu-1)(k+\nu-1) \over
         (k+2\nu-1)(2k+4\nu-1)}.
-
+    
     For a given initial guess :math:`x_0`, the first iterate is initialized
     separately by
-
+    
     .. math::
         x_1={4\nu+2\over4\nu+1}\mu
         G^{-1}(data-Ax_0).
-
+    
     The step size must satisfy :math:`\mu\lVert A\rVert\leq 1`. For the
     normal operator :math:`A=T^*T`, this is the usual condition
     :math:`\mu\lVert T\rVert^2\leq 1`.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         Setting whose forward operator is linear and self-adjoint.
-    data : Vector or None [default: None]
+    data: ReadOnlyVector | None [default: None]
         Right-hand side. If omitted, it is resolved from the setting.
-    init : Vector or None [default: None]
+    init: Vector | None [default: None]
         Initial guess :math:`x_0`. If omitted, it is resolved from the
         setting.
-    change_init : bool [default: True]
+    change_init: bool [default: True]
         If true, ``init`` is used directly as the initial iteration vector.
         Otherwise it is copied.
-    nu : float [default: 1.0]
+    nu: float [default: 1.0]
         Parameter :math:`\nu` determining the qualification of the method.
-    stepsize : float or None [default: None]
+    stepsize: float | None [default: None]
         Step size :math:`\mu`. By default, ``1 / op_norm`` is used.
-    op_norm : float or None [default: None]
+    op_norm: float | None [default: None]
         Norm of :math:`A`. If omitted, it is estimated numerically. If a step
         size is supplied, the norm is still needed to verify the step-size
         condition.
-
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
     """
 
     def __init__(
         self,
         setting: Setting,
-        data: Vector | None = None,
+        data: ReadOnlyVector | None = None,
         init: Vector | None = None,
         change_init: bool = True,
         nu: float = 1.0,
@@ -410,12 +441,32 @@ class NuMethodSelfAdjoint(RegSolver):
     @staticmethod
     def check_applicability(
         setting: Setting,
-        user_data: Vector | None = None,
-        user_init: Vector | None = None,
+        user_data: ReadOnlyVector | None = None,
+        user_init: ReadOnlyVector | None = None,
         op_norm: float | None = None,
         **kwargs: Any,
     ) -> tuple[dict, dict]:
-        r"""Check Hilbert applicability and self-adjointness."""
+        r"""Check Hilbert applicability and self-adjointness.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        user_data: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        user_init: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         out, par = check_Hilbert_applicability_linear(
             setting,
             user_data=user_data,
@@ -477,49 +528,50 @@ class NuMethodSelfAdjoint(RegSolver):
 
 class NuMethod(RegSolver):
     r"""The :math:`\nu`-method for a bounded linear operator.
-
+    
     For :math:`T:X\to Y`, this solver applies
     :class:`NuMethodSelfAdjoint` to the normal equation
-
+    
     .. math::
         T^*T x = T^*y^\delta,
-
+    
     where ``data`` represents :math:`y^\delta`. The delegated solver therefore
     receives ``setting.op.adjoint_eval`` as :math:`T^*T` and the result of
     ``setting.op.adjoint_data(data)`` as :math:`T^*y^\delta`.
-
+    
     Thus, the self-adjoint implementation contains the recurrence, while this
     class only constructs the normal operator and backpropagates the data.
     For a given initial guess :math:`x_0`, the first iterate is
-
+    
     .. math::
         x_1={4\nu+2\over4\nu+1}\mu G_X^{-1}
         T^*(y^\delta-Tx_0).
-
+    
     The method uses a step size satisfying
     :math:`\mu\lVert T\rVert^2\leq 1`.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         Non-Tikhonov Hilbert setting with a linear forward operator.
-    data : Vector or ObsDataT or None [default: None]
+    data: Vector | ObsDataT | None [default: None]
         Right-hand side. General ObsDataT objects are only admissible in a codomain-free setting.
-    init : Vector or None [default: None]
+    init: Vector | None [default: None]
         Initial guess :math:`x_0`. If omitted, it is resolved from the
         setting.
-    change_init : bool [default: True]
+    change_init: bool [default: True]
         If true, ``init`` is used directly as the initial iteration vector.
         Otherwise it is copied.
-    nu : float [default: 1.0]
+    nu: float [default: 1.0]
         Parameter :math:`\nu` determining the qualification of the method.
-    stepsize : float or None [default: None]
+    stepsize: float | None [default: None]
         Step size :math:`\mu`. By default, the reciprocal norm of the normal
         operator is used.
-    op_norm : float or None [default: None]
+    op_norm: float | None [default: None]
         Norm of :math:`T`. If supplied, its square is passed as the norm of
         :math:`T^*T`.
-
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
     """
 
     def __init__(

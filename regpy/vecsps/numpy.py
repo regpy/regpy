@@ -1,3 +1,12 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any, Callable, Iterable, Iterator, Literal
+    from types import NotImplementedType
+    from numpy.typing import ArrayLike
+    from regpy.vecsps.base import Vector
+    from regpy._typing import Mask
 from copy import copy, deepcopy
 from warnings import warn
 from typing import *
@@ -12,25 +21,21 @@ __all__ = ["NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts"
 
 class NumPyVectorSpace(MaskableVectorSpace):
     r"""Arrays over real or complex storage with a selectable scalar field.
-
+    
     `regpy.vecsps.VectorSpaceBase`s can be added, producing `DirectSum` instances.
-
+    
     Parameters
     ----------
-    shape : int or tuple of ints
+    shape: tuple | int
         The shape of the arrays representing elements of this vector space.
-    dtype : data-type, optional
-        The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
-    as_real_space : bool, optional
-        Default True. Complex storage then has twice as many real coordinates.
+    dtype: type [default: float]
+        The elements' dtype. Should usually be either `float` or `complex`.
+    as_real_space: bool [default: True]
+        . Complex storage then has twice as many real coordinates.
         False selects complex scalars and requires a complex dtype.
-    seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
-        The random seed to be used by the `numpy.random.default_rng` to construct the random generator used 
-        to generate pseudo random vectors. For possible details how the argument is handled we refer to the 
-        numpy documentation.
     """
 
-    def __init__(self, shape: tuple | int, dtype: type = float, as_real_space: bool = True):
+    def __init__(self, shape: tuple | int, dtype: type = float, as_real_space: bool = True) -> None:
         self.shape = (shape,) if isinstance(shape, (int, np.integer)) else tuple(shape)
         super().__init__(vec_type=np.ndarray, dimension=int(np.prod(self.shape)),
                          complex=is_complex_dtype(np.array([], dtype=dtype)),
@@ -44,7 +49,19 @@ class NumPyVectorSpace(MaskableVectorSpace):
     def zeros(self, read_only: Literal[True]) -> ReadOnlyVector: ...
 
     def zeros(self, read_only: bool = False) -> np.ndarray | ReadOnlyVector:
-        """Return a zero vector, optionally as a broadcast read-only array."""
+        r"""Return a zero vector, optionally as a broadcast read-only array.
+        
+        Parameters
+        ----------
+        read_only: bool [default: False]
+            Whether to return a read-only view.
+        
+        
+        Returns
+        -------
+        np.ndarray | ReadOnlyVector
+            Result described above.
+        """
         read_only = self._validate_read_only_flag(read_only)
         if read_only:
             return np.broadcast_to(
@@ -59,7 +76,19 @@ class NumPyVectorSpace(MaskableVectorSpace):
     def ones(self, read_only: Literal[True]) -> ReadOnlyVector: ...
 
     def ones(self, read_only: bool = False) -> np.ndarray | ReadOnlyVector:
-        """Return a vector of ones, optionally as a broadcast read-only array."""
+        r"""Return a vector of ones, optionally as a broadcast read-only array.
+        
+        Parameters
+        ----------
+        read_only: bool [default: False]
+            Whether to return a read-only view.
+        
+        
+        Returns
+        -------
+        np.ndarray | ReadOnlyVector
+            Result described above.
+        """
         read_only = self._validate_read_only_flag(read_only)
         if read_only:
             return np.broadcast_to(
@@ -68,7 +97,19 @@ class NumPyVectorSpace(MaskableVectorSpace):
         return np.ones(shape=self.shape, dtype=self.dtype)
 
     def read_only(self, x: np.ndarray) -> ReadOnlyVector:
-        """Return a non-writable NumPy view sharing ``x``'s storage."""
+        r"""Return a non-writable NumPy view sharing ``x``'s storage.
+        
+        Parameters
+        ----------
+        x: np.ndarray
+            X.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector
+            Read-only vector view.
+        """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(
                 x, self, vec_name="vector",
@@ -78,82 +119,250 @@ class NumPyVectorSpace(MaskableVectorSpace):
         view.flags.writeable = False
         return view
 
-    def empty(self):
-        """Return an uninitialized element of the space.
+    def empty(self) -> Vector:
+        r"""Return an uninitialized element of the space.
+                
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
         """
         return np.empty(shape = self.shape,dtype=self.dtype)
 
 
-    def is_mask(self, mask):
+    def is_mask(self, mask: object) -> bool:
+        r"""Check whether the object is a valid mask for this space.
+        
+        Parameters
+        ----------
+        mask: object
+            Coordinate-selection mask in the format used by the vector space.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return (isinstance(mask, np.ndarray) and mask.dtype == bool
                 and mask.shape == self.shape)
 
-    def iter_mask(self, mask):
+    def iter_mask(self, mask: Mask) -> Iterator[bool]:
+        r"""Iterate over the mask entries in coefficient order.
+        
+        Parameters
+        ----------
+        mask: Mask
+            Coordinate-selection mask in the format used by the vector space.
+        
+        
+        Returns
+        -------
+        Iterator[bool]
+            Result described above.
+        """
         if not self.is_mask(mask):
             raise ValueError("Mask must be boolean and have the vector shape.")
         return iter(mask.flat)
 
-    def mask_from_iterable(self, values):
+    def mask_from_iterable(self, values: Iterable[bool]) -> Mask:
+        r"""Construct a backend mask from boolean entries.
+        
+        Parameters
+        ----------
+        values: Iterable[bool]
+            Values.
+        
+        
+        Returns
+        -------
+        Mask
+            Result described above.
+        """
         return super().mask_from_iterable(values).reshape(self.shape)
 
-    def nrTrues(self, mask):
+    def nrTrues(self, mask: Mask) -> int:
+        r"""Count the selected coordinates in a mask.
+        
+        Parameters
+        ----------
+        mask: Mask
+            Coordinate-selection mask in the format used by the vector space.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         if not self.is_mask(mask):
             raise ValueError("Invalid mask.")
         return int(np.count_nonzero(mask))
 
-    def _logical(self, x, y, operation):
+    def _logical(self, x: Mask, y: Mask, operation: Callable[[Any, Any], Any]) -> Mask:
         if not self.is_mask(x) or not self.is_mask(y):
             raise ValueError("Invalid mask.")
         return operation(x, y)
 
-    def logical_and(self, x, y):
+    def logical_and(self, x: Mask, y: Mask) -> Mask:
+        r"""Compute the intersection of two coordinate masks.
+        
+        Parameters
+        ----------
+        x: Mask
+            X.
+        y: Mask
+            Y.
+        
+        
+        Returns
+        -------
+        Mask
+            Result described above.
+        """
         return self._logical(x, y, np.logical_and)
 
-    def logical_or(self, x, y):
+    def logical_or(self, x: Mask, y: Mask) -> Mask:
+        r"""Compute the union of two coordinate masks.
+        
+        Parameters
+        ----------
+        x: Mask
+            X.
+        y: Mask
+            Y.
+        
+        
+        Returns
+        -------
+        Mask
+            Result described above.
+        """
         return self._logical(x, y, np.logical_or)
 
-    def logical_xor(self, x, y):
+    def logical_xor(self, x: Mask, y: Mask) -> Mask:
+        r"""Select coordinates present in exactly one of the masks.
+        
+        Parameters
+        ----------
+        x: Mask
+            X.
+        y: Mask
+            Y.
+        
+        
+        Returns
+        -------
+        Mask
+            Result described above.
+        """
         return self._logical(x, y, np.logical_xor)
 
-    def logical_not(self, x):
+    def logical_not(self, x: Mask) -> Mask:
+        r"""Complement a coordinate mask.
+        
+        Parameters
+        ----------
+        x: Mask
+            X.
+        
+        
+        Returns
+        -------
+        Mask
+            Result described above.
+        """
         if not self.is_mask(x):
             raise ValueError("Invalid mask.")
         return np.logical_not(x)
 
-    def _comparison(self, x, predicate, *, ordered=False):
+    def _comparison(self, x: ReadOnlyVector, predicate: Callable[..., bool], *, ordered: bool=False) -> Mask:
         if x not in self:
             raise ValueError("Vector outside space.")
         if ordered and not self.is_ordered:
             raise TypeError("Complex spaces have no coordinate ordering.")
         return predicate(x)
 
-    def _compare_pair(self, x, y, predicate, *, ordered=False):
+    def _compare_pair(self, x: ReadOnlyVector, y: ReadOnlyVector, predicate: Callable[..., bool], *, ordered: bool=False) -> Mask:
         if x not in self or y not in self:
             raise ValueError("Vectors outside the space.")
         if ordered and not self.is_ordered:
             raise TypeError("Complex spaces have no coordinate ordering.")
         return predicate(x, y)
 
-    def copyto(self, x, y, where=None):
+    def copyto(self, x: Vector, y: ReadOnlyVector, where: Mask | None=None) -> None:
+        r"""Copy coefficients into an existing writable vector.
+        
+        Parameters
+        ----------
+        x: Vector
+            Writable vector used by this operation.
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        where: Mask | None [default: None]
+            Mask selecting the coordinates to write; None selects all coordinates.
+        """
         if x not in self or y not in self:
             raise ValueError("Vector outside space.")
         if where is not None and not self.is_mask(where):
             raise ValueError("Invalid mask.")
         np.copyto(x, y, where=True if where is None else where)
 
-    def fill(self, x, value, where=None):
+    def fill(self, x: Vector, value: Scalar, where: Mask | None=None) -> None:
+        r"""Fill selected coefficients of a writable vector with a scalar.
+        
+        Parameters
+        ----------
+        x: Vector
+            Writable vector used by this operation.
+        value: Scalar
+            Value.
+        where: Mask | None [default: None]
+            Mask selecting the coordinates to write; None selects all coordinates.
+        """
         if x not in self or not np.isscalar(value):
             raise ValueError("Expected a vector and scalar value.")
         if where is not None and not self.is_mask(where):
             raise ValueError("Invalid mask.")
         np.copyto(x, value, where=True if where is None else where)
 
-    def restrict(self, x, mask):
+    def restrict(self, x: ReadOnlyVector, mask: Mask) -> Vector:
+        r"""Restrict.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        mask: Mask
+            Coordinate-selection mask in the format used by the vector space.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         if x not in self or not self.is_mask(mask):
             raise ValueError("Invalid vector or mask.")
         return x[mask].copy()
 
-    def extend(self, x, mask):
+    def extend(self, x: ReadOnlyVector, mask: Mask) -> Vector:
+        r"""Extend.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        mask: Mask
+            Coordinate-selection mask in the format used by the vector space.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         if not self.is_mask(mask):
             raise ValueError("Invalid mask.")
         if not isinstance(x, np.ndarray) or x.shape != (self.nrTrues(mask),):
@@ -165,7 +374,19 @@ class NumPyVectorSpace(MaskableVectorSpace):
         return result
 
     def _iter_native_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
-        """Iterate over native NumPy coefficients in C order."""
+        r"""Iterate over native NumPy coefficients in C order.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Iterator[Scalar]
+            Result described above.
+        """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(
                 x,
@@ -180,7 +401,15 @@ class NumPyVectorSpace(MaskableVectorSpace):
         x: np.ndarray,
         coefficients: Iterable[Scalar],
     ) -> None:
-        """Overwrite an array from native coefficients."""
+        r"""Overwrite an array from native coefficients.
+        
+        Parameters
+        ----------
+        x: np.ndarray
+            X.
+        coefficients: Iterable[Scalar]
+            Coefficients.
+        """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(
                 x,
@@ -218,7 +447,24 @@ class NumPyVectorSpace(MaskableVectorSpace):
             f"Expected {self._native_dimension} coefficients, but received more."
         ))
 
-    def rand(self, distribution = "uniform", seed = None,**kwargs):
+    def rand(self, distribution: str = "uniform", seed: int | None = None,**kwargs: Any) -> Vector:
+        r"""Rand.
+        
+        Parameters
+        ----------
+        distribution: str [default: 'uniform']
+            Distribution.
+        seed: int | None [default: None]
+            Seed.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         if seed is not None:
             set_rng_seed(seed)
         r = self._draw_sample(distribution=distribution,size = self.shape, **kwargs)
@@ -233,12 +479,27 @@ class NumPyVectorSpace(MaskableVectorSpace):
         else:
             return np.asarray(r, dtype=self.dtype)
 
-    def poisson(self, x, seed=None, **kwargs):
-        """Sample Poisson counts in a space with real storage.
-
+    def poisson(self, x: ReadOnlyVector, seed: int | None=None, **kwargs: Any) -> Vector:
+        r"""Sample Poisson counts in a space with real storage.
+        
         Complex spaces are unsupported, including complex storage interpreted
         as a real vector space (as_real_space=True). Rates must be finite,
         nonnegative real vectors belonging to this space.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        seed: int | None [default: None]
+            Seed.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
         """
         if self.is_complex:
             raise TypeError("poisson is available only for vector spaces with real storage.")
@@ -253,7 +514,7 @@ class NumPyVectorSpace(MaskableVectorSpace):
             raise ValueError("Poisson rates must be finite and nonnegative.")
         return self.rand(distribution="poisson", lam=rates, seed=seed, **kwargs)
     
-    def __contains__(self, x):
+    def __contains__(self, x: ReadOnlyVector) -> bool:
         if not isinstance(x, np.ndarray) or x.shape != self.shape:
             return False
         elif is_complex_dtype(x.dtype):
@@ -264,8 +525,20 @@ class NumPyVectorSpace(MaskableVectorSpace):
             return False
         
 
-    def flatten(self, x):
-        """Flat coordinates; complex realification interleaves real and imag."""
+    def flatten(self, x: ReadOnlyVector) -> np.ndarray:
+        r"""Flat coordinates; complex realification interleaves real and imag.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         if x not in self:
             raise ValueError("Vector outside this space.")
         x = np.asarray(x, dtype=self.dtype)
@@ -274,7 +547,20 @@ class NumPyVectorSpace(MaskableVectorSpace):
         return x.reshape(-1)
 
 
-    def fromflat(self, x):
+    def fromflat(self, x: ReadOnlyVector) -> Vector:
+        r"""Fromflat.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         x = np.asarray(x)
         if x.shape != (self.dimension,):
             raise ValueError("Expected dimension flat coordinates.")
@@ -288,12 +574,12 @@ class NumPyVectorSpace(MaskableVectorSpace):
 
 
 
-    def complex_space(self):
+    def complex_space(self) -> VectorSpaceBase:
         r"""Compute the corresponding complex vector space.
-
+        
         Returns
         -------
-        regpy.vecsps.VectorSpaceBase
+        VectorSpaceBase
             The complex space corresponding to this vector space as a shallow copy with modified
             dtype.
         """
@@ -302,12 +588,12 @@ class NumPyVectorSpace(MaskableVectorSpace):
         other.is_complex = True
         return other
 
-    def real_space(self):
+    def real_space(self) -> VectorSpaceBase:
         r"""Compute the corresponding real vector space.
-
+        
         Returns
         -------
-        regpy.vecsps.VectorSpaceBase
+        VectorSpaceBase
             The real space corresponding to this vector space as a shallow copy with modified
             dtype.
         """
@@ -319,12 +605,18 @@ class NumPyVectorSpace(MaskableVectorSpace):
     
     
 
-    def iter_basis(self):
+    def iter_basis(self) -> Iterator[ReadOnlyVector]:
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
         the same array is returned in each step, and subsequently modified in-place. If you need
         the array longer than that, perform a copy. In case of complex a vector space after each
         each array modified in its place with a real one it returns the same vector with \(1i\)
         in its place.   
+        
+        
+        Yields
+        ------
+        ReadOnlyVector
+            Result described above.
         """
         elm = self.zeros()
         for idx in np.ndindex(self.shape):
@@ -336,32 +628,53 @@ class NumPyVectorSpace(MaskableVectorSpace):
             elm[idx] = 0
 
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool | NotImplementedType:
         return (isinstance(other, type(self)) and self.shape == other.shape
                 and self.dtype == other.dtype and self.as_real_space == other.as_real_space)
 
-    def compatible(self, other):
+    def compatible(self, other: object) -> bool:
+        r"""Compatible.
+        
+        Parameters
+        ----------
+        other: object
+            Other.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return (isinstance(other, NumPyVectorSpace) and self.shape == other.shape
                 and self.is_complex == other.is_complex
                 and self.as_real_space == other.as_real_space)
 
     @property
-    def ndim(self):
+    def ndim(self) -> int:
+        r"""Ndim.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         return len(self.shape)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         if hasattr(self,"mask"):
             return make_repr(self,self.shape,self.is_complex,f"mask = {self.mask}")
         else: 
             return make_repr(self,self.shape,self.is_complex)
 
-    def __mul__(self, other):
+    def __mul__(self, other: Any) -> Prod:
         if isinstance(other, NumPyVectorSpace):
             return Prod(self, other)
         else:
             return NotImplemented
 
-    def __rmul__(self, other):
+    def __rmul__(self, other: Any) -> Prod:
         if isinstance(other, NumPyVectorSpace):
             return Prod(other, self)
         else:
@@ -373,33 +686,36 @@ class MeasureSpaceFcts(NumPyVectorSpace):
     space) with an additional measure on `\mathbb{R}^N` given by `N` non-negative weights.
     Both `N` and `M` can be multi-dimensional, i.e., tuples of integers. By default, `M` is  `()` (scalar functions). 
     Either the measure or the shape have to be specified. The measure defaults to the constant 1 measure for each point if it is not given.
-
+    
     Notes
     -----
-
+    
     The measure is stored as a NumPy array of shape `shape + (1,)*len(shape_codomain)`, i.e., the measure is broadcasted
-
+    
     Parameters
     ----------
-    shape : int or tuple of positive ints, optional
-        The shape of the domain of the functions (`N`). If it is not given the shape is taken from measure. Default: None
-    shape_codomain : int or tuple of ints, optional
-        The shape of the codomain of the functions (`M`). Default: `()`. 
-    measure : np.ndarray, optional:  Default: None
+    measure: np.ndarray | float | None [default: None]
         The non negative array representing the point measures. If it is not given the measures are set to 1 for each point. The shape of the measure has to be shape+(1,)*len(shape_codomain)
-    dtype : data-type, optional
-        The elements' dtype. Should usually be either `float` or `complex`. Default: `float`.
+    shape: tuple[int, ...] | int | None [default: None]
+        The shape of the domain of the functions (`N`). If it is not given the shape is taken from measure.
+    shape_codomain: tuple[int, ...] | int [default: ()]
+        The shape of the codomain of the functions (`M`).
+    dtype: type [default: float]
+        The elements' dtype. Should usually be either `float` or `complex`.
+    as_real_space: bool [default: True]
+        Whether to use real scalars. With complex storage, True treats the
+        space as real and counts real and imaginary coordinates separately.
     """
     @overload
-    def __init__(self,measure : None, shape : Tuple[int] | int, shape_codomain : Tuple[int | None] | int = (), dtype : type = float, as_real_space: bool = True) -> None: ...
+    def __init__(self,measure : None, shape : tuple[int, ...] | int, shape_codomain : tuple[int, ...] | int = (), dtype : type = float, as_real_space: bool = True) -> None: ...
 
     @overload
-    def __init__(self,measure : np.ndarray, shape : None, shape_codomain : Tuple[int | None] | int = (), dtype : type = float, as_real_space: bool = True) -> None: ...
+    def __init__(self,measure : np.ndarray, shape : None, shape_codomain : tuple[int, ...] | int = (), dtype : type = float, as_real_space: bool = True) -> None: ...
 
     def __init__(self,
-                 measure : np.ndarray | None = None, 
-                 shape : Tuple[int] | int | None = None, 
-                 shape_codomain : Tuple[int | None] | int = (), 
+                 measure : np.ndarray | float | None = None, 
+                 shape : tuple[int, ...] | int | None = None, 
+                 shape_codomain : tuple[int, ...] | int = (), 
                  dtype : type = float, as_real_space: bool = True) -> None:
         if(not isinstance(measure,np.ndarray) and shape is None):
             raise ValueError(Errors._compose_message("Invalid Init",'Either measure or shape have to be set to determine shape of space.'))
@@ -424,21 +740,35 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         r"""The measure on the domain of the functions (`N`)."""
 
     @property
-    def ndim_domain(self):
-        r"""The number of domain dimensions."""
+    def ndim_domain(self) -> int:
+        r"""The number of domain dimensions.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         return len(self.shape_domain)
     
     @property
-    def ndim_codomain(self):
-        r"""The number of codomain dimensions."""
+    def ndim_codomain(self) -> int:
+        r"""The number of codomain dimensions.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         return len(self.shape_codomain)
 
-    def scalar_space(self):
+    def scalar_space(self) -> MeasureSpaceFcts:
         r"""Returns the corresponding scalar-valued function space.
-
+        
         That is given a space of functions :math:`\mathbb{R}^N\to \mathbb{R}^M` or :math:`\mathbb{R}^N\to \mathbb{C}^M`,
         it returns the space of functions :math:`\mathbb{R}^N\to \mathbb{R}` or :math:`\mathbb{R}^N\to \mathbb{C}`.
-    
+        
         Returns
         -------
         MeasureSpaceFcts
@@ -456,15 +786,16 @@ class MeasureSpaceFcts(NumPyVectorSpace):
             pass  # No cached identity has been constructed yet.
         return res
 
-    def vector_valued_space(self,shape_codomain):
-        r"""    Returns a corresponding vector-valued function space with given shape_codomain.
-
+    def vector_valued_space(self,shape_codomain: int | tuple[int, ...]) -> MeasureSpaceFcts:
+        r"""Returns a corresponding vector-valued function space with given shape_codomain.
+        
         That is given a space of functions :math:`\mathbb{R}^N\to \mathbb{R}` or :math:`\mathbb{R}^N\to \mathbb{C}`,
         it returns the space of functions :math:`\mathbb{R}^N\to \mathbb{R}^M` or :math:`\mathbb{R}^N\to \mathbb{C}^M`.
-
+        
         Parameters
         ----------
-        shape_codomain : int or tuple of ints
+        shape_codomain: int | tuple[int, ...]
+            Shape codomain.
         
         Returns
         -------
@@ -489,16 +820,37 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         return res
 
     @property
-    def measure(self):
-        r""" Stores values of point measures """
+    def measure(self) -> float | np.ndarray:
+        r"""Stores values of point measures 
+        
+        
+        Returns
+        -------
+        float | np.ndarray
+            Result described above.
+        """
         return self._measure
     
     @measure.setter
-    def measure(self,new_measure):
+    def measure(self,new_measure: Scalar | ArrayLike) -> None:
+        r"""Measure.
+        
+        Parameters
+        ----------
+        new_measure: Scalar | ArrayLike
+            New measure.
+        """
         broadcasted_measure=self.update_measure(new_measure)
         self._measure=broadcasted_measure
 
-    def update_measure(self,new_measure):
+    def update_measure(self,new_measure: Scalar | ArrayLike) -> None:
+        r"""Update measure.
+        
+        Parameters
+        ----------
+        new_measure: Scalar | ArrayLike
+            New measure.
+        """
         try:
             broadcasted=np.broadcast_to(new_measure,self.shape_domain)
         except ValueError as e:
@@ -510,12 +862,12 @@ class MeasureSpaceFcts(NumPyVectorSpace):
             raise ValueError(Errors._compose_message("Not a Measure"),'Negative values are not allowed in measure.')
         return broadcasted
     
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool | NotImplementedType:
         if(not super().__eq__(other)):
             return False
         return np.allclose(self.measure,other.measure) and self.shape_codomain==other.shape_codomain
     
-    def __repr__(self):
+    def __repr__(self) -> str:
         if hasattr(self,"mask"):
             return make_repr(self,self.shape,self.is_complex,f"mask = {self.mask}",f"measure= ({self.measure})",f"shape_codomain= {self.shape_codomain}")
         else: 
@@ -524,50 +876,49 @@ class MeasureSpaceFcts(NumPyVectorSpace):
 
 class GridFcts(MeasureSpaceFcts):
     r"""A vector space representing (possibly vector-valued) functions defined on a rectangular grid.
-
+    
     Parameters
     ----------
-    *coords
-         Axis specifications, one for each dimension. Each can be either
-
-         - an integer `n`, making the axis range from `0` to `n-1`,
-         - a tuple that is passed as arguments to `numpy.linspace`, or
-         - an array-like containing the axis coordinates.
-    axisdata : tuple of arrays, optional
-         If the axes represent indices into some auxiliary arrays, these can be passed via this
-         parameter. If given, there must be one array for each dimension, the size of the first axis
-         of which must match the respective dimension's length. Besides that, no further structure
-         is imposed or assumed, this parameter exists solely to keep everything related to the
-         vector space in one place.
-    shape_codomain : int or tuple of ints, optional
-        The shape of the codomain of the functions. Default: `()`.
-    dtype : data-type, optional
+    axisdata: None | tuple[np.ndarray] | list [default: None]
+        If the axes represent indices into some auxiliary arrays, these can be passed via this
+        parameter. If given, there must be one array for each dimension, the size of the first axis
+        of which must match the respective dimension's length. Besides that, no further structure
+        is imposed or assumed, this parameter exists solely to keep everything related to the
+        vector space in one place.
+    shape_codomain: int | tuple[int, ...] [default: ()]
+        The shape of the codomain of the functions.
+    dtype: type [default: float]
         The dtype of the vector space.
-    use_cell_measure : bool, optional
-        If true a measure is calculated using the volume of the grid cells. Else the measure is one for all cells. Defaults to True.
-    boundary_ext : string {`sym`, `const`, `zero`}, optional
+    use_cell_measure: bool [default: True]
+        If true a measure is calculated using the volume of the grid cells. Else the measure is one for all cells.
+    boundary_ext: str [default: 'sym']
         Defines how the measure is continued at the boundary. Possible modes are
         'sym' : The boundary coordinates are assumed to be in the center of their cell
         'const': The boundary cells are extended by a constant given in boundary_ext_const
         'zero': The boundary coordinates are assumed to be on the outer edge of their cell
         defaults to 'sym'
-    ext_const: float or tuple of floats, optional
+    ext_const: None | float | tuple[float] [default: None]
         Defines extension of cells at edges of each axis. Can be set to a constant for all axes, one constant for each axis
         or one constant for the start and one for the end of each axis. Is only used in combination with `boundary_ext='const'`
         in which case it needs to be defined.
+    as_real_space: bool [default: True]
+        Whether to use real scalars. With complex storage, True treats the
+        space as real and counts real and imaginary coordinates separately.
+    *coords: ArrayLike
+        Coords.
     
     Notes
     -----
     If `axisdata` is given, the `coords` can be omitted.
     """
 
-    def __init__(self, *coords, 
+    def __init__(self, *coords: ArrayLike, 
                  axisdata : None | tuple[np.ndarray] | list = None, 
-                 shape_codomain : int | tuple[int] = (), 
+                 shape_codomain : int | tuple[int, ...] = (), 
                  dtype : type = float,
                  use_cell_measure : bool =True,
                  boundary_ext : str = 'sym',
-                 ext_const : None | float | tuple[float] = None, as_real_space: bool = True):
+                 ext_const : None | float | tuple[float] = None, as_real_space: bool = True) -> None:
         axes = []
         extents=[]
         if axisdata and not coords:
@@ -620,7 +971,7 @@ class GridFcts(MeasureSpaceFcts):
         self.axisdata = axisdata
         """The axisdata, if given."""
 
-    def _calc_cell_measure(axes,boundary_ext,ext_const=None):
+    def _calc_cell_measure(axes: int | tuple[int, ...],boundary_ext: str,ext_const: float | tuple[Any, ...] | None=None) -> np.ndarray:
         if len(axes)> 26:
             raise ValueError(Errors.value_error(f"Computing the cell measure is only supported for less than 26 axes. You have {len(axes)} axes."))
         ext_axes=[]
@@ -648,17 +999,16 @@ class GridFcts(MeasureSpaceFcts):
         prod_string=','.join([chr(k) for k in range(ord('A'),ord('A')+len(axes))])
         return np.einsum(prod_string,*ax_widths)#computes product of entries from ax_widths
     
-    def coord_distances(self,point=None,axes=None):
+    def coord_distances(self,point: ReadOnlyVector | None=None,axes: int | tuple[int, ...] | None=None) -> list[np.ndarray]:
         r"""Computes the euclidean distances of all grid points to the given point. If the point is None, then the distance from the origin is returned.
-
+        
         Parameters
         ----------
-            point : np.ndarray, optional
-              Point to which the distances are computed. Defaults to None.
-            axes : iterable, optional
-              Axes over which the distances are computed. If None the distance is computed over all axes. Defaults to None.
-
-
+        point: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        axes: int | tuple[int, ...] | None [default: None]
+            Axes.
+        
         Returns
         -------
             np.ndarray: NumPy array with same shape as domain containing all the distances.
@@ -681,40 +1031,40 @@ class GridFcts(MeasureSpaceFcts):
 class UniformGridFcts(GridFcts):
     r"""A vector space representing (possibly vector-valued) functions defined on a rectangular grid with equidistant axes.
     The measure is constant. Use `GridFcts` for grids with uniform axes and non-constant measures.
-
+    
     All arguments are passed to the `GridFcts` constructor, but an error will be produced if any axis
     is not uniform.
-
+    
     Parameters
     ----------
-    *coords
-         Axis specifications, one for each dimension. Each can be either
-
-         - an integer `n`, making the axis range from `0` to `n-1`,
-         - a tuple that is passed as arguments to `numpy.linspace`, or
-         - an array-like containing the axis coordinates.
-    axisdata : tuple of arrays, optional
-         If the axes represent indices into some auxiliary arrays, these can be passed via this
-         parameter. If given, there must be one array for each dimension, the size of the first axis
-         of which must match the respective dimension's length. Besides that, no further structure
-         is imposed or assumed, this parameter exists solely to keep everything related to the
-         vector space in one place.
-
-         If `axisdata` is given, the `coords` can be omitted.
-    shape_codomain : int or tuple of ints, optional
-    dtype : data-type, optional
+    axisdata: None | tuple[np.ndarray] [default: None]
+        If the axes represent indices into some auxiliary arrays, these can be passed via this
+        parameter. If given, there must be one array for each dimension, the size of the first axis
+        of which must match the respective dimension's length. Besides that, no further structure
+        is imposed or assumed, this parameter exists solely to keep everything related to the
+        vector space in one place.
+        
+        If `axisdata` is given, the `coords` can be omitted.
+    shape_codomain: int | tuple[int, ...] [default: ()]
+        Shape codomain.
+    dtype: type [default: float]
         The dtype of the vector space.
-    periodic: If true, the grid is assumed to be periodic. If coords is a tuple of triples 
+    periodic: bool [default: False]
         passed as arguments to numpy.linspace, the right boundaries (second elements of the triples)
         are reduced such that the difference of the second and first elements represents 
         periodicity lengths.
+    as_real_space: bool [default: True]
+        Whether to use real scalars. With complex storage, True treats the
+        space as real and counts real and imaginary coordinates separately.
+    *coords: int | tuple[float, float, int] | ArrayLike
+        Coords.
     """
 
-    def __init__(self, *coords, 
+    def __init__(self, *coords: int | tuple[float, float, int] | ArrayLike, 
                  axisdata : None | tuple[np.ndarray] = None, 
-                 shape_codomain : int | tuple[int] = (),  
+                 shape_codomain : int | tuple[int, ...] = (),  
                  dtype : type =float, 
-                 periodic : bool = False, as_real_space: bool = True):
+                 periodic : bool = False, as_real_space: bool = True) -> None:
         if periodic and all(isinstance(c,tuple) for c in coords):
             coords = tuple((l, (l+(n-1)*r)/n ,n) for (l,r,n) in coords)
         super().__init__(*coords, 
@@ -738,7 +1088,14 @@ class UniformGridFcts(GridFcts):
         self.measure = self.volume_elem
         """ Setting measure to be initialized by `volume_element`"""
     
-    def update_measure(self, new_measure):
+    def update_measure(self, new_measure: Scalar | ArrayLike) -> None:
+        r"""Update measure.
+        
+        Parameters
+        ----------
+        new_measure: Scalar | ArrayLike
+            New measure.
+        """
         broadcasted_measure=super().update_measure(new_measure)
         self.volume_elem=broadcasted_measure.flat[0]
         return broadcasted_measure
@@ -747,26 +1104,25 @@ class UniformGridFcts(GridFcts):
 
 class Prod(NumPyVectorSpace):
     r"""The tensor product of an arbitrary number of vector spaces.
-
+    
     Elements of the tensor product will always be arrays with in n-dim where n is number of factors. 
     Representing each coefficient to a basis tensor that are mad up be the tensor product of each 
     basis element from the factored spaces. Note, that spaces with possible multidimensional elements
     (e.g. `UniformGridFcts` with multiple dimensions) get flatted. 
-
+    
     Prod instances can be indexed and iterated over, returning / yielding the component vector spaces.
-
+    
     Parameters
     ----------
-    *factors : tuple of regpy.vecsps.VectorSpaceBase instances
-        The vector spaces to be factored.
-    flatten : bool, optional
+    flatten: bool [default: False]
         Whether factors that are themselves `Prod`\s should be merged into this instance. If False, Prod is not associative, but the product method behaves more predictably.
         Default: False
-
+    *factors: NumPyVectorSpace
+        The vector spaces to be factored.
     """
 
-    def __init__(self, *factors, 
-                 flatten : bool = False):
+    def __init__(self, *factors: NumPyVectorSpace, 
+                 flatten : bool = False) -> None:
         if any(not isinstance(s, VectorSpaceBase) for s in factors):
             raise TypeError(Errors.type_error("One of spaces is to factor is not a VectorSpace!"))
         if any(s.is_complex for s in factors) and any(not s.is_complex for s in factors):
@@ -797,25 +1153,25 @@ class Prod(NumPyVectorSpace):
         """String to compute the outer product in einsum."""
         super().__init__(shape, dtype=dt, as_real_space=factors[0].as_real_space)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool | NotImplementedType:
         return (
             isinstance(other, type(self)) and
             len(self.factors) == len(other.factors) and
             all(s == t for s, t in zip(self.factors, other.factors))
         )
 
-    def product(self, *xs):
+    def product(self, *xs: np.ndarray) -> np.ndarray:
         r"""Transform a collection of elements of the factors into an element of the tensor product by an outer product.
-
+        
         Parameters
         ----------
-        *xs : tuple of array-like
+        *xs: np.ndarray
             The elements of the factors. The number should match the number of factors,
             and for all `i`, `xs[i]` should be an element of `self[i]`.
-
+        
         Returns
         -------
-        n-dim array
+        np.ndarray
             An element of the tensor product
         """
         if any(x not in s for s, x in zip(self.factors, xs)):
@@ -823,11 +1179,11 @@ class Prod(NumPyVectorSpace):
         return np.einsum(self._prod_trafo_string,*[x.flat for x in xs],optimize=True)
 
 
-    def __getitem__(self, item):
+    def __getitem__(self, item: int) -> NumPyVectorSpace:
         return self.factors[item]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Any]:
         return iter(self.factors)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.factors)

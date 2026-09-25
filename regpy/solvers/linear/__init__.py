@@ -17,6 +17,7 @@ from regpy.solvers import *
 where you have access to `linear` and can use for example `linear.TikhonovCG` to define 
 a Tikhonov solver.
 """
+from __future__ import annotations
 
 from .tikhonov import * 
 from .admm import *

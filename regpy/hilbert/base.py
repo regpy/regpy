@@ -1,3 +1,11 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any, Callable, Iterator
+    from typing_extensions import Self
+    from types import NotImplementedType
+    from numpy.typing import ArrayLike
 from copy import copy,deepcopy
 from math import sqrt
 
@@ -17,24 +25,23 @@ class HilbertSpace:
     r"""Base class for Hilbert spaces. Subclasses must at least implement the `gram` property, which
     should return a linear `regpy.operators.Operator` instance. To avoid recomputing it,
     `regpy.util.memoized_property` can be used.
-
+    
     Hilbert spaces can be added, producing `DirectSum` instances on the direct sums of the
     underlying disretizations (see `regpy.vecsps.DirectSum` in the `regpy.vecsps` module).
-
+    
     They can also be multiplied by scalars to scale the norm. Note that the Gram matrix will scale
     by the square of the factor. This is for consistency with the (not yet implemented) Banach space
     case.
-
+    
     Parameters
     ----------
-    vecsp : regpy.vecsps.VectorSpaceBase
+    vecsp: VectorSpaceBase
         The underlying vector space. Should be the domain and codomain of the Gram matrix.
-    Scalar-field interpretation is taken from vecsp.as_real_space.
-        """
+    """
 
     log = ClassLogger()
 
-    def __init__(self, vecsp:VectorSpaceBase):
+    def __init__(self, vecsp:VectorSpaceBase) -> None:
         if not isinstance(vecsp, vecsps.VectorSpaceBase):
             raise TypeError(Errors.not_instance(vecsp,vecsps.VectorSpaceBase,add_info="Hilbert spaces are defined only on subclasses of regpy.vecsps.VectorSpaceBase."))
         self.vecsp = vecsp
@@ -45,11 +52,18 @@ class HilbertSpace:
         self._inner_buffer = None
 
     @property
-    def as_real_space(self):
-        """Scalar-field interpretation belongs to vecsp."""
+    def as_real_space(self) -> bool:
+        r"""Scalar-field interpretation belongs to vecsp.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.vecsp.as_real_space
 
-    def __deepcopy__(self, memo):
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
         cls = type(self)
         result = cls.__new__(cls)
         memo[id(self)] = result
@@ -64,7 +78,14 @@ class HilbertSpace:
 
     @property
     def gram(self)->Operator:
-        """The gram matrix as an `regpy.operators.Operator` instance."""
+        r"""The gram matrix as an `regpy.operators.Operator` instance.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         raise NotImplementedError
 
     @property
@@ -72,6 +93,12 @@ class HilbertSpace:
         r"""The inverse of the gram matrix as an `regpy.operators.Operator` instance. Needs only
         to be implemented if the `gram` property does not return an invertible operator (i.e. one
         that implements `regpy.operators.Operator.inverse`).
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
         """
         return self.gram.inverse
     
@@ -79,17 +106,25 @@ class HilbertSpace:
     def cholesky(self)->Operator:   
         r"""The factor L in a Cholesky-type factorization gram = L L^* of the gram matrix as an `regpy.operators.Operator` instance. L does not need to be lower triangular: It may, e.g., also be the square root of the gram matrix, or it could even be defined on a different vector space.
         This is not requied for most regularization methods, but it is needed, e.g., for generating white Gaussian noise in the Hilbert space.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
         """
         raise NotImplementedError
     
     def inner(self, x: ReadOnlyVector, y:ReadOnlyVector)->Scalar:
         r"""Compute the inner product between to elements which is linear in the first and anti-linear in the second argument.
-
+        
         Parameters
         ----------
-        x, y : Vector
+        x: ReadOnlyVector
             The elements for which the inner product should be computed.
-
+        y: ReadOnlyVector
+            The elements for which the inner product should be computed.
+        
         Returns
         -------
         Scalar
@@ -106,16 +141,16 @@ class HilbertSpace:
             prod = self.vecsp.vdot(self._inner_buffer, x)
         return prod.real if self.as_real_space else prod
 
-    def norm(self, x):
+    def norm(self, x: ReadOnlyVector) -> float:
         r"""Compute the norm of an element.
-
+        
         This is a convenience wrapper around `norm`.
-
+        
         Parameters
         ----------
-        x : array-like
+        x: ReadOnlyVector
             The elements for which the norm should be computed.
-
+        
         Returns
         -------
         float
@@ -126,39 +161,45 @@ class HilbertSpace:
     @memoized_property
     def norm_functional(self)->float:
         r"""The squared norm functional as a `regpy.functionals.Functional` instance.
+                
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
         """
         from regpy.functionals import HilbertNorm
         return HilbertNorm(self)
 
-    def dual_space(self):
+    def dual_space(self) -> HilbertSpace:
         r"""The dual space for the dual pairing given by `domain.vdot`. 
         The dual space coincides with the Hilbert space as `regpy.vecsps.VectorSpaceBase`, but gram is replaced by gram_inv.
-
+        
         Returns
         ---------
         HilbertSpace
         """
         return GramHilbertSpace(gram = self.gram_inv,gram_inv = self.gram)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool | NotImplementedType:
         if isinstance(other, type(self)):
             return self.vecsp == other.vecsp
         else:
             return NotImplemented
 
-    def __add__(self, other):
+    def __add__(self, other: float | HilbertSpace) -> HilbertSpace | NotImplementedType:
         if isinstance(other, HilbertSpace):
             return DirectSum(self, other, flatten=True)
         else:
             return NotImplemented
 
-    def __radd__(self, other):
+    def __radd__(self, other: float | HilbertSpace) -> HilbertSpace | NotImplementedType:
         if isinstance(other, HilbertSpace):
             return DirectSum(other, self, flatten=True)
         else:
             return NotImplemented
 
-    def __rmul__(self, other):
+    def __rmul__(self, other: float | HilbertSpace) -> HilbertSpace | NotImplementedType:
         if isinstance(other,float) or isinstance(other,int):
             return DirectSum((other, self), flatten=True)
         else:
@@ -167,19 +208,19 @@ class HilbertSpace:
 
 class MaskedHilbertSpace(HilbertSpace):
     r"""Hilbert geometry induced on a masked coordinate space.
-
+    
     For a full Hilbert space X and a coordinate restriction P:X -> V,
     the Gram operator is G_V = P G_X P*. Thus the inner product of two
     restricted vectors equals the full-space inner product of their zero
     extensions. Full-space quadrature weights and couplings are retained.
-
+    
     Parameters
     ----------
-    space : HilbertSpace
+    space: HilbertSpace
         Hilbert structure on the generating MaskableVectorSpace.
-    vecsp : MaskedVectorSpace
+    vecsp: VectorSpaceBase
         Restricted space created by space.vecsp.get_masked_space(mask).
-    inverse : Operator, "cholesky", or None
+    inverse: Operator | None [default: None]
         Optional inverse of the restricted Gram operator. "cholesky" lazily
         assembles and factorizes the restricted matrix (potentially costly).
         With None, a pointwise inverse is constructed automatically for Identity,
@@ -188,14 +229,14 @@ class MaskedHilbertSpace(HilbertSpace):
         inverted; no matrix assembly or operator evaluation is required.
         For other operators, gram_inv requires an explicit inverse specification.
         In general P G_X^{-1} P* is NOT the inverse of P G_X P*.
-
+    
     Examples
     --------
     >>> V = X.get_masked_space(mask)
     >>> H_V = MaskedHilbertSpace(H_X, V)
     """
 
-    def __init__(self, space: HilbertSpace, vecsp, inverse=None):
+    def __init__(self, space: HilbertSpace, vecsp: VectorSpaceBase, inverse: Operator | None=None) -> None:
         from regpy.vecsps.maskable import MaskedVectorSpace
         from regpy.operators import CoordinateProjection
 
@@ -217,10 +258,26 @@ class MaskedHilbertSpace(HilbertSpace):
 
     @memoized_property
     def gram(self) -> Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         return self.projection * self.space.gram * self.projection.adjoint
 
     @memoized_property
     def gram_inv(self) -> Operator:
+        r"""Gram inv.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if isinstance(self._inverse_spec, Operator):
             return self._inverse_spec
         if self._inverse_spec == "cholesky":
@@ -244,8 +301,20 @@ class MaskedHilbertSpace(HilbertSpace):
         )
 
     @staticmethod
-    def _coordinate_diagonal(op):
-        """Return a flat diagonal in coefficient order, or None if unsupported."""
+    def _coordinate_diagonal(op: Operator) -> Vector | None:
+        r"""Return a flat diagonal in coefficient order, or None if unsupported.
+        
+        Parameters
+        ----------
+        op: Operator
+            Operator used by this construction.
+        
+        
+        Returns
+        -------
+        Vector | None
+            Result described above.
+        """
         from regpy.operators.base import Identity, LinearCombination, Composition
 
         if op.domain != op.codomain:
@@ -276,9 +345,17 @@ class MaskedHilbertSpace(HilbertSpace):
     @memoized_property
     def cholesky(self) -> Operator:
         # Rectangular factor is permitted: (P L_X)(P L_X)* = P G_X P*.
+        r"""Cholesky.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         return self.projection * self.space.cholesky
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool | NotImplementedType:
         if not isinstance(other, MaskedHilbertSpace):
             return NotImplemented
         return (self.vecsp == other.vecsp and self.space == other.space
@@ -286,17 +363,16 @@ class MaskedHilbertSpace(HilbertSpace):
 
 
 class GramHilbertSpace(HilbertSpace):
-    r"""
-    Makes the domain of a given (positive, self-adjoint) operator a Hilbert space with the operator as Gram matrix. 
+    r"""Makes the domain of a given (positive, self-adjoint) operator a Hilbert space with the operator as Gram matrix. 
     
     Parameters
     ----------
-    gram: operator
+    gram: Operator
         The Gram matrix of the discrete Hilbert space.
-    gram_inv: operator, default =None
-        Inverse of the Gram matrix    
+    gram_inv: Operator | None [default: None]
+        Inverse of the Gram matrix
     """
-    def __init__(self, gram:Operator, gram_inv:Operator=None):
+    def __init__(self, gram:Operator, gram_inv:Operator | None=None) -> None:
         if not isinstance(gram,Operator):
             raise TypeError(Errors.not_instance(gram,Operator,"To define a GramHilbertSpace the gram operator has to be a proper RegPy operator."))
         if gram.domain != gram.codomain:
@@ -311,35 +387,51 @@ class GramHilbertSpace(HilbertSpace):
         super().__init__(gram.domain)
 
     @property
-    def gram(self):
+    def gram(self) -> Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         return self._gram
 
     @property
-    def gram_inv(self):
+    def gram_inv(self) -> Operator:
+        r"""inverse of the Gram operator.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         return self._gram_inv or self._gram.inverse
 
 
 class HilbertPullBack(HilbertSpace):
     r"""Pullback of a Hilbert space on the codomain of an operator to its domain.
-
+    
     For `op : X -> Y` with Y a Hilbert space, the inner product on X is defined as
-
+    
         <a, b> := <op(x), op(b)>
-
+    
     (This really only works in finite dimensions due to completeness). The gram matrix of the
     pullback space is simply `G_X = op.adjoint * G_Y * op`.
-
+    
     Note that computation of the inverse of `G_X` is not trivial.
-
+    
     Parameters
     ----------
-    space : regpy.hilbert.HilbertSpace
+    space: HilbertSpace
         Hilbert space on the codomain of `op`.
-    op : regpy.operators.Operator
+    op: Operator
         The operator along which to pull back `space`
-    inverse : 'conjugate', 'cholesky' or None
+    inverse: Operator | None [default: None]
         How to compute the inverse gram matrix.
-
+        
         - 'conjugate': the inverse will be computed as `op.adjoint * G_Y.inverse * op`. **This is
           in general not correct**, but may in some cases be an efficient approximation.
         - 'cholesky': Implement the inverse via Cholesky decomposition. This requires assembling
@@ -347,7 +439,7 @@ class HilbertPullBack(HilbertSpace):
         - None: no inverse will be implemented.
     """
 
-    def __init__(self, space:HilbertSpace, op:Operator, inverse:Operator=None):
+    def __init__(self, space:HilbertSpace, op:Operator, inverse:Operator | None=None) -> None:
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator,"To define a HilbertPullBack the operator has to be a proper RegPy operator."))
         if not op.linear:
@@ -374,10 +466,26 @@ class HilbertPullBack(HilbertSpace):
 
     @memoized_property
     def gram(self)->Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         return self.op.adjoint * self.space.gram * self.op
 
     @property
     def gram_inv(self)->Operator:
+        r"""inverse of the Gram operator.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if self.inverse:
             return self.inverse
         raise NotImplementedError
@@ -387,35 +495,32 @@ class DirectSum(HilbertSpace):
     r"""The direct sum of an arbitrary number of hilbert spaces, with optional
     scaling of the respective norms. The underlying vector space will be the
     `regpy.vecsps.DirectSum` of the underlying vector spaces of the summands.
-
+    
     Note that constructing DirectSum instances can be done more comfortably
     simply by adding `regpy.hilbert.HilbertSpace` instances and
     by multiplying them with scalars, but see the documentation for
     `regpy.vecsps.DirectSum` for the `flatten` parameter.
-
+    
     Parameters
     ----------
-    *summands : HilbertSpace tuple
-        The Hilbert spaces to be summed. Alternatively, summands can be given
-        as tuples `(scalar, HilbertSpace)`, which will scale the norm the
-        respective summand. The gram matrices and hence the inner products will
-        be scaled by `scalar**2`.
-    flatten : bool, optional
+    flatten: bool [default: False]
         Whether summands that are themselves DirectSums should be merged into
-        this instance. Default: False.
-    vecsp : vecsps.VectorSpaceBase or callable, optional
+        this instance.
+    vecsp: VectorSpaceBase | None [default: None]
         Either the underlying vector space or a factory function that will be
         called with all summands' vector spaces passed as arguments and should
-        return a vecsps.DirectSum instance. Default: vecsps.DirectSum.
+        return a vecsps.DirectSum instance.DirectSum.
+    *args: HilbertSpace | tuple[float, HilbertSpace]
+        Positional arguments forwarded to the underlying implementation.
+    
     Notes
     -----
     All factors must have the same scalar field. Complex Hilbert factors
     (as_real_space=False) produce a complex tensor product. With complex
     storage, factor Gram operators must be complex-linear.
-
     """
 
-    def __init__(self, *args, flatten:bool=False, vecsp:VectorSpaceBase=None):
+    def __init__(self, *args: HilbertSpace | tuple[float, HilbertSpace], flatten:bool=False, vecsp:VectorSpaceBase | None=None) -> None:
         self.summands = []
         self.weights = []
         for arg in args:
@@ -450,7 +555,7 @@ class DirectSum(HilbertSpace):
             raise ValueError(Errors.value_error("The vector spaces in the direct sum vector space does not match the vector spaces in the Hilbert spaces to be summed!"))
         super().__init__(vecsp)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool | NotImplementedType:
         if isinstance(other, type(self)):
             return (
                 len(self.summands) == len(other.summands) and
@@ -462,6 +567,14 @@ class DirectSum(HilbertSpace):
 
     @memoized_property
     def gram(self)->Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         ops = []
         for w, s in zip(self.weights, self.summands):
             if w == 1:
@@ -472,11 +585,17 @@ class DirectSum(HilbertSpace):
 
     @memoized_property
     def gram_inv(self) -> Operator:
-        """Combine the summands' Hilbert-space inverses with inverse weights.
-
+        r"""Combine the summands' Hilbert-space inverses with inverse weights.
+        
         Use gram_inv rather than gram.inverse: a summand may supply a
         specialized inverse for a restricted Gram whose individual projection
         factors are not invertible.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
         """
         return DirectSumOp(
             *(s.gram_inv if w == 1 else (1 / w**2) * s.gram_inv
@@ -484,55 +603,55 @@ class DirectSum(HilbertSpace):
             domain=self.vecsp, codomain=self.vecsp,
         )
 
-    def __getitem__(self, item):
+    def __getitem__(self, item: int) -> HilbertSpace:
         return self.summands[item]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Any]:
         return iter(self.summands)
 
 class TensorProd(HilbertSpace):
     r"""The Tensor product of an arbitrary number of hilbert spaces, with optional
     scaling of the respective norms. The underlying vector space will be the
     `regpy.vecsps.Prod` of the underlying discretizations of the factors.
-
+    
     Important note! The implementation of the Gram operator makes use of the
     BasisTransform Operator from regpy.operators.bases_transform in the sense, that
     the Gram matrix of the Tensor Product of discretised Hilbert spaces
     would be given as the Kronecker-product of all Gram matrices. Which is
     exactly given by the BasisTransform operator given that we interpret the
     Gram matrices as basis changes in each discretised Hilbert space.
-
+    
     Therefore, please pay attention that to do that we have to actually evaluate
     the Gram-matrix for each Hilbert and store it.
-
+    
     We want :math:`H_1 \otimes \dots H_l` and each :math:`H_i` is discretised by a basis
     of size :math:`n_i` then we get a memory consumption for the Gram matrices of
     :math:`O(\sum_{i=1}^l n_i)<=O(l\cdot n)` with :math:`n = \max(n_i)`.
-
+    
     Computing the Gram property itself can be easily seen to have the complexity
     :math:`O(\sum_{i=1}^l n_i\phi_i(n_i))<=O(l\cdot n\phi(n)))`. with :math:`\phi_i` being
     the complexity for evaluation the Gram operator of the Hilbert space :math:`H_i`.
     Note that in the case that each Gram operator is a dense matrix this would be
     given by :math:`\phi_i(n_i)=n_i^2` leading to a complexity of :math:`O(l\cdot n^3)`.
-
-
+    
+    
     Parameters
     ----------
-    *args : HilbertSpace or (scalar, HilbertSpace)
+    flatten: bool [default: False]
+        Whether factors that are themselves TensorProds should be merged into
+        this instance.
+    vecsp: VectorSpaceBase | None [default: None]
+        Either the underlying vector space or a factory function that will be
+        called with all factors' vector spaces passed as arguments and should
+        return a vecsps.Prod instance.Prod.
+    *args: HilbertSpace | tuple[float, HilbertSpace]
         The Hilbert spaces to be tensored. Alternatively, factors can be given
         as tuples `(scalar, HilbertSpace)`, which will scale the norm of the
         respective factor. The gram matrices and hence the inner products will
         be scaled by `scalar**2`.
-    flatten : bool, optional
-        Whether factors that are themselves TensorProds should be merged into
-        this instance. Default: False.
-    vecsp : vecsps.VectorSpaceBase or callable, optional
-        Either the underlying vector space or a factory function that will be
-        called with all factors' vector spaces passed as arguments and should
-        return a vecsps.Prod instance. Default: vecsps.Prod.
     """
 
-    def __init__(self, *args, flatten:bool=False, vecsp:VectorSpaceBase=None):
+    def __init__(self, *args: HilbertSpace | tuple[float, HilbertSpace], flatten:bool=False, vecsp:VectorSpaceBase | None=None) -> None:
         self.factors = []
         self.weights = []
         for arg in args:
@@ -570,7 +689,7 @@ class TensorProd(HilbertSpace):
 
         super().__init__(vecsp)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool | NotImplementedType:
         if isinstance(other, type(self)):
             return (
                 len(self.factors) == len(other.factors) and
@@ -582,6 +701,14 @@ class TensorProd(HilbertSpace):
 
     @memoized_property
     def gram(self)->Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         bases = []
         for weight, space in zip(self.weights, self.factors):
             gram = space.gram
@@ -612,10 +739,10 @@ class TensorProd(HilbertSpace):
             self.vecsp, self.vecsp, bases, dtype=self.vecsp.dtype
         )
 
-    def __getitem__(self, item):
+    def __getitem__(self, item: int) -> HilbertSpace:
         return self.factors[item]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Any]:
         return iter(self.factors)
 
 
@@ -624,18 +751,26 @@ class L2Generic(HilbertSpace):
     
     Parameters
     ----------
-    vecsp : regpy.vecsps.VectorSpaceBase
+    vecsp: VectorSpaceBase
         Underlying discretization
-    weights : array-like
+    weights: ArrayLike | None [default: None]
         Weight in the norm.
     """
 
-    def __init__(self, vecsp, weights=None):
+    def __init__(self, vecsp: VectorSpaceBase, weights: ArrayLike | None=None) -> None:
         super().__init__(vecsp)
         self.weights = weights
 
     @memoized_property
-    def gram(self):
+    def gram(self) -> Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if self.weights is None:
             return self.vecsp.identity
         else:
@@ -659,25 +794,25 @@ class AbstractSpaceBase:
 
     log = ClassLogger()
 
-    def __add__(self, other):
+    def __add__(self, other: float | HilbertSpace) -> HilbertSpace | NotImplementedType:
         if callable(other):
             return AbstractSum(self, other, flatten=True)
         else:
             return NotImplemented
     
-    def __iadd__(self,other):
+    def __iadd__(self,other: float | HilbertSpace) -> Self:
         if callable(other):
             return AbstractSum(self, other, flatten=True)
         else:
             return NotImplemented
 
-    def __radd__(self, other):
+    def __radd__(self, other: float | HilbertSpace) -> HilbertSpace | NotImplementedType:
         if callable(other):
             return AbstractSum(other, self, flatten=True)
         else:
             return NotImplemented
 
-    def __rmul__(self, other):
+    def __rmul__(self, other: float | HilbertSpace) -> HilbertSpace | NotImplementedType:
         if isinstance(other,float):
             return AbstractSum((other, self), flatten=True)
         else:
@@ -687,58 +822,79 @@ class AbstractSpaceBase:
 class AbstractSpace(AbstractSpaceBase):
     r"""An abstract Hilbert space that can be called on a vector space to get the corresponding
     concrete implementation.
-
+    
     AbstractSpaces provide two kinds of functionality:
-
+    
     - A decorator method `register(vecsp_type)` that can be used to declare some class or function
       as the concrete implementation of this abstract space for vector spaces of type `vecsp_type`
       or subclasses thereof, e.g.:
-
+    
       .. highlight:: python
       .. code-block:: python
       
             @Sobolev.register(vecsps.UniformGridFcts)
             class SobolevUniformGridFcts(HilbertSpace):
                 ...
-
+    
     - AbstractSpaces are callable. Calling them on a vector space and arbitrary optional
       keyword arguments finds the corresponding concrete `regpy.hilbert.HilbertSpace` among all
       registered implementations. If there are implementations for multiple base classes of the
       vector space type, the most specific one will be chosen. The chosen implementation will
       then be called with the vector space and the keyword arguments, and the result will be
       returned.
-
+    
       If called without a vector space as positional argument, it returns a new abstract space
       with all passed keyword arguments remembered as defaults. This allows one e.g. to write
-
+    
           H = Sobolev(index=2)
-
+    
       after which `H(grid)` is the same as `Sobolev(grid, index=2)` (which in turn will be the
       same as something like `SobolevUniformGridFcts(grid, index=2)`, depending on the type of `grid`).
-
+    
     Parameters
     ----------
-    name : str
+    name: str
         A name for this abstract space. Currently, this is only used in error messages, when no
         implementation was found for some vector space.
     """
 
-    def __init__(self, name):
+    def __init__(self, name: str) -> None:
         self._registry = {}
         self.name = name
         self.args = {}
 
-    def register(self, vecsp_type, impl=None):
+    def register(self, 
+                 vecsp_type: type[VectorSpaceBase], 
+                 impl: Callable[..., HilbertSpace] | None=None
+                 ) -> Callable[[Callable[..., HilbertSpace]], Callable[..., HilbertSpace]] | None:
+        r"""Register an implementation, or return its registration decorator.
+        
+        Parameters
+        ----------
+        vecsp_type: type[VectorSpaceBase]
+            Vecsp type.
+        impl: Callable[..., HilbertSpace] | None [default: None]
+            Impl.
+        
+        
+        Returns
+        -------
+        Callable[[Callable[..., HilbertSpace]], Callable[..., HilbertSpace]] | None
+            Decorator if no implementation was supplied; otherwise None.
+        """
         if impl is not None:
             self._registry.setdefault(vecsp_type, []).append(impl)
             self.__doc__ += "-"*125 + "\n" + f"--- Implementation for {vecsp_type.__name__} is given by {impl.__name__} with the following documentation ---" +"\n"+ f"{impl.__doc__}" + "\n" + "-"*125
         else:
-            def decorator(i):
+            def decorator(i: Callable[..., HilbertSpace]) -> Callable[..., HilbertSpace]:
                 self.register(vecsp_type, i)
                 return i
             return decorator
 
-    def __call__(self, vecsp=None, **kwargs):
+    def __call__(self, 
+                 vecsp: VectorSpaceBase | None=None, 
+                 **kwargs: Any
+                 ) -> HilbertSpace | AbstractSpace:
         if vecsp is None:
             clone = copy(self)
             clone.args = copy(self.args)
@@ -765,18 +921,28 @@ class AbstractSpace(AbstractSpaceBase):
 
 class AbstractSum(AbstractSpaceBase):
     r"""Weighted sum of abstract Hilbert spaces.
-
+    
     The constructor arguments work like for concrete `regpy.hilbert.HilbertSpace`s, which see.
     Adding and scaling `regpy.hilbert.AbstractSpace` instances is again a more convenient way to
     construct AbstractSums.
-
+    
     This abstract space can only be called on a `regpy.vecsps.DirectSum`, in which case it
     constructs the corresponding `regpy.hilbert.DirectSum` obtained by matching up summands, e.g.
-
+    
         (L2 + 2 * Sobolev(index=1))(grid1 + grid2) == L2(grid1) + 2 * Sobolev(grid2, index=1)
+    
+    Parameters
+    ----------
+    flatten: bool [default: False]
+        Flatten.
+    *args: HilbertSpace | tuple[float, HilbertSpace]
+        Positional arguments forwarded to the underlying implementation.
     """
 
-    def __init__(self, *args, flatten=False):
+    def __init__(self, 
+                 *args: HilbertSpace | tuple[float, HilbertSpace], 
+                 flatten: bool=False
+                 ) -> None:
         self.summands = []
         self.weights = []
         for arg in args:
@@ -795,7 +961,7 @@ class AbstractSum(AbstractSpaceBase):
                 self.summands.append(s)
                 self.weights.append(w)
 
-    def __call__(self, vecsp):
+    def __call__(self, vecsp: VectorSpaceBase) -> HilbertSpace | NotImplementedType:
         if not isinstance(vecsp, vecsps.DirectSum):
             raise TypeError(Errors.not_instance(vecsp,vecsps.DirectSum,f"The Abstract direct sum is only callable on a DirectSum VectorSpace. Not a {vecsp}"))
         return DirectSum(
@@ -803,10 +969,10 @@ class AbstractSum(AbstractSpaceBase):
             vecsp=vecsp
         )
 
-    def __getitem__(self, item):
+    def __getitem__(self, item: int) -> tuple[float, HilbertSpace]:
         return self.weights[item], self.summands[item]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Any]:
         return iter(zip(self.weights, self.summands))
 
 

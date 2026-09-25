@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from typing import Literal, overload
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from numpy.typing import ArrayLike, DTypeLike
+    from regpy.operators.base import Operator
+
 from copy import copy,deepcopy
 from math import sqrt
 from dataclasses import dataclass
@@ -12,8 +19,6 @@ from typing_extensions import Self
 import numpy as np
 import warnings
 
-if TYPE_CHECKING:
-    from regpy.operators import Operator
 
 from regpy.util import ClassLogger,Errors,make_repr,memoized_property,get_rng, set_rng_seed
 
@@ -82,6 +87,14 @@ class TupleVector:
     log = ClassLogger()
 
     def copy(self) -> Self:
+        r"""Copy.
+        
+        
+        Returns
+        -------
+        Self
+            Result described above.
+        """
         return copy(self)
 
     def __post_init__(self) -> None:
@@ -140,9 +153,25 @@ class TupleVector:
             return TupleVector([s_i > other for s_i in self.v])
 
     def all(self) -> bool:
+        r"""All.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return all((v_i.all() for v_i in self.v))
 
     def any(self) -> bool:
+        r"""Any.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return any((v_i.any() for v_i in self.v))
 
     def __or__(self, other: TupleVector) -> TupleVector:
@@ -151,6 +180,19 @@ class TupleVector:
         return TupleVector([s_i | o_i for s_i,o_i in zip(self.v,other.v)])
     
     def sum(self, **kwargs: Any) -> Scalar:
+        r"""Sum.
+        
+        Parameters
+        ----------
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        Scalar
+            Computed scalar value.
+        """
         z = []
         for v_i in self.v:
             if isinstance(v_i,np.ndarray):
@@ -217,12 +259,23 @@ class TupleVector:
     
     def __mul__(self, other: Scalar | Operator) -> Self | Operator:
         r"""Multiply by a scalar or compose an operator with a multiplier.
-
+        
         Multiplication of two vectors is deliberately unsupported because it
         is not part of the :class:`Vector` protocol. Pointwise multiplication
         is provided by :class:`regpy.operators.PtwMultiplication`, whose
         generic implementation uses the coefficient interface of the
         corresponding vector space.
+        
+        Parameters
+        ----------
+        other: Scalar | Operator
+            Other.
+        
+        
+        Returns
+        -------
+        Self | Operator
+            Result described above.
         """
         from regpy.operators.base import Operator,PtwMultiplication
         if isinstance(other,float) or isinstance(other,int) or isinstance(other,complex):
@@ -297,6 +350,19 @@ class TupleVector:
         return result
         
     def component_wise(self, method: Callable[[Vector], Vector]) -> Self:
+        r"""Component wise.
+        
+        Parameters
+        ----------
+        method: Callable[[Vector], Vector]
+            Writable vector used by this operation.
+        
+        
+        Returns
+        -------
+        Self
+            Result described above.
+        """
         if not callable(method):
             raise TypeError(Errors.type_error(f"To apply a method componentwise to a TupleVector the method has to be a callable. {method} is not callable"))
         return TupleVector([method(s_k) for s_k in self])
@@ -315,8 +381,32 @@ class VectorSpace(Protocol):
 
     @property
     def dimension(self) -> int: ...
-    def zeros(self, read_only: bool = False) -> Vector: ...
-    def ones(self, read_only: bool = False) -> Vector: ...
+    @overload
+    def zeros(self, read_only: Literal[False]=False) -> Vector:
+        ...
+
+    @overload
+    def zeros(self, read_only: Literal[True]) -> ReadOnlyVector:
+        ...
+
+    @overload
+    def zeros(self, read_only: bool) -> Vector | ReadOnlyVector:
+        ...
+
+    def zeros(self, read_only: bool = False) -> Vector | ReadOnlyVector: ...
+    @overload
+    def ones(self, read_only: Literal[False]=False) -> Vector:
+        ...
+
+    @overload
+    def ones(self, read_only: Literal[True]) -> ReadOnlyVector:
+        ...
+
+    @overload
+    def ones(self, read_only: bool) -> Vector | ReadOnlyVector:
+        ...
+
+    def ones(self, read_only: bool = False) -> Vector | ReadOnlyVector: ...
     def empty(self) -> Vector: ...
     def read_only(self, x: ReadOnlyVector) -> ReadOnlyVector: ...
     def __contains__(self, x: object) -> bool: ...
@@ -327,7 +417,7 @@ class VectorSpace(Protocol):
     def vdot(self, x: ReadOnlyVector, y: ReadOnlyVector) -> Scalar: ...
     def norm(self, x: ReadOnlyVector) -> float: ...
     def iter_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]: ...
-    def set_coefficients(self, x: Vector, coefficients: Iterable[Scalar]) -> None: ...
+    def set_coefficients(self, x: ReadOnlyVector, coefficients: Iterable[Scalar]) -> None: ...
     def iter_basis(self) -> Iterator[ReadOnlyVector]: ...
     def flatten(self, x: ReadOnlyVector) -> np.ndarray: ...
     def fromflat(self, x: np.ndarray) -> Vector: ...
@@ -336,25 +426,39 @@ class VectorSpace(Protocol):
 
 
 class VectorSpaceBase:
-    """Base implementation of the VectorSpace protocol.
-
+    r"""Base implementation of the VectorSpace protocol.
+    
     No shape, ndim, vector indexing, real/imag/conj attributes or storage
     layout are assumed. Concrete spaces provide allocation, membership,
     equality, compatibility and coefficient access. Coefficients describe
     coordinates over R when as_real_space=True, otherwise over C. Complex
     storage is necessary, but not sufficient, for a complex vector space.
-
+    
     dimension in this constructor counts native complex coordinates when
     complex=True; the dimension property doubles it for real scalars.
     real_space/complex_space conversions
     are optional backend capabilities, not part of this base interface.
+    
+    Parameters
+    ----------
+    vec_type: type[Vector]
+        Writable vector used by this operation.
+    dimension: int
+        Dimension.
+    complex: bool [default: False]
+        Complex.
+    type: DTypeLike [default: None]
+        Type.
+    as_real_space: bool [default: True]
+        Whether to use real scalars. With complex storage, True treats the
+        space as real and counts real and imaginary coordinates separately.
     """
 
     log = ClassLogger()
 
 
-    def __init__(self, vec_type, dimension: int, complex: bool = False,
-                 type=None, as_real_space: bool = True) -> None:
+    def __init__(self, vec_type: type[Vector], dimension: int, complex: bool = False,
+                 type: DTypeLike=None, as_real_space: bool = True) -> None:
         if not isinstance(dimension, (int, np.integer)) or dimension < 0:
             raise ValueError("dimension must be a nonnegative integer.")
         self.vec_type = vec_type
@@ -366,11 +470,25 @@ class VectorSpaceBase:
 
     @property
     def as_real_space(self) -> bool:
-        """True for real scalars; False for complex scalars."""
+        r"""True for real scalars; False for complex scalars.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self._as_real_space
 
     @as_real_space.setter
     def as_real_space(self, value: bool) -> None:
+        r"""As real space.
+        
+        Parameters
+        ----------
+        value: bool
+            Value.
+        """
         if not isinstance(value, (bool, np.bool_)):
             raise TypeError("as_real_space must be boolean.")
         if not value and not self.is_complex:
@@ -379,11 +497,18 @@ class VectorSpaceBase:
 
     @property
     def dimension(self) -> int:
-        """Dimension over the chosen scalar field; not a storage shape."""
+        r"""Dimension over the chosen scalar field; not a storage shape.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         return self._coordinate_count * (2 if self.is_complex and self.as_real_space else 1)
 
     @property
-    def _native_dimension(self):
+    def _native_dimension(self) -> int:
         return self._coordinate_count
 
     @staticmethod
@@ -407,24 +532,83 @@ class VectorSpaceBase:
                 setattr(result, k, deepcopy(v, memo))
         return result
 
-    def zeros(self, read_only: bool = False):
-        """Backend-defined representation operation."""
+    @overload
+    def zeros(self, read_only: Literal[False]=False) -> Vector:
+        ...
+
+    @overload
+    def zeros(self, read_only: Literal[True]) -> ReadOnlyVector:
+        ...
+
+    @overload
+    def zeros(self, read_only: bool) -> Vector | ReadOnlyVector:
+        ...
+
+    def zeros(self, read_only: bool = False) -> Vector | ReadOnlyVector:
+        r"""Backend-defined representation operation.
+        
+        Parameters
+        ----------
+        read_only: bool [default: False]
+            Whether to return a read-only view.
+        
+        
+        Returns
+        -------
+        Vector | ReadOnlyVector
+            Result described above.
+        """
         raise NotImplementedError
 
 
     
-    def ones(self, read_only: bool = False):
-        """Backend-defined representation operation."""
+    @overload
+    def ones(self, read_only: Literal[False]=False) -> Vector:
+        ...
+
+    @overload
+    def ones(self, read_only: Literal[True]) -> ReadOnlyVector:
+        ...
+
+    @overload
+    def ones(self, read_only: bool) -> Vector | ReadOnlyVector:
+        ...
+
+    def ones(self, read_only: bool = False) -> Vector | ReadOnlyVector:
+        r"""Backend-defined representation operation.
+        
+        Parameters
+        ----------
+        read_only: bool [default: False]
+            Whether to return a read-only view.
+        
+        
+        Returns
+        -------
+        Vector | ReadOnlyVector
+            Result described above.
+        """
         raise NotImplementedError
 
 
 
     def read_only(self, x: ReadOnlyVector) -> ReadOnlyVector:
         r"""Return a read-only view of ``x``.
-
+        
         The base implementation returns ``x`` unchanged. Backends that can
         enforce write protection should override this method. No independent
         copy is required or implied.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector
+            Read-only vector view.
         """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(
@@ -433,11 +617,25 @@ class VectorSpaceBase:
             ))
         return x
 
-    def empty(self):
-        """Backend-defined representation operation."""
+    def empty(self) -> Vector:
+        r"""Backend-defined representation operation.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         raise NotImplementedError
     
     def set_rng_seed(self, seed: int | None) -> None:
+        r"""Set rng seed.
+        
+        Parameters
+        ----------
+        seed: int | None
+            Seed.
+        """
         set_rng_seed(seed)
     
     def _draw_sample(
@@ -447,21 +645,22 @@ class VectorSpaceBase:
         seed: int | None = None,
         **kwargs: Any,
     ) -> np.ndarray | np.generic:
-        """Draw samples from a NumPy random-generator distribution.
-
+        r"""Draw samples from a NumPy random-generator distribution.
+        
         Parameters
         ----------
-        distribution : str
+        distribution: str
             Name of a method on :class:`numpy.random.Generator`.
-        size : None | int | tuple(int), optional
-            Sample size passed to the distribution. Defaults to
-            :attr:`realsize`.
-        kwargs : dict
+        size: int | tuple[int, ...] | None [default: None]
+            Sample size passed to the distribution.
+        seed: int | None [default: None]
+            Seed.
+        **kwargs: Any
             Additional arguments passed to the distribution method.
-
+        
         Returns
         -------
-        ndarray or scalar
+        np.ndarray | np.generic
             Samples that :meth:`fromflat` can convert into a vector.
         """
         if size is None:
@@ -481,22 +680,22 @@ class VectorSpaceBase:
             raise TypeError(Errors.type_error(f"The chosen distribution {distribution} might not have an argument size or one of your additional keyword arguments is unknown. Please, only use distributions listed in NumPy that have specified a size Argument."))
 
     def rand(self, distribution: str = "uniform", **kwargs: Any) -> Vector:
-        """Return a randomly sampled vector.
-
+        r"""Return a randomly sampled vector.
+        
         This distribution is defined by the vector-space representation and
         need not correspond to a canonical distribution for an associated
         Hilbert space.
-
+        
         For complex vectors, real and imaginary parts are sampled independently.
-
+        
         The distribution for sampling the random numbers can be specified as a string and is then 
         used by the `draw_sample` function and the on initiation created Generator to draw samples.
-
+        
         Parameters
         ----------
-        distribution : string, optional
+        distribution: str [default: 'uniform']
             The method name of the distribution as an attribute of the NumPy Generator. Default : "uniform"
-        kwargs : dict, optional
+        **kwargs: Any
             Arguments that can be passed to the sampling method.
         
         Returns
@@ -510,39 +709,59 @@ class VectorSpaceBase:
             values = values + 1j * self._draw_sample(distribution=distribution, **kwargs)
         return self.fromflat(values)
     
-    def poisson(self, x: Vector, **kwargs: Any) -> Vector:
-        """Return a Poisson-distributed vector with rate ``x``.
-
+    def poisson(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
+        r"""Return a Poisson-distributed vector with rate ``x``.
+        
         Parameters
         ----------
-        x : self.vec_type
+        x: ReadOnlyVector
             Poisson rate vector.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
         """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="poisson sampling requires the x to be in the vector space!"))
         return self.rand(distribution="poisson", lam = self.flatten(x), **kwargs)
     
     def randn(self, **kwargs: Any) -> Vector:
-        """Like `rand`, but using a standard normal distribution."""
+        r"""Like `rand`, but using a standard normal distribution.
+        
+        Parameters
+        ----------
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         return self.rand(distribution="standard_normal", **kwargs)
     
     def vdot(
         self, x: ReadOnlyVector, y: ReadOnlyVector
     ) -> Scalar:
         r"""Return the vector dot product defined by this space.
-
+        
         For complex vectors, the second argument is conjugated.
-
+        
         Parameters
         ----------
-        x : ReadOnlyVector
+        x: ReadOnlyVector
             First vector.
-        y : ReadOnlyVector
+        y: ReadOnlyVector
             second vector
-
+        
         Returns
         -------
-        float or complex
+        Scalar
             The dot product of x and y
         """
         if self.type is None:
@@ -551,19 +770,18 @@ class VectorSpaceBase:
 
     def copyto(self, x: Vector, y: ReadOnlyVector) -> None:
         r"""Copy the values of ``y`` into the existing vector ``x``.
-
+        
         The identity of ``x`` is preserved. Concrete vector spaces may
         override this method when their vectors require a special assignment
         protocol.
-
+        
         Parameters
         ----------
-        x : self.vec_type
+        x: Vector
             Destination vector.
-        y : self.vec_type
+        y: ReadOnlyVector
             Source vector whose values are copied into ``x``. Generic callers
             should use this method instead of invoking ``y.copy()``.
-
         """
         if x is y:
             return
@@ -573,16 +791,16 @@ class VectorSpaceBase:
 
     def fill(self, x: Vector, value: Scalar) -> None:
         r"""Fill the existing vector ``x`` with a scalar value.
-
+        
         The identity of ``x`` is preserved. Concrete vector spaces may
         override this method when their vectors require a special assignment
         protocol.
-
+        
         Parameters
         ----------
-        x : self.vec_type
+        x: Vector
             Vector to modify in place.
-        value : scalar
+        value: Scalar
             Scalar value assigned to every element of ``x``.
         """
         if x not in self:
@@ -600,11 +818,22 @@ class VectorSpaceBase:
 
 
     def iter_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
-        """Yield dimension scalars in basis order.
-
+        r"""Yield dimension scalars in basis order.
+        
         For complex storage interpreted over R, each real part is immediately
         followed by its imaginary part. Backends may override this public
         method directly; it never requires a shape attribute.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Yields
+        ------
+        Scalar
+            Result described above.
         """
         for value in self._iter_native_coefficients(x):
             if self.is_complex and self.as_real_space:
@@ -613,16 +842,35 @@ class VectorSpaceBase:
             else:
                 yield value
 
-    def _iter_native_coefficients(self, x):
-        """Backend hook used by coordinate-storage implementations."""
+    def _iter_native_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
+        r"""Backend hook used by coordinate-storage implementations.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Iterator[Scalar]
+            Result described above.
+        """
         raise NotImplementedError
 
 
     def set_coefficients(self, x: Vector, coefficients: Iterable[Scalar]) -> None:
-        """Write exactly dimension coordinates, preserving x's identity.
-
+        r"""Write exactly dimension coordinates, preserving x's identity.
+        
         Realified complex coordinates must be consecutive (real, imaginary)
         pairs. Input length and scalar field are checked before any write.
+        
+        Parameters
+        ----------
+        x: Vector
+            Writable vector used by this operation.
+        coefficients: Iterable[Scalar]
+            Coefficients.
         """
         values = np.asarray(list(coefficients))
         if values.shape != (self.dimension,):
@@ -635,8 +883,16 @@ class VectorSpaceBase:
             values = values[0::2] + 1j * values[1::2]
         self._set_native_coefficients(x, values)
 
-    def _set_native_coefficients(self, x, coefficients):
-        """Backend hook used by coordinate-storage implementations."""
+    def _set_native_coefficients(self, x: ReadOnlyVector, coefficients: Iterable[Scalar]) -> None:
+        r"""Backend hook used by coordinate-storage implementations.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        coefficients: Iterable[Scalar]
+            Coefficients.
+        """
         raise NotImplementedError
 
 
@@ -645,7 +901,14 @@ class VectorSpaceBase:
 
 
     def iter_basis(self) -> Iterator[ReadOnlyVector]:
-        """Yield the coordinate basis; the mutable work vector may be reused."""
+        r"""Yield the coordinate basis; the mutable work vector may be reused.
+        
+        
+        Yields
+        ------
+        ReadOnlyVector
+            Result described above.
+        """
         values = np.zeros(self.dimension, dtype=float if self.as_real_space else complex)
         result = self.empty()
         for j in range(self.dimension):
@@ -660,37 +923,94 @@ class VectorSpaceBase:
 
     @property
     def size(self) -> int:
-        """Deprecated alias of dimension over the selected scalar field."""
+        r"""Deprecated alias of dimension over the selected scalar field.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         warnings.warn("size is deprecated; use dimension.", DeprecationWarning, stacklevel=2)
         return self.dimension
 
 
     @property
     def realsize(self) -> int:
-        """Deprecated alias of dimension over the selected scalar field."""
+        r"""Deprecated alias of dimension over the selected scalar field.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         warnings.warn("realsize is deprecated; use dimension.", DeprecationWarning, stacklevel=2)
         return self.dimension
 
 
     @memoized_property
     def identity(self) -> Operator:
-        """The `regpy.operators.Identity` operator on this vector space. """
+        r"""The `regpy.operators.Identity` operator on this vector space. 
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         from regpy.operators import Identity
         return Identity(self)
 
-    def __contains__(self, x):
-        """Backend-defined representation operation."""
+    def __contains__(self, x: ReadOnlyVector) -> bool:
+        r"""Backend-defined representation operation.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         raise NotImplementedError
 
 
     def flatten(self, x: ReadOnlyVector) -> np.ndarray:
-        """Coordinates over the selected scalar field, in basis order."""
+        r"""Coordinates over the selected scalar field, in basis order.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return np.asarray(list(self.iter_coefficients(x)),
                           dtype=float if self.as_real_space else complex)
 
 
     def fromflat(self, x: np.ndarray) -> Vector:
-        """Reconstruct from exactly dimension coordinates; inverse of flatten."""
+        r"""Reconstruct from exactly dimension coordinates; inverse of flatten.
+        
+        Parameters
+        ----------
+        x: np.ndarray
+            X.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         values = np.asarray(x)
         if values.shape != (self.dimension,):
             raise ValueError("Expected a one-dimensional array of length dimension.")
@@ -706,15 +1026,52 @@ class VectorSpaceBase:
     
     
     
-    def norm(self, x: Vector) -> float:
+    def norm(self, x: ReadOnlyVector) -> float:
+        r"""Norm.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return sqrt(self.vdot(x,x).real)
 
-    def __eq__(self, other):
-        """Backend-defined representation operation."""
+    def __eq__(self, other: object) -> bool | NotImplementedType:
+        r"""Backend-defined representation operation.
+        
+        Parameters
+        ----------
+        other: object
+            Other.
+        
+        
+        Returns
+        -------
+        bool | NotImplementedType
+            Result described above.
+        """
         raise NotImplementedError
     
-    def compatible(self, other):
-        """Backend-defined representation operation."""
+    def compatible(self, other: object) -> bool:
+        r"""Backend-defined representation operation.
+        
+        Parameters
+        ----------
+        other: object
+            Other.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         raise NotImplementedError
         
     def __iadd__(self, other: object) -> DirectSum | NotImplementedType:
@@ -743,36 +1100,35 @@ class VectorSpaceBase:
             domain = DirectSum(domain, self, flatten=True)
         return domain
     
-    def __repr__(self):
+    def __repr__(self) -> str:
         return make_repr(self, self.dimension, as_real_space=self.as_real_space)
 
 
 class DirectSum(VectorSpaceBase):
     r"""The direct sum of an arbitrary number of vector spaces.
-
+    
     Elements of the direct sum are represented by :class:`TupleVector` instances.
-
+    
     Note that constructing DirectSum instances can be done more comfortably simply by adding
     `regpy.vecsps.VectorSpaceBase` instances. However, for generic code, when it's not known whether the summands
     are themselves direct sums, it's better to avoid the `+` overload due the `flatten` parameter
     (see below), since otherwise the number of summands is not fixed.
-
+    
     DirectSum instances can be indexed and iterated over, returning / yielding the component
     vector spaces.
-
+    
     Parameters
     ----------
-    *summands : tuple(regpy.vecsps.VectorSpaceBase)
-        The vector spaces to be summed.
-    flatten : bool, optional
+    flatten: bool [default: False]
         Whether summands that are themselves `DirectSum`s should be merged into this instance. If
         False, DirectSum is not associative, but the join and split methods behave more
-        predictably. Default: False, but will be set to True when constructing the DirectSum via
-        VectorSpaceBase.__add__, i.e. when using the `+` operator, in order to make repeated sums
+        predictably.__add__, i.e. when using the `+` operator, in order to make repeated sums
         like `A + B + C` unambiguous.
+    *summands: VectorSpaceBase
+        The vector spaces to be summed.
     """
 
-    def __new__(cls, *summands, **kwargs):
+    def __new__(cls, *summands: VectorSpaceBase, **kwargs: Any) -> Self:
         # Local import avoids a base -> maskable -> base import cycle.
         if cls is DirectSum:
             from .maskable import MaskableVectorSpace, MaskableDirectSum
@@ -807,18 +1163,41 @@ class DirectSum(VectorSpaceBase):
     
 
     @property
-    def dimension(self):
+    def dimension(self) -> int:
+        r"""Dimension.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         return sum(s.dimension for s in self.summands)
 
     @property
-    def as_real_space(self):
+    def as_real_space(self) -> bool:
+        r"""As real space.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         flags = {s.as_real_space for s in self.summands}
         if len(flags) > 1:
             raise ValueError("DirectSum summands no longer share a scalar field.")
         return next(iter(flags), True)
 
     @as_real_space.setter
-    def as_real_space(self, value):
+    def as_real_space(self, value: Scalar | ArrayLike) -> None:
+        r"""As real space.
+        
+        Parameters
+        ----------
+        value: Scalar | ArrayLike
+            Value.
+        """
         if not isinstance(value, (bool, np.bool_)):
             raise TypeError("as_real_space must be boolean.")
         if not value and not self.is_complex:
@@ -827,11 +1206,11 @@ class DirectSum(VectorSpaceBase):
             summand.as_real_space = value
         self._as_real_space = bool(value)
 
-    def _iter_native_coefficients(self, x):
+    def _iter_native_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
         for space, component in zip(self.summands, x, strict=True):
             yield from space._iter_native_coefficients(component)
 
-    def _set_native_coefficients(self, x, coefficients):
+    def _set_native_coefficients(self, x: ReadOnlyVector, coefficients: Iterable[Scalar]) -> None:
         from itertools import islice
         iterator = iter(coefficients)
         for space, component in zip(self.summands, x, strict=True):
@@ -840,24 +1219,87 @@ class DirectSum(VectorSpaceBase):
             raise ValueError("Too many coefficients.")
 
     @property
-    def _native_dimension(self):
+    def _native_dimension(self) -> int:
         return sum(s._native_dimension for s in self.summands)
 
-    def zeros(self, read_only: bool = False) -> TupleVector:
+    @overload
+    def zeros(self, read_only: Literal[False]=False) -> TupleVector:
+        ...
+
+    @overload
+    def zeros(self, read_only: Literal[True]) -> ReadOnlyVector:
+        ...
+
+    @overload
+    def zeros(self, read_only: bool) -> TupleVector | ReadOnlyVector:
+        ...
+
+    def zeros(self, read_only: bool = False) -> Vector | ReadOnlyVector:
+        r"""Create a vector whose coefficients are zero.
+        
+        Parameters
+        ----------
+        read_only: bool [default: False]
+            Whether to return a read-only view.
+        
+        
+        Returns
+        -------
+        Vector | ReadOnlyVector
+            Result described above.
+        """
         read_only = self._validate_read_only_flag(read_only)
         return TupleVector(
             [s.zeros(read_only=read_only) for s in self.summands],
             read_only=read_only,
         )
     
-    def ones(self, read_only: bool = False) -> TupleVector:
+    @overload
+    def ones(self, read_only: Literal[False]=False) -> TupleVector:
+        ...
+
+    @overload
+    def ones(self, read_only: Literal[True]) -> ReadOnlyVector:
+        ...
+
+    @overload
+    def ones(self, read_only: bool) -> TupleVector | ReadOnlyVector:
+        ...
+
+    def ones(self, read_only: bool = False) -> Vector | ReadOnlyVector:
+        r"""Create a vector whose coefficients are one.
+        
+        Parameters
+        ----------
+        read_only: bool [default: False]
+            Whether to return a read-only view.
+        
+        
+        Returns
+        -------
+        Vector | ReadOnlyVector
+            Result described above.
+        """
         read_only = self._validate_read_only_flag(read_only)
         return TupleVector(
             [s.ones(read_only=read_only) for s in self.summands],
             read_only=read_only,
         )
 
-    def read_only(self, x: TupleVector) -> TupleVector:
+    def read_only(self, x: TupleVector) -> ReadOnlyVector:
+        r"""Read only.
+        
+        Parameters
+        ----------
+        x: TupleVector
+            X.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector
+            Read-only vector view.
+        """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(
                 x, self, vec_name="vector",
@@ -869,29 +1311,87 @@ class DirectSum(VectorSpaceBase):
         )
     
     def empty(self)-> TupleVector:
+        r"""Allocate a writable vector with uninitialized coefficients.
+        
+        
+        Returns
+        -------
+        TupleVector
+            Result described above.
+        """
         return TupleVector([s.empty() for s in self.summands])
     
     def rand(self, distribution: str = "uniform", **kwargs: Any) -> TupleVector:
+        r"""Rand.
+        
+        Parameters
+        ----------
+        distribution: str [default: 'uniform']
+            Distribution.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        TupleVector
+            Result described above.
+        """
         return TupleVector([s.rand(distribution=distribution, **kwargs) for s in self.summands])
     
     def poisson(self, x: TupleVector) -> TupleVector:
+        r"""Poisson.
+        
+        Parameters
+        ----------
+        x: TupleVector
+            X.
+        
+        
+        Returns
+        -------
+        TupleVector
+            Result described above.
+        """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="Argument in poisson not in the VectorSpace."))
         return TupleVector([s.poisson(x_k) for x_k,s in zip(x,self.summands)])
 
     def vdot(self, x : TupleVector, y : TupleVector) -> float | complex:
+        r"""Vdot.
+        
+        Parameters
+        ----------
+        x: TupleVector
+            X.
+        y: TupleVector
+            Y.
+        
+        
+        Returns
+        -------
+        float | complex
+            Result described above.
+        """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="First argument in vdot not in the VectorSpace."))
         if y not in self:
             raise ValueError(Errors.not_in_vecsp(y,self,add_info="Second argument in vdot not in the VectorSpace."))
         return sum([s_i.vdot(x_i, y_i) for x_i,y_i,s_i in zip(x,y,self.summands) ])
 
-    def copyto(self, x: TupleVector, y: TupleVector) -> None:
+    def copyto(self, x: Vector, y: ReadOnlyVector) -> None:
         r"""Copy a direct-sum vector componentwise into ``x``.
-
+        
         Each component is copied by its own summand. This also supports direct
         sums containing NGSolve vector spaces without replacing component
         objects or allocating a new :class:`TupleVector`.
+        
+        Parameters
+        ----------
+        x: Vector
+            Writable vector used by this operation.
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
         """
         if x is y:
             return
@@ -907,8 +1407,16 @@ class DirectSum(VectorSpaceBase):
         for summand, x_i, y_i in zip(self.summands, x, y):
             summand.copyto(x_i, y_i)
 
-    def fill(self, x: TupleVector, value: Scalar) -> None:
-        r"""Fill a direct-sum vector componentwise with ``value``."""
+    def fill(self, x: Vector, value: Scalar) -> None:
+        r"""Fill a direct-sum vector componentwise with ``value``.
+        
+        Parameters
+        ----------
+        x: Vector
+            Writable vector used by this operation.
+        value: Scalar
+            Value.
+        """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(
                 x, self, vec_name="vector", add_info="fill argument is not in the DirectSum."
@@ -924,6 +1432,19 @@ class DirectSum(VectorSpaceBase):
     def iter_coefficients(
         self, x: ReadOnlyVector
     ) -> Iterator[Scalar]:
+        r"""Iter coefficients.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Yields
+        ------
+        Scalar
+            Result described above.
+        """
         if not isinstance(x, TupleVector) or x not in self:
             raise ValueError(Errors.not_in_vecsp(
                 x,
@@ -942,9 +1463,18 @@ class DirectSum(VectorSpaceBase):
 
     def set_coefficients(
         self,
-        x: Vector,
+        x: ReadOnlyVector,
         coefficients: Iterable[Scalar],
     ) -> None:
+        r"""Set coefficients.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        coefficients: Iterable[Scalar]
+            Coefficients.
+        """
         if not isinstance(x, TupleVector) or x not in self:
             raise ValueError(Errors.not_in_vecsp(
                 x,
@@ -987,12 +1517,41 @@ class DirectSum(VectorSpaceBase):
     
 
     def complex_space(self) -> DirectSum:
+        r"""Complex space.
+        
+        
+        Returns
+        -------
+        DirectSum
+            The direct sum of the complex versions of all its summand spaces.
+        """
         return DirectSum(*[s.complex_space() for s in self.summands])
 
     def real_space(self) -> DirectSum:
+        r"""Real space.
+        
+        
+        Returns
+        -------
+        DirectSum
+            The direct sum of the real versions of all its summand spaces.
+        """
         return DirectSum(*[s.real_space() for s in self.summands])
     
     def flatten(self, x : TupleVector) -> np.ndarray:
+        r"""Flatten.
+        
+        Parameters
+        ----------
+        x: TupleVector
+            X.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(x,self,add_info="Argument in flatten not in the VectorSpace."))
         return np.concatenate([
@@ -1000,12 +1559,38 @@ class DirectSum(VectorSpaceBase):
             for x_i, s in zip(x.v, self.summands)
         ])
     
-    def fromflat(self, x):
+    def fromflat(self, x: ReadOnlyVector) -> Vector:
+        r"""Fromflat.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         return super().fromflat(x)
 
 
     
     def compatible(self, other: VectorSpaceBase) -> bool:
+        r"""Compatible.
+        
+        Parameters
+        ----------
+        other: VectorSpaceBase
+            Other.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return (
             isinstance(other, DirectSum)
             and len(self.summands) == len(other.summands)
@@ -1018,6 +1603,14 @@ class DirectSum(VectorSpaceBase):
         )
 
     def iter_basis(self) -> Iterator[TupleVector]:
+        r"""Iter basis.
+        
+        
+        Yields
+        ------
+        TupleVector
+            Result described above.
+        """
         for i,s in enumerate(self.summands()):
             vec = self.zeros()
             for b in s.iter_basis():
@@ -1039,18 +1632,32 @@ class DirectSum(VectorSpaceBase):
         return isinstance(x,TupleVector) and x.ndim == self.n_components and all([x_i in s_i for x_i,s_i in zip(x,self.summands)])
         
 
-    def join(self, *xs: Vector, read_only: bool = False) -> TupleVector:
-        r"""Transform a collection of elements of the summands to an element of the direct sum.
+    @overload
+    def join(self, *xs: ReadOnlyVector, read_only: Literal[False]=False) -> TupleVector:
+        ...
 
+    @overload
+    def join(self, *xs: ReadOnlyVector, read_only: Literal[True]) -> ReadOnlyVector:
+        ...
+
+    @overload
+    def join(self, *xs: ReadOnlyVector, read_only: bool) -> TupleVector | ReadOnlyVector:
+        ...
+
+    def join(self, *xs: ReadOnlyVector, read_only: bool = False) -> TupleVector | ReadOnlyVector:
+        r"""Transform a collection of elements of the summands to an element of the direct sum.
+        
         Parameters
         ----------
-        *xs : tuple of Vector
+        read_only: bool [default: False]
+            Whether to return a read-only view.
+        *xs: ReadOnlyVector
             The elements of the summands. The number should match the number of summands,
             and for all `i`, `xs[i]` should be an element of `self[i]`.
-
+        
         Returns
         -------
-        TupleVector
+        TupleVector | ReadOnlyVector
             An element of the direct sum
         """
         if any(x not in s for s, x in zip(self.summands, xs)):
@@ -1059,17 +1666,17 @@ class DirectSum(VectorSpaceBase):
 
     def split(self, x: TupleVector) -> tuple[Vector, ...]:
         r"""Split an element of the direct sum into a tuple of elements of the summands.
-
+        
         The result contains the component vectors of `x`.
-
+        
         Parameters
         ----------
-        x : TupleVector
+        x: TupleVector
             An element of the direct sum.
-
+        
         Returns
         -------
-        tuple of Vector
+        tuple[Vector, ...]
             The components of x for the summands.
         """
         if not x in self:

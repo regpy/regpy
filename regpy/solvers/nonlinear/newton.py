@@ -1,4 +1,8 @@
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.functionals.base import Functional
 from collections.abc import Callable, Iterable
 from math import sqrt
 from copy import deepcopy
@@ -17,38 +21,38 @@ class NewtonCG(RegSolver):
     
     .. math::
         T(x) = y,
-
+    
     where :math:`T` is a Fréchet-differentiable operator. The Newton equations are solved by the
     conjugate gradient method applied to the normal equation (CGNE) using the regularizing
     properties of CGNE with early stopping (see Hanke 1997).
-
+    
     If simplified_op is specified, it will be used to generate an approximation of the derivative 
     of the forward operator setting.op, which may be cheaper to evaluate. E.g., it may be the 
     derivative at the initial guess, which would yield a frozen Newton method. 
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
-    data : Vector or None [default: None]
+    data: ReadOnlyVector | None [default: None]
         Right-hand side in ``setting.op.codomain``. In the default case,
         ``setting.data`` is used.
-    init : Vector or None [default: None]
+    init: ReadOnlyVector | None [default: None]
         Initial guess. In the default case, it is taken from the setting.
-    cgmaxit : int [default: 50]
+    cgmaxit: int [default: 50]
         Maximum number of inner CG iterations.
-    rho : float [default: 0.8]
+    rho: float [default: 0.8]
         Inner discrepancy factor; must lie in ``(0, 1)``.
-    simplified_op : regpy.operators.Operator or None [default: None]
+    simplified_op: Operator | None [default: None]
         Optional operator used to approximate the derivative.
-    logging_level : int or str [default: "INFO"]
+    logging_level: int | str [default: 'INFO']
         Logging level.
     """
 
     def __init__(self, 
                  setting:Setting, 
-                 data:Vector | None=None,
-                 init:Vector | None=None,
+                 data:ReadOnlyVector | None=None,
+                 init:ReadOnlyVector | None=None,
                  cgmaxit:int=50, rho:float=0.8, 
                  simplified_op:Operator | None = None,
                  logging_level:int | str = 'INFO') -> None:
@@ -87,10 +91,28 @@ class NewtonCG(RegSolver):
     def check_applicability(
         setting: Setting,
         op_norm: float | None = None,
-        user_data: Vector | None = None,
-        user_init: Vector | None = None,
+        user_data: ReadOnlyVector | None = None,
+        user_init: ReadOnlyVector | None = None,
     ) -> tuple[dict, dict]:
-        """Check whether Newton-CG can be used for ``setting``."""
+        r"""Check whether Newton-CG can be used for ``setting``.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        user_data: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        user_init: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         out, par = check_Hilbert_applicability(
             setting,
             op_norm=op_norm,
@@ -104,7 +126,7 @@ class NewtonCG(RegSolver):
         out['applicable'] = out['info'] == ''
         return out, par
     
-    def _next(self):
+    def _next(self) -> None:
         self._k = 0
         self._s = self.data - self.y  
         # aux plays the role of s here to avoid storage for another vector in codomain
@@ -139,25 +161,33 @@ class NewtonCG(RegSolver):
         else:
             self.y , self.deriv = self.op.linearize(self.x)
 
-    def nr_inner_its(self):
+    def nr_inner_its(self) -> int:
+        r"""Nr inner its.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         return self._k
 
 class IterativelyRegularizedNewton(RegSolver):
     r"""General method for iterated linearization of a forward operator :math:`F`
     and subsequent solution of regularized linearized operator equations. 
     In each iteration, an update :math:`h =x_{n+1}-x_n` is computed by minimizing
-
+    
     .. math::
         S_{data}(F'[x_n]h+F(x_n)) + regpar_{n} \cdot R(h+x_n)
-
+    
     using a given `inner_solver`.
     :math:`regpar_n` is a decreasing sequence of regularization parameters.
-
+    
     Parameters
     ----------
-    setting : Setting
+    setting: Setting
         Non-Tikhonov setting with explicit codomain vectors.
-    inner_solver : str or dict or None, optional
+    inner_solver: str | dict | None [default: None]
         Convex solver label, method dictionary, or None, as in Bregman.
         None uses ``setting._default_inner_solver``. A label retains the
         constructor and stopping parameters in ``setting._convex_solvers``.
@@ -165,21 +195,21 @@ class IterativelyRegularizedNewton(RegSolver):
         'method_params', and 'stoprule_params'. Each step creates a fresh
         solver and stopping history. Dual solvers return a primal correction
         through Setting.run().
-    data : Vector or None, optional
+    data: ReadOnlyVector | None [default: None]
         Optional replacement data. Otherwise retain the setting's fidelity,
         including data already incorporated into it.
-    regpar : float, optional
-        First regularization parameter; defaults to 1.
-    regpar_step : float, optional
+    regpar: float [default: 1.0]
+        First regularization parameter;
+    regpar_step: float [default: 2 / 3]
         Geometric factor, default 2/3.
-    init : Vector or None, optional
-        Initial guess; defaults to setting.init. Copied into solver storage.
-    regpars : iterable of float or None, optional
+    init: ReadOnlyVector | None [default: None]
+        Initial guess;init. Copied into solver storage.
+    regpars: Iterable[float] | None [default: None]
         Explicit sequence of positive parameters, overriding regpar and
         regpar_step. Otherwise use regpar * regpar_step**Naturals().
         Empty sequences raise ValueError; finite sequences stop after their
         last inner solve. Parameter validation and advancement match IRGNM.
-    inner_solver_configurator : callable or None, optional
+    inner_solver_configurator: Callable[[Setting, tuple[Vector, Vector], dict], None] | None [default: None]
         Called as ``configurator(inner_setting, (x, y), method_dict)``
         immediately before the inner run. x and y are the current outer
         iterate and its nonlinear operator image; treat them as read-only.
@@ -189,15 +219,15 @@ class IterativelyRegularizedNewton(RegSolver):
         supplied through method_params must be in correction coordinates.
         Runs after applying the inner_solver configuration and may override
         it for the current step. None leaves that configuration unchanged.
-    logging_level : int or str, optional
-        Outer logging level, default 'INFO'. Configure inner logging through
+    logging_level: int | str [default: 'INFO']
+        Outer logging level. Configure inner logging through
         inner_solver's method_params or inner_solver_configurator if desired.
     """
 
     def __init__(
         self, setting: Setting, inner_solver: str | dict | None = None,
-        data: Vector | None = None, regpar: float = 1.,
-        regpar_step: float = 2 / 3, init: Vector | None = None,
+        data: ReadOnlyVector | None = None, regpar: float = 1.,
+        regpar_step: float = 2 / 3, init: ReadOnlyVector | None = None,
         regpars: Iterable[float] | None = None,
         inner_solver_configurator: Callable[
             [Setting, tuple[Vector, Vector], dict], None
@@ -246,8 +276,15 @@ class IterativelyRegularizedNewton(RegSolver):
         self._previous_regpar: float | None = None
         self.y, self.deriv = self.op.linearize(self.x)
 
-    def _inner_penalty(self):
-        """Penalty in correction coordinates for the current Newton step."""
+    def _inner_penalty(self) -> Functional:
+        r"""Penalty in correction coordinates for the current Newton step.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
         return self.penalty.shift(v=-self.x)
 
     def _next(self) -> None:
@@ -292,7 +329,21 @@ class IterativelyRegularizedNewton(RegSolver):
     def check_applicability(
         setting: Setting, op_norm: float | None = None,
     ) -> tuple[dict, dict]:
-        """Check outer requirements; the inner setting checks its own method."""
+        r"""Check outer requirements; the inner setting checks its own method.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         out = {'info': '', 'warning': ''}
         if setting.is_tikhonov:
             out['info'] += 'Setting must not have a regularization parameter. '
@@ -304,26 +355,26 @@ class IterativelyRegularizedNewton(RegSolver):
 
 class NonlinBregman(IterativelyRegularizedNewton):
     r"""Newton steps regularized by a Bregman divergence of the original R.
-
+    
     At x_n, solve the convex problem in the correction h = x_{n+1} - x_n:
-
+    
     .. math::
         \min_h S_{data}(F'[x_n]h + F(x_n))
         + \alpha_n \Delta_R^{q_n}(h+x_n, x_n).
-
+    
     The first divergence uses R.subgradient(x_0). In analogy to Bregman,
     subsequent steps form the candidate
-
+    
     .. math::
         \widetilde q_n = -F'[x_n]^* S_{data}'(F(x_n))/\alpha_{n-1},
-
+    
     and use ``R.dist_subdiff`` to project it onto the subdifferential of R
     at x_n before constructing ``R.bregman_func(x_n, q_n)``. The derivative
     and fidelity argument are evaluated at the current nonlinear iterate;
     the denominator is the parameter of the completed step, not the next
     parameter. If the fidelity has no subgradient implementation, use
     R.subgradient(x_n) instead.
-
+    
     Parameters are those of IterativelyRegularizedNewton, with the additional
     keyword-only ``select_subgradient``. This optional callable receives
     ``(setting, x)`` with the original setting and a read-only iterate and
@@ -331,18 +382,41 @@ class NonlinBregman(IterativelyRegularizedNewton):
     default selection, including at initialization. Selection is performed
     once at initialization and once before each later solve, never after the
     last solve. Each divergence is built from the original penalty.
-
+    
     The setting must have no regularization parameter, an explicit codomain,
     and convex penalty and fidelity. The forward operator may be nonlinear.
     Inner guesses are in correction coordinates (or the selected dual
     solver's coordinates). The default primal correction guess is zero.
     ``x`` and ``y`` are the current nonlinear iterate and F(x), respectively.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    inner_solver: str | dict | None [default: None]
+        Inner solver.
+    data: ReadOnlyVector | None [default: None]
+        Observed data.
+    regpar: float [default: 1.0]
+        Regularization parameter.
+    regpar_step: float [default: 2 / 3]
+        Regpar step.
+    init: ReadOnlyVector | None [default: None]
+        Initial iterate in the operator domain.
+    regpars: Iterable[float] | None [default: None]
+        Regpars.
+    inner_solver_configurator: Callable[[Setting, tuple[Vector, Vector], dict], None] | None [default: None]
+        Writable vector used by this operation.
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
+    select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None [default: None]
+        Input vector; its coefficients are only read.
     """
 
     def __init__(
         self, setting: Setting, inner_solver: str | dict | None = None,
-        data: Vector | None = None, regpar: float = 1.,
-        regpar_step: float = 2 / 3, init: Vector | None = None,
+        data: ReadOnlyVector | None = None, regpar: float = 1.,
+        regpar_step: float = 2 / 3, init: ReadOnlyVector | None = None,
         regpars: Iterable[float] | None = None,
         inner_solver_configurator: Callable[
             [Setting, tuple[Vector, Vector], dict], None
@@ -371,6 +445,23 @@ class NonlinBregman(IterativelyRegularizedNewton):
         setting: Setting, op_norm: float | None = None,
         select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None = None,
     ) -> tuple[dict, dict]:
+        r"""Check the requirements of this solver for the supplied setting.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         out, par = IterativelyRegularizedNewton.check_applicability(setting, op_norm)
         if not setting.penalty.is_convex:
             out['info'] += 'The penalty must be convex. '
@@ -385,7 +476,7 @@ class NonlinBregman(IterativelyRegularizedNewton):
         out['applicable'] = out['info'] == ''
         return out, par
 
-    def _make_bregman_penalty(self):
+    def _make_bregman_penalty(self) -> Functional:
         if self.select_subgradient is not None:
             subgradient = self.select_subgradient(
                 self.setting, self.op.domain.read_only(self.x))
@@ -400,7 +491,7 @@ class NonlinBregman(IterativelyRegularizedNewton):
         self.penalty.dist_subdiff(candidate, self.x, best_approx=candidate)
         return self.penalty.bregman_func(self.x, candidate)
 
-    def _inner_penalty(self):
+    def _inner_penalty(self) -> Functional:
         if self._previous_regpar is not None:
             self._bregman_penalty = self._make_bregman_penalty()
         return self._bregman_penalty.shift(v=-self.x)

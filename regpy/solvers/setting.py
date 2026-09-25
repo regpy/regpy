@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 import math as ma
 import warnings
 import numpy as np
@@ -29,7 +31,21 @@ __all__ = [
 ]
 
 def _with_stoprule_defaults(methods: dict, factory: Callable[[Setting, dict], StopRule]) -> dict:
-    """Attach independent configuration dictionaries, without creating rules."""
+    r"""Attach independent configuration dictionaries, without creating rules.
+    
+    Parameters
+    ----------
+    methods: dict
+        Names of the implemented functional operations.
+    factory: Callable[[Setting, dict], StopRule]
+        Factory.
+    
+    
+    Returns
+    -------
+    dict
+        Result described above.
+    """
     short_runs = {'IRGNM_CG', 'LevMar', 'NewtonCG', 'NewtCGFroz', 'IRN',
                   'Spectral', 'Spectral_sa', 'TikhOnGrid', 'genTikh'}
     for name, method in methods.items():
@@ -50,23 +66,23 @@ def _with_stoprule_defaults(methods: dict, factory: Callable[[Setting, dict], St
 
 class Setting:
     r"""A *setting* for an inverse problem, used by RegSolvers. A setting always consists at least of
-
+    
     - a forward operator :math:`F`,
     - a penalty functional :math:`\mathcal{R}` with an associated Hilbert space structure to measure the error, and
     - a data fidelity functional :math:`\mathcal{S}_{g^{\delta}}` with an associated Hilbert space structure to measure the data misfit.
-
+    
     If a regularization parameter :math:`alpha` is given, this is the setting for the minimization problem 
-
+    
     .. math::
         \frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(F(f)) + \mathcal{R}(f) = \min!
-
+    
     If the operator is linear and both functionals are convex, this is the setting of Rockafellar-Fenchel duality 
     --- a rich and algorithmically useful mathematical structure. In this case, the dual setting 
     and primal-dual optimality conditions are provided. 
-   
+    
     This class is mostly a container that keeps all of this data in one place and makes sure that all initializations are 
     done correctly.
-
+    
     A setting with a regularization parameter describes a minimization problem. Solvers approximately compute minimizers, which 
     serve as regularized solutions to the inverse problem. 
     Settings without a regularization parameter indicate prior information through the penalty functional, but do not specify a unique estimator 
@@ -75,12 +91,12 @@ class Setting:
     Other iterative regularization methods such as gradient methods use the penalty functional more implicitely, e.g., via its 
     proximal operator. Since such methods are semiconvergent for ill-posed problems, an appropriate :class:`regpy.stoprules.StopRule` is
     essential.
-
+    
     Parameters
     ----------
-    op : regpy.operators.Operator
+    op: Operator
         The forward operator :math:`F`.
-    penalty : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable
+    penalty: Functional | HilbertSpace | Callable
         The penalty functional  :math:`\mathcal{R}`.
         If a Hilbert space is given, its squared norm, represented by
         :class:`regpy.functionals.SquaredNorm`, is used as the penalty.
@@ -88,26 +104,20 @@ class Setting:
         The penalty need not be a data functional. Its
         :meth:`~regpy.functionals.Functional.reference_vector` provides the
         default initial guess.
-    data_fid : regpy.functionals.Functional or regpy.hilbert.HilbertSpace or callable or None
+    data_fid: Functional | HilbertSpace | Callable | None
         The data misfit functional :math:`\mathcal{S}_{g^{\delta}}`.
         The cases of Hilbert space and callable instances are treated in analogy to penalty. 
         None is only admissible if codomain_free = True.
-    regpar: float or None [default: None]
-        regularization parameter  :math:`alpha`. 
-        Defaults to None. See explanations above on different meaning of solvers in this case.
-    data: Vector or ObsDataT or None [default:None]
+    regpar: float | None [default: None]
+        regularization parameter  :math:`alpha`. See explanations above on different meaning of solvers in this case.
+    data: ReadOnlyVector | ObsDataT | None [default: None]
         If not None, the data :math:`g^{\delta}` in the data fidelity functional is replaced by data 
-        (which often but not necessarily belong to op.codomain). 
-    exact_data: Vector or None [default: None]
+        (which often but not necessarily belong to op.codomain).
+    exact_data: ReadOnlyVector | None [default: None]
         Optional exact data used to generate synthetic noisy observations with
         :meth:`add_Gaussian_noise` or :meth:`generate_Poisson_data`. Until one
         of these methods is called, ``exact_data`` does not affect ``data``.
-    noise_pars: dict or None [default: None]
-        A dictionary containing parameters of the data noise model. 
-        This information is required by parameter choice rules.
-        If you work with synthetic data, you can use methods of this class to 
-        "add noise" to your data 
-    init: Vector or None [default: None]
+    init: ReadOnlyVector | None [default: None]
         Initial guess in ``op.domain``. Depending on
         ``incorporate_init_in_penalty``, it is either incorporated into the
         penalty or stored independently. If no initial guess is supplied,
@@ -125,18 +135,20 @@ class Setting:
         op.adjoint_data, op.adjoint_eval, and op.adjoint_derivative, but no evaluations of op and its derivative should be used. 
         The data fidelity term is inactive in this case, and op.data contains raw data, 
         typically not in the codomain, which are backpropagated by op.adjoint_data.
-    logging_level: int or str [default: logging.INFO]
+    logging_level: int | str [default: 'INFO']
         logging level
     explicitDataWarning: bool [default: True]
-        If True, a warning will be given if the setting is initialized without explicit data or exact_data. 
+        If True, a warning will be given if the setting is initialized without explicit data or exact_data.
     default_linear_regmethod: str [default: 'genTikh']
-        Default solver if the setting has a regularization parameter and the operator is linear.    
+        Default solver if the setting has a regularization parameter and the operator is linear.
     default_nonlinear_regmethod: str [default: 'IRN']
-        Default solver if the setting has a regularization parameter and the operator is linear.  
-    default_inner_solver: str or None [default: None]
-        Default inner solver if the setting has a regularization parameter and the Tikhonov functional is convex. 
-    default_nl_minimizer: str|None [default: None]
-        Name of default method for minimizing non-convex Tikhonov functional. 
+        Default solver if the setting has a regularization parameter and the operator is linear.
+    default_inner_solver: str | None [default: None]
+        Default inner solver if the setting has a regularization parameter and the Tikhonov functional is convex.
+    default_nl_minimizer: str | None [default: 'genFISTA']
+        Name of default method for minimizing non-convex Tikhonov functional.
+    _primal_setting: Setting | None [default: None]
+         primal setting.
     """
     
     log = ClassLogger()
@@ -151,7 +163,7 @@ class Setting:
                  init: ReadOnlyVector | None = None,
                  incorporate_init_in_penalty: bool = True,
                  codomain_free: bool = False,
-                 logging_level = "INFO",
+                 logging_level: int | str = "INFO",
                  explicitDataWarning: bool = True,                 
                  default_linear_regmethod: str = 'genTikh', 
                  default_nonlinear_regmethod: str = 'IRN', 
@@ -219,26 +231,53 @@ class Setting:
 
     @property
     def op(self)->Operator:
-        r"""The operator."""
+        r"""The operator.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         return self._op
     
     @property
     def penalty(self)->Functional:
-        r"""The penalty functional."""        
+        r"""The penalty functional.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """        
         return self._penalty
 
-    def set_penalty(self, penalty)->None :
+    def set_penalty(self, penalty: Functional)->None :
+        r"""Set penalty.
+        
+        Parameters
+        ----------
+        penalty: Functional
+            Penalty.
+        """
         self._penalty = as_functional(penalty, self.op.domain)
         self._init_method_dictionary()
 
     @property
     def init(self) -> Vector:
         r"""Return the initial guess as an independent writable vector.
-
+        
         An independently stored user initialization is copied. Otherwise, the
         penalty's :meth:`~regpy.functionals.Functional.reference_vector` is
         written into a newly allocated vector. Consequently, modifying the
         returned vector never modifies either the setting or its penalty.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
         """
         out = self.op.domain.empty()
         if hasattr(self, '_init'):
@@ -249,10 +288,23 @@ class Setting:
 
     @init.setter
     def init(self, new_init: ReadOnlyVector) -> None:
+        r"""Init.
+        
+        Parameters
+        ----------
+        new_init: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        """
         self.change_init(new_init=new_init)
 
     def change_init(self, new_init: ReadOnlyVector) -> None:
-        r"""Store a supplied initial guess independently of the penalty."""
+        r"""Store a supplied initial guess independently of the penalty.
+        
+        Parameters
+        ----------
+        new_init: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        """
         if new_init not in self.op.domain:
             raise TypeError(Errors.not_in_vecsp(
                 new_init,
@@ -267,20 +319,42 @@ class Setting:
 
     @init.deleter
     def init(self) -> None:
-        r"""Discard the stored initial guess and use the penalty reference."""
+        r"""Discard the stored initial guess and use the penalty reference.
+        """
         self.__dict__.pop('_init', None)
 
     @property
     def codomain_free(self)->bool:
-        r"""If True, vectors in the codomain of the operator should be avoided. """
+        r"""If True, vectors in the codomain of the operator should be avoided. 
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self._codomain_free
 
     @property
     def data_fid(self) -> Functional:
-        r"""The data fidelity functional."""
+        r"""The data fidelity functional.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
         return self._data_fid 
 
-    def set_data_fid(self,data_fid: Functional):
+    def set_data_fid(self,data_fid: Functional) -> None:
+        r"""Set data fid.
+        
+        Parameters
+        ----------
+        data_fid: Functional
+            Data fid.
+        """
         if self.data is not None:
             raise RuntimeError(Errors.runtime_error("data fidelity term cannot be changed if data are set."))
         self._data_fid = as_functional(data_fid, self.op.codomain)
@@ -288,6 +362,14 @@ class Setting:
 
     @property
     def data(self) -> ReadOnlyVector | ObsDataT | None:
+        r"""Data.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector | ObsDataT | None
+            Result described above.
+        """
         if not hasattr(self, '_data'):
             return None
         if self._data in self.op.codomain:
@@ -296,9 +378,23 @@ class Setting:
     
     @data.setter
     def data(self, new_data: ObsDataT) -> None:
+        r"""Data.
+        
+        Parameters
+        ----------
+        new_data: ObsDataT
+            New data.
+        """
         self.change_data(new_data=new_data)
 
     def change_data(self, new_data: ObsDataT) -> None:
+        r"""Change data.
+        
+        Parameters
+        ----------
+        new_data: ObsDataT
+            New data.
+        """
         if (new_data is None):
             raise ValueError(Errors.value_error(f"Overwriting data with {None} is not allowed."))
         if not (hasattr(self,"_data") and new_data is self._data):
@@ -312,39 +408,91 @@ class Setting:
 
     @data.deleter
     def data(self) -> None:
+        r"""Data.
+        """
         del self.data_fid.data
         del self._data
 
     @property
     def exact_data(self)->Vector:
+        r"""Exact data.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         return self._exact_data
     
     @exact_data.setter
-    def exact_data(self, new_exact_data:Vector) -> None:
+    def exact_data(self, new_exact_data:ReadOnlyVector) -> None:
+        r"""Exact data.
+        
+        Parameters
+        ----------
+        new_exact_data: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        """
         self._exact_data = new_exact_data
         del self.data
 
     @property
     def h_domain(self)->HilbertSpace:
-        r"""The Hilbert space associated to penalty functional"""
+        r"""The Hilbert space associated to penalty functional
+        
+        
+        Returns
+        -------
+        HilbertSpace
+            Result described above.
+        """
         return self.penalty.h_domain
 
     @property   
     def h_codomain(self)->HilbertSpace:
-        r"""The Hilbert space associated to data fidelity functional"""
+        r"""The Hilbert space associated to data fidelity functional
+        
+        
+        Returns
+        -------
+        HilbertSpace
+            Result described above.
+        """
         return self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
 
     @property
     def is_tikhonov(self) -> bool:
-        """True if a regularization parameter is set"""
+        r"""True if a regularization parameter is set
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.regpar is not None
     @property
     def is_convex(self) -> bool:
-        """True if the penalty and the data fidelity functional are both convex and the operator is linear."""
+        r"""True if the penalty and the data fidelity functional are both convex and the operator is linear.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.op.linear and self.penalty.is_convex and (self.codomain_free or self.data_fid.is_convex)
     @property
     def is_hilbert(self) -> bool:
-        """True if penalty and data fidelity are quadratic with Hessian that are positive multiples of the corresponding Gram matrices."""
+        r"""True if penalty and data fidelity are quadratic with Hessian that are positive multiples of the corresponding Gram matrices.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return (
             self.penalty.is_norm_squared_type
             and (self.codomain_free or self.data_fid.is_norm_squared_type)
@@ -352,11 +500,25 @@ class Setting:
 
     @property
     def regpar(self) -> float:
-        r"""The regularization parameter"""
+        r"""The regularization parameter
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return self._regpar
 
     @regpar.setter
-    def regpar(self,new_regpar: float):
+    def regpar(self,new_regpar: float) -> None:
+        r"""Regpar.
+        
+        Parameters
+        ----------
+        new_regpar: float
+            New regpar.
+        """
         if(new_regpar is not None):
             if not isinstance(new_regpar,(float,int)):
                 raise TypeError(Errors.type_error("The regularization parameter need to be a scalar"))
@@ -369,13 +531,13 @@ class Setting:
     @regpar.deleter
     def regpar(self) -> None:
         r"""Remove the regularization parameter.
-
+        
         This turns a primal Tikhonov setting into the corresponding
         non-Tikhonov setting and refreshes its solver dictionary.  Internally,
         a missing regularization parameter is represented by ``None`` so that
         :attr:`is_tikhonov` and later assignments to :attr:`regpar` continue
         to work normally.
-
+        
         A regularization parameter cannot be removed from a dual setting,
         because such settings are defined only together with their associated
         primal Tikhonov setting.
@@ -389,7 +551,8 @@ class Setting:
         self._init_method_dictionary()
 
     def _init_method_dictionary(self) -> None:
-        """Initialize the solver dictionary for one of the three supported setting kinds."""
+        r"""Initialize the solver dictionary for one of the three supported setting kinds.
+        """
         if not hasattr(self, '_regpar') or not hasattr(self, '_primal_setting'):
             return
         if self._primal_setting is not None:
@@ -411,23 +574,47 @@ class Setting:
     ######General convenience methods
     @property
     def noise_model_fixed(self)->bool:
-        r""" Flag indicating if a noise model has been fixed. 
+        r"""Flag indicating if a noise model has been fixed. 
+                
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
         """
         return self._noise_model_param != {}
 
-    def set_Gaussian_white_noise_model(self,relative_noise_level:float=None,absolute_noise_level:float=None,white_noise=True)->None:
+    def set_Gaussian_white_noise_model(self,relative_noise_level:float | None=None,absolute_noise_level:float | None=None,white_noise: bool=True)->None:
+        r"""Set gaussian white noise model.
+        
+        Parameters
+        ----------
+        relative_noise_level: float | None [default: None]
+            Relative noise level.
+        absolute_noise_level: float | None [default: None]
+            Absolute noise level.
+        white_noise: bool [default: True]
+            White noise.
+        """
         self._noise_model_param = {'model_name':'Gaussian',
                                    'relative_noise_level':relative_noise_level,
                                    'absolute_noise_level':absolute_noise_level,
                                    'white_noise':white_noise
                                    }
 
-    def set_Poisson_noise_model(self,expected_nr_counts=None)->None:
+    def set_Poisson_noise_model(self,expected_nr_counts: float | None=None)->None:
+        r"""Set poisson noise model.
+        
+        Parameters
+        ----------
+        expected_nr_counts: float | None [default: None]
+            Expected nr counts.
+        """
         self._noise_model_param = {'model_name':'Poisson',
                                    'expected_nr_counts':expected_nr_counts}
 
     def generate_synthetic_data(self)->None:
-        r""" Generates synthetic noisy data based on exact_data and some noise model that has to be fixed in advance.
+        r"""Generates synthetic noisy data based on exact_data and some noise model that has to be fixed in advance.
         """
         model = self._noise_model_param
         if not 'model_name' in model:
@@ -442,19 +629,19 @@ class Setting:
         elif model['model_name'] == 'Poisson':
             self.generate_Poisson_data(expected_nr_counts=model['expected_nr_counts'])
 
-    def add_Gaussian_noise(self,relative_noise_level:float=None, absolute_noise_level:float=None,white_noise=True,seed=None) -> None:
-        r""" generates Gaussian noise using self.codomain.randn, adds it to exact_data (which must have been provided at initialization of the setting), and sets data to the sum.
+    def add_Gaussian_noise(self,relative_noise_level:float | None=None, absolute_noise_level:float | None=None,white_noise: bool=True,seed: int | None=None) -> None:
+        r"""generates Gaussian noise using self.codomain.randn, adds it to exact_data (which must have been provided at initialization of the setting), and sets data to the sum.
         
-        Parameters:
-        -----------
-        relative_noise_level: float | None: optional
-        absolute_noise_level: float | None: optional
-            Exactly one of these two parameters must be given as a positive float. 
-        white_noise: bool: optional
-            Defaults to True.
+        Parameters
+        ----------
+        relative_noise_level: float | None [default: None]
+            Relative noise level.
+        absolute_noise_level: float | None [default: None]
+            Exactly one of these two parameters must be given as a positive float.
+        white_noise: bool [default: True]
             If true, the noise is generated as white noise with respect to the codomain Hilbert space structure using a Cholesky-type factorization of the gram matrix (which needs to be implemented for the codomain space!); otherwise it is generated by self.codomain.randn.
             If true, relative_noise_level and absolute_noise_level refer to the Hilbert space norm of the covariance operator, and the noise process is asymptotically discretization invariant; otherwise they refer to the norm in the codomain vector space.
-        seed: int | None: optional
+        seed: int | None [default: None]
             seed for random number generator for reproducibility
         """
         if relative_noise_level is None and absolute_noise_level is None:
@@ -501,18 +688,18 @@ class Setting:
 
         self.data = self._exact_data + noise 
 
-    def generate_Poisson_data(self, expected_nr_counts=None, seed=None):
+    def generate_Poisson_data(self, expected_nr_counts: float | None=None, seed: int | None=None) -> None:
         r"""Generate and store Poisson-distributed data.
-
+        
         Sampling is delegated to :meth:`self.op.codomain.poisson`.
         
-        Parameters:
-        -----------
-        expected_nr_counts: int | None: optional
+        Parameters
+        ----------
+        expected_nr_counts: float | None [default: None]
             Expected total number of counts for the Poisson distribution.
             The Poisson data are rescaled such that the expectation of the data is the exact data. This means that the resulting data are not integer-valued. 
             If None, no scaling is applied, and data are integer-valued.
-        seed: int | None: optional
+        seed: int | None [default: None]
             random seed for reproducibility
         """
         if not hasattr(self,'_exact_data'):
@@ -532,14 +719,20 @@ class Setting:
                            new_data:Vector | ObsDataT | None = None,
                            update:bool = True
                            ) -> Vector | ObsDataT:
-        r""" Updates the data stored in the setting or gets these data of they are not provided.
-
+        r"""Updates the data stored in the setting or gets these data of they are not provided.
+        
         Parameters
         ----------
-        new_data : Vector or ObsDataT or None [default:None]
+        new_data: Vector | ObsDataT | None [default: None]
             New data to be passed to the data functional self.data_fid via the data setter.
-        update: bool [default:True]
-            If True, the data stored in the setting is updated to new_data. 
+        update: bool [default: True]
+            If True, the data stored in the setting is updated to new_data.
+        
+        
+        Returns
+        -------
+        Vector | ObsDataT
+            Result described above.
         """
         if new_data is not None:
             if update:
@@ -559,19 +752,20 @@ class Setting:
                                     out:Vector | None = None
                                     ) -> Vector:
         r"""Update or retrieve the initial guess as a writable copy.
-
+        
         If neither ``new_init`` nor a stored initial guess is available, the
         penalty functional's reference vector is used.
-
+        
         Parameters
         ----------
-        new_init : ReadOnlyVector or None [default: None]
+        new_init: ReadOnlyVector | None [default: None]
             New initial guess in op.domain
         update: bool [default: False]
             If True, the initial guess in the setting is updated if ``new_init`` is not None. 
             Otherwise, the initial guess is only copied to ``out``.
-        out: Vector or None [default: None]
-
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        
         Returns
         --------
         Vector:
@@ -600,10 +794,15 @@ class Setting:
     ######Methods exploiting duality
     def get_dual_setting(self) -> Setting:
         r"""Yields the setting of the dual optimization problem
-
+        
         .. math::
            \mathcal{R}^\ast(T^\ast p) + \frac{1}{\alpha}\mathcal{S}^\ast(- \alpha p) = \min!
-
+        
+        
+        Returns
+        -------
+        Setting
+            Result described above.
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for the computation of a dual setting."))
@@ -631,18 +830,18 @@ class Setting:
                        dual: tuple[Vector|None,Vector|None], 
                        own: bool = False
                        ) -> Vector:
-        r""" Returns an element of :math:`\partial \mathcal{R}^*(T^*p)` 
+        r"""Returns an element of :math:`\partial \mathcal{R}^*(T^*p)` 
         If :math:`p` is a solution to the dual problem and :math:`\partial\mathcal{R}^*` is a singleton, this yields a solution to the primal problem. 
                 
         Parameters
         ----------
-        dual: tuple of self.op.adjoint.domain and self.op.adjoint.codomain
+        dual: tuple[Vector | None, Vector | None]
             tuple of dual variable p and T*p. Either p or T*p must not be None. If T*p is None, it will be 
             computed. Otherwise, p will not be used.
         own: bool [default: False]
             Only relevant for dual settings. If False, the duality relations of the primal setting are used. 
-            If true, the duality relations of the dual setting are used. 
-
+            If true, the duality relations of the dual setting are used.
+        
         Returns
         -------
         Vector
@@ -672,20 +871,19 @@ class Setting:
                        primal: tuple[Vector|None,Vector|None], 
                        own: bool =False
                        ) -> Vector:
-        r"""
-        Returns an element of :math:`(-1/\alpha) \partial \mathcal{S}(Tf)` 
+        r"""Returns an element of :math:`(-1/\alpha) \partial \mathcal{S}(Tf)` 
         If :math:`f` is a solution to the primal problem and :math:`\partial \mathcal{S}` is a singleton, this 
         yields a solution to the dual problem. 
-    
+        
         Parameters
-        ----------------------------
-        primal: tuple[Vector|None, Vector|None]
+        ----------
+        primal: tuple[Vector | None, Vector | None]
             tuple of primal variable f and Tf. Either f or Tf must not be None. If Tf is None, it will be 
             computed. Otherwise, f will not be used.
         own: bool [default: False]
             Only relevant for dual settings. If False, the duality relations of the primal setting are used. 
-            If true, the duality relations of the dual setting are used. 
-
+            If true, the duality relations of the dual setting are used.
+        
         Returns
         -------
         Vector
@@ -714,17 +912,17 @@ class Setting:
                                      ) -> tuple[tuple[Vector,Vector], tuple[Vector,Vector]]:  
         r"""Completes either the primal or dual tuple by computing the missing operator application.
         If one of the tuples is None, it is computed using the primal_to_dual or dual_to_primal methods.
-
+        
         Parameters
         ----------
-        primal: tuple of setting.op.domain and setting.op.codomain [default: None]
+        primal: tuple[Vector, Vector | None] | None [default: None]
             tuple of primal variable f and Tf. If Tf is None, it will be computed.
-        dual: tuple of setting.op.adjoint.domain and setting.op.adjoint.codomain [default: None]
-            tuple of dual variable p and T*p. If T*p is None, it will be computed. 
-
+        dual: tuple[Vector, Vector | None] | None [default: None]
+            tuple of dual variable p and T*p. If T*p is None, it will be computed.
+        
         Returns
         -------
-        tuple of tuples of Vectors
+        tuple[tuple[Vector, Vector], tuple[Vector, Vector]]
             Completed primal and dual tuples, each containing the variable and its operator application.
         """
         if primal is None and dual is None:
@@ -770,13 +968,13 @@ class Setting:
     def duality_gap(self, 
                     primal: tuple[Vector|None,Vector|None] | None =None, 
                     dual: tuple[Vector|None,Vector|None] | None  =None,
-                    use_bregman_formula = True
+                    use_bregman_formula: bool = True
                     ) -> float:
         r"""Computes the value of the duality gap. 
             
         .. math::
             \mathcal{G}_{\alpha}(f,p):=\frac{1}{\alpha}\mathcal{S}_{g^{\delta}}(Tf) + \mathcal{R}(f) - \frac{1}{\alpha} }\mathcal{S}_{g^{\delta}}^\ast(-\alpha p) - \mathcal{R}^\ast(T^\ast p)
-
+        
         If the flag use_bregman_formal is set (default), the following equivalent formula in 
         terms of Bregman divergences is used:
         
@@ -787,12 +985,18 @@ class Setting:
             
         Parameters
         ----------
-        primal: tuple[Vector,Vector|None] | None [default: None]
+        primal: tuple[Vector | None, Vector | None] | None [default: None]
             tuple of primal variable :math:`f` and :math:`Tf`. If :math:`Tf` is None, it will be computed.
-        dual: tuple[Vector|None,Vector|None] | None [default: None]
-            tuple of dual variable :math:`p` and :math:`T*p`. If :math:`T*p` is None, it will be computed.        
+        dual: tuple[Vector | None, Vector | None] | None [default: None]
+            tuple of dual variable :math:`p` and :math:`T*p`. If :math:`T*p` is None, it will be computed.
         use_bregman_formula: bool [default: True]
             If True, the second formula above is used.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
         """
         if(not self.is_tikhonov):
             raise RuntimeError(Errors.generic_message("Incomplete setting: A regularization parameter is required for the computation of the duality gap."))
@@ -838,38 +1042,39 @@ class Setting:
                                   deriv: Operator | None = None,
                                   ) -> tuple[float, float] | float:
         r"""Returns the degree to which an iterate violates the optimality conditions for a minimum of the Tikhonov functional :math:`\frac{1}{\alpha}\mathcal{S}(f) + \mathcal{R}(f)`. 
-
+        
         For convex Tikhonov functionals (self.is_convex): 
         A pair :math:`(f,p)` of a primal point :math:`f` and a dual point :math:`p\ 
         is a saddle point of 
         :math:`-<Tf,p> + \mathcal{R}(f)-\frac{1}{\alpha}\mathcal{S}^*(-\alpha p) `
         (and hence :math:`f` a primal and :math:`p` a dual solution) iff
-
+        
         .. math::
             Tf \in \partial \mathcal{S}^\ast(-\alpha p), \qquad T^\ast p \in \partial \mathcal{R}(f).
-
+        
         The violations are returned as a pair of distances of the left-hand sides to the respective 
         subdifferentials. 
-
+        
         For non-convex Tikhonov functionals (not self.is_convex):
         The violation of the optimality condition
-
+        
         .. math::
             \frac{-1}{\alpha} F'[f]^*\mathcal{S}_{g^{\delta}}'(F(f)) \in \partial \mathcal{R}(f)
- 
+        
         is returned as single distance to the subdifferential. 
-
+        
         Parameters
-        ---------------------------
-        primal: tuple[Vector|None,Vector|None] | None [default: None]
+        ----------
+        primal: tuple[Vector | None, Vector | None] | None [default: None]
             tuple of primal variable :math:`f` and :math:`Tf`. If :math:`Tf` is None, it will be computed.
-        dual: tuple[Vector|None,Vector|None] | None [default: None]
-            tuple of dual variable :math:`p` and :math:`T*p`. If :math:`T*p` is None, it will be computed. 
-        If one of the tuples is None, it is computed using the primal_to_dual or dual_to_primal methods.
-
+        dual: tuple[Vector | None, Vector | None] | None [default: None]
+            tuple of dual variable :math:`p` and :math:`T*p`. If :math:`T*p` is None, it will be computed.
+        deriv: Operator | None [default: None]
+            Deriv.
+        
         Returns
         -------
-        tuple of floats or float
+        tuple[float, float] | float
             Distance(s) to the subdifferential(s) in the optimality condition(s).
         """
         if(not self.is_tikhonov):
@@ -928,22 +1133,22 @@ class Setting:
                    method_abbrv:str,
                    class_name:type,
                    primal:bool|None=None,
-                   full_method_name:str=None
+                   full_method_name:str | None=None
                    )->None:
-        """ Add a new method to the method dictionary
+        r"""Add a new method to the method dictionary
         
-        Parameters:
-        ----------------
-        method_abbrv:str
+        Parameters
+        ----------
+        method_abbrv: str
             Abbreviation of the new method by which it is called.
-        class_name:type
+        class_name: type
             Class of the new method
-        primal:bool or None
+        primal: bool | None [default: None]
             For convex Tikhonov settings, flag if the method is applied to the primal
-            or dual problem; None defaults to True. It is not used for settings
+            or dual problem; None It is not used for settings
             without a regularization parameter.
-        full_method_name:str | None, optional
-            Full, more descriptive name of the method. Defaults to None 
+        full_method_name: str | None [default: None]
+            Full, more descriptive name of the method. Defaults to None
         """
         if not self.is_tikhonov and primal is False:
             raise ValueError(Errors.value_error(
@@ -966,18 +1171,17 @@ class Setting:
         self._methods[method_abbrv] = method
 
     def evaluate_methods(self, method_names: list[str] | None = None)->float|None:
-        """Evaluates which methods are applicable to the current setting. 
+        r"""Evaluates which methods are applicable to the current setting. 
         This is achieved by calling method.check_applicability(self), which also provide information on guaranteed rates.
-
+        
         Parameters
         ----------
-        method_names: list of strings or None [default:None]
-            List of names of methods to be evaluated. If None, all methods are evaluated.   
-
+        method_names: list[str] | None [default: None]
+            List of names of methods to be evaluated. If None, all methods are evaluated.
+        
         Returns
         -----------
-        Operator norm estimate for convex Tikhonov settings, else None
-                
+        float | None
         """
 
         if method_names is None:
@@ -1025,21 +1229,44 @@ class Setting:
         return op_norm
 
     def applicable_methods(self)->dict[str,dict]:
-        """Return the methods that can be applied to this setting."""
+        r"""Return the methods that can be applied to this setting.
+        
+        
+        Returns
+        -------
+        dict[str, dict]
+            Result described above.
+        """
         if any('applicable' not in self._methods[name] for name in self._methods.keys()):
             self.evaluate_methods()
         return {name:method for name, method in self._methods.items() if method['applicable']}
         
     def display_all_methods(self, full_names: bool = True) -> None:
-        """Display applicable, caveated, and non-applicable methods separately.
-
+        r"""Display applicable, caveated, and non-applicable methods separately.
+        
         Applicability checks may return a nonempty ``out['caveats']`` string
         (or a list of strings). Caveats do not make a method inapplicable and
         do not exclude it from automatic method selection.
+        
+        Parameters
+        ----------
+        full_names: bool [default: True]
+            Full names.
         """
         op_norm = self.evaluate_methods()
 
-        def display(name, method, with_caveats=False):
+        def display(name: str, method: str, with_caveats: bool=False) -> None:
+            r"""Display.
+            
+            Parameters
+            ----------
+            name: str
+                Name.
+            method: str
+                Method.
+            with_caveats: bool [default: False]
+                With caveats.
+            """
             full = method.get('full')
             info = method.get('info')
             if full_names:
@@ -1082,11 +1309,22 @@ class Setting:
                 display(name, method)
 
     def _get_configured_method(self, method_name: str) -> dict:
-        """Resolve configuration, keeping inner convex solvers separate.
-
+        r"""Resolve configuration, keeping inner convex solvers separate.
+        
         Without a regularization parameter, convex labels configure inner
         minimizers in ``_convex_solvers``; they do not become runnable outer
         regularization methods. Convex labels take precedence on name overlap.
+        
+        Parameters
+        ----------
+        method_name: str
+            Method name.
+        
+        
+        Returns
+        -------
+        dict
+            Result described above.
         """
         if not isinstance(method_name, str):
             raise TypeError("method_name must be a string.")
@@ -1108,11 +1346,31 @@ class Setting:
         return self._get_configured_method(method_name)[key]
 
     def get_method_params(self, method_name: str) -> dict:
-        """Return a shallow copy of one method's constructor parameters."""
+        r"""Return a shallow copy of one method's constructor parameters.
+        
+        Parameters
+        ----------
+        method_name: str
+            Method name.
+        
+        
+        Returns
+        -------
+        dict
+            Result described above.
+        """
         return dict(self._get_params(method_name, 'method_params'))
 
     def set_method_params(self, method_names: str | list[str], params: dict | None = None) -> None:
-        """Update constructor parameters; omitted keys retain their values."""
+        r"""Update constructor parameters; omitted keys retain their values.
+        
+        Parameters
+        ----------
+        method_names: str | list[str]
+            Method names.
+        params: dict | None [default: None]
+            Options for params.
+        """
         method_names = [method_names] if isinstance(method_names,str) else method_names
         for method_name in method_names:
             current = self._get_params(method_name, 'method_params')
@@ -1122,14 +1380,33 @@ class Setting:
                 current.update(params)
 
     def get_stoprule_params(self, method_name: str) -> dict:
-        """Return a shallow copy of one method's rule parameters, including factory."""
+        r"""Return a shallow copy of one method's rule parameters, including factory.
+        
+        Parameters
+        ----------
+        method_name: str
+            Method name.
+        
+        
+        Returns
+        -------
+        dict
+            Result described above.
+        """
         return dict(self._get_params(method_name, 'stoprule_params'))
 
     def set_stoprule_params(self, method_names: str|list[str], params: dict | None = None) -> None:
-        """Update rule parameters without constructing a rule.
-
+        r"""Update rule parameters without constructing a rule.
+        
         factory accepts a callable (setting, params), a factory name, or a
         StopRule class name such as 'RelativeChangeSol'.
+        
+        Parameters
+        ----------
+        method_names: str | list[str]
+            Method names.
+        params: dict | None [default: None]
+            Options for params.
         """
         method_names = [method_names] if isinstance(method_names,str) else method_names
         for method_name in method_names:
@@ -1142,16 +1419,30 @@ class Setting:
                 current.update(params)
 
     def set_method_parameters(self, method_name: str, params: dict | None = None) -> None:
-        """Deprecated alias of set_method_params; parameters are now updated."""
+        r"""Deprecated alias of set_method_params; parameters are now updated.
+        
+        Parameters
+        ----------
+        method_name: str
+            Method name.
+        params: dict | None [default: None]
+            Options for params.
+        """
         warnings.warn("Use set_method_params instead of set_method_parameters.",
                       DeprecationWarning, stacklevel=2)
         self.set_method_params(method_name, params)
 
     def select_best_method(self) -> str:
-        """Returns the name of the applicable method with the best convergence rate predicted by theory 
+        r"""Returns the name of the applicable method with the best convergence rate predicted by theory 
         and the convexity and Lipschitz parameters of the data and penalty functional.
         (Since comparisons of first and second order methods are difficult, we only choose among first 
         order methods, and to achieve this, we set convergence rates of second order method >1.)
+        
+        
+        Returns
+        -------
+        str
+            Result described above.
         """
         if not self.is_tikhonov:
             raise RuntimeError(Errors.runtime_error(
@@ -1176,8 +1467,8 @@ class Setting:
                      rule: Callable[[Setting, dict], StopRule] | str | StopRule,
                      method_names: str | list[str] | None = None,
                      params: dict | None = None) -> None:
-        """Configure a factory without constructing a stopping rule.
-
+        r"""Configure a factory without constructing a stopping rule.
+        
         ``rule(setting, params)`` must return a StopRule. Each run supplies a fresh
         parameter dictionary containing the method's ``stoprule_params`` plus
         ``solver_class`` and ``logging_level``. The setting is a separate argument.
@@ -1185,11 +1476,20 @@ class Setting:
         A convex solver label on a setting without a regularization parameter
         configures its inner solver in ``_convex_solvers``.
         With no method names, configure all applicable outer methods.
-
+        
         Passing a StopRule is deprecated. It is wrapped in a factory returning
         an independent reset copy. Such a factory ignores the parameter dict.
         The latest executed rule and its histories remain available through
         ``get_stoprule`` until the next run.
+        
+        Parameters
+        ----------
+        rule: Callable[[Setting, dict], StopRule] | str | StopRule
+            Rule.
+        method_names: str | list[str] | None [default: None]
+            Method names.
+        params: dict | None [default: None]
+            Options for params.
         """
         if isinstance(rule, StopRule):
             warnings.warn(
@@ -1216,10 +1516,21 @@ class Setting:
                 method['stoprule_params'].update(deepcopy(params))
 
     def get_stoprule(self, method_name: str) -> StopRule:
-        """Return the executed rule of the latest run, including its history.
-
+        r"""Return the executed rule of the latest run, including its history.
+        
         Raises RuntimeError if the method has not been started yet.
         Configuring a factory alone does not create an executed rule.
+        
+        Parameters
+        ----------
+        method_name: str
+            Method name.
+        
+        
+        Returns
+        -------
+        StopRule
+            Result described above.
         """
         if method_name not in self._methods:
             raise ValueError(f"{method_name} is unknown method key.")
@@ -1228,12 +1539,32 @@ class Setting:
         return self._methods[method_name]['stoprule']
 
     def get_stopping_rule(self, method_name: str) -> StopRule:
-        """Deprecated alias of get_stoprule."""
+        r"""Deprecated alias of get_stoprule.
+        
+        Parameters
+        ----------
+        method_name: str
+            Method name.
+        
+        
+        Returns
+        -------
+        StopRule
+            Result described above.
+        """
         warnings.warn("Use get_stoprule instead of get_stopping_rule.",
                       DeprecationWarning, stacklevel=2)
         return self.get_stoprule(method_name)
 
-    def get_default_method(self):
+    def get_default_method(self) -> str:
+        r"""Get default method.
+        
+        
+        Returns
+        -------
+        str
+            Result described above.
+        """
         if not self.is_tikhonov:
             return (self._default_linear_regmethod
                             if self.op.linear else
@@ -1258,45 +1589,52 @@ class Setting:
             dist_x: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None = None,
             dist_y: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None = None,
             gap_tol: float | None = None,
-            **kwargs) -> tuple[Vector, Vector]:
-        """Runs a given method for the setting. If no method name is given, the "best" method is selected by select_best_method() if possible.
+            **kwargs: Any) -> tuple[Vector, Vector]:
+        r"""Runs a given method for the setting. If no method name is given, the "best" method is selected by select_best_method() if possible.
         
         Parameters
         ----------
-        method_name: str or None [default: None] 
+        method_name: str | None [default: None]
             Key of the method to be run in the methods dictionary self._methods (can be displayed by display_all_methods())
             If None the "best" method is selected by select_best_method().
-        max_it: int or None, optional
+        max_it: int | None [default: None]
             Override the factory's iteration cap for this run. For an explicit
             StopRule, add an extra timed, evaluation-counting cap instead.
-        stoprule: StopRule or None, optional
+        stoprule: StopRule | None [default: None]
             An explicit rule overrides the factory for this run. A reset copy
             is used; the supplied object is not changed. None uses the method's
             factory. The executed rule is accessible through get_stoprule().
-        gap_tol: float or None, optional
-            Override ``stoprule_params['tol']`` for the built-in duality-gap
-            factory only. None retains the configured tolerance (default 1e-3).
-            Does not modify an explicit rule or a custom factory.
-        ref_sol: ReadOnlyVector or tuple[ReadOnlyVector | None, ReadOnlyVector], optional
+        ref_sol: ReadOnlyVector | tuple[ReadOnlyVector | None, ReadOnlyVector] | None [default: None]
             Reference solution used to monitor iteration errors. A single
             vector monitors ``x``. A pair ``(x, y)`` monitors both values; use
             ``(None, y)`` to monitor only ``y``. The monitor never stops the
             iteration.
-        dist_x, dist_y: callable, optional
+        dist_x: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None [default: None]
             Custom distances called as ``dist((current, reference))`` by the
             error monitor. If omitted, the corresponding Hilbert-space norm is
             used when available.
-        logging_level: int or str, optional
-            Logging level for the solver and the stopping-rule tree used by
-            this run, including iteration limits and error monitors. Defaults
-            to ``self.log.level``. An explicit value takes precedence over
-            registered method parameters and configured rule levels.
-        **kwargs: dict
+        dist_y: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None [default: None]
+            Custom distances called as ``dist((current, reference))`` by the
+            error monitor. If omitted, the corresponding Hilbert-space norm is
+            used when available.
+        gap_tol: float | None [default: None]
+            Override ``stoprule_params['tol']`` for the built-in duality-gap
+            factory only. None retains the configured tolerance.
+            Does not modify an explicit rule or a custom factory.
+        **kwargs: Any
             Arguments to be passed to the method.
-
+        
+        Other Parameters
+        ----------------
+        logging_level: int or str
+            Logging level for the solver and the stopping-rule tree used by
+        this run, including iteration limits and error monitors. Defaults
+        to ``self.log.level``. An explicit value takes precedence over
+        registered method parameters and configured rule levels.
+        
         Returns
         -------
-            x,y: x is the minimizer of the appproximate solution and y its value under the operator.         
+            x,y: x is the minimizer of the appproximate solution and y its value under the operator.
         """
         if method_name is None:
             method_name = self.get_default_method()
@@ -1374,7 +1712,7 @@ class Setting:
                         else ErrorMonitor._norm_distance(self.h_domain.norm)
                     )
 
-                    def monitor_dist_x(pair):
+                    def monitor_dist_x(pair: tuple[ReadOnlyVector, ReadOnlyVector | None]) -> float:
                         current_p, _ = pair
                         current_Tsp = self.op.adjoint(current_p)
                         current_x = self.dual_to_primal(
@@ -1391,7 +1729,7 @@ class Setting:
                         )
                     )
 
-                    def monitor_dist_y(pair):
+                    def monitor_dist_y(pair: tuple[ReadOnlyVector, ReadOnlyVector | None]) -> float:
                         current_Tsp, _ = pair
                         current_x = self.penalty.conj.subgradient(
                             current_Tsp
@@ -1455,12 +1793,18 @@ class Setting:
         return x,y
 
 def get_linear_reg_method_dictionary() -> dict:
-    """Return regularization methods intended for linear operators.
-
+    r"""Return regularization methods intended for linear operators.
+    
     ``FISTA`` is available without a regularization parameter when the
     setting penalty is of squared-norm type or is a null functional. In that
     mode the penalty determines the domain Hilbert geometry but is not part of
     the minimized objective.
+    
+    
+    Returns
+    -------
+    dict
+        Result described above.
     """
     from .linear import (
         CGNE,
@@ -1510,11 +1854,17 @@ def get_linear_reg_method_dictionary() -> dict:
 
 
 def get_nonlinear_reg_method_dictionary() -> dict:
-    """Return regularization methods intended for nonlinear operators.
-
+    r"""Return regularization methods intended for nonlinear operators.
+    
     Linear operators may also satisfy the applicability conditions of these
     methods. They are deliberately omitted from the default dictionary of a
     linear setting because the specialized linear methods are preferable.
+    
+    
+    Returns
+    -------
+    dict
+        Result described above.
     """
     from .nonlinear import (
         IrgnmCG,
@@ -1548,12 +1898,18 @@ def get_nonlinear_reg_method_dictionary() -> dict:
 
 
 def get_reg_method_dictionary() -> dict:
-    """Return all non-Tikhonov regularization methods.
-
+    r"""Return all non-Tikhonov regularization methods.
+    
     This compatibility helper combines the linear and nonlinear registries.
     New code should normally use :func:`get_linear_reg_method_dictionary` or
     :func:`get_nonlinear_reg_method_dictionary`. A :class:`Setting` selects
     between those two automatically and never uses this combined dictionary.
+    
+    
+    Returns
+    -------
+    dict
+        Result described above.
     """
     return {
         **get_linear_reg_method_dictionary(),
@@ -1561,11 +1917,17 @@ def get_reg_method_dictionary() -> dict:
     }
 
 def get_convex_solver_dictionary() -> dict:
-    """Return the available solvers for convex Tikhonov settings.
-
+    r"""Return the available solvers for convex Tikhonov settings.
+    
     ``primal`` selects the constructor's setting and initial ``is_primal``
     argument. Final-result conversion uses the solver's current ``is_primal``
     property, allowing a hybrid solver to change coordinates during its run.
+    
+    
+    Returns
+    -------
+    dict
+        Result described above.
     """
     from .linear import (
         ADMM,
@@ -1592,7 +1954,14 @@ def get_convex_solver_dictionary() -> dict:
     return _with_stoprule_defaults(method_dict, default_convex_stoprule)
 
 def get_non_convex_solver_dictionary() -> dict:
-    """Return the available solvers for non-convex Tikhonov settings."""
+    r"""Return the available solvers for non-convex Tikhonov settings.
+    
+    
+    Returns
+    -------
+    dict
+        Result described above.
+    """
     from .nonlinear import FISTA as genFISTA
     from .nonlinear import ForwardBackwardSplitting as genFB
 
@@ -1607,28 +1976,30 @@ def check_Hilbert_applicability(setting: Setting,
                                 user_init: ReadOnlyVector | None = None,
                                 regularization_parameter_required: bool = False,
                                 check_is_norm_squared_type: bool = True,
-                                **kwargs
+                                **kwargs: Any
                                 ) -> tuple[dict, dict]:
-    """Check whether a Hilbert-space regularization method is applicable.
-
+    r"""Check whether a Hilbert-space regularization method is applicable.
+    
     Parameters
     ----------
-    setting : Setting
+    setting: Setting
         Setting to check.
-    user_data : ReadOnlyVector or ObsDataT or None, optional
+    user_data: ReadOnlyVector | ObsDataT | None [default: None]
         Data supplied directly to the solver. For a codomain-free setting,
         these may be arbitrary observational data accepted by
         :meth:`Operator.adjoint_data`.
-    user_init : ReadOnlyVector or None, optional
+    user_init: ReadOnlyVector | None [default: None]
         Initial guess supplied directly to the solver.
-    regularization_parameter_required : bool, optional
+    regularization_parameter_required: bool [default: False]
         Whether the method requires a setting with a regularization
         parameter. If false, the setting must not have one.
-    check_is_norm_squared_type : bool, optional
+    check_is_norm_squared_type: bool [default: True]
         If true, require the data-fidelity and penalty terms to be shifted
         multiples of squared Hilbert norms. Otherwise, only quadraticity is
         required.
-        
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
+    
     Returns
     -------
     out : dict
@@ -1690,11 +2061,32 @@ def check_Hilbert_applicability_linear(setting:Setting,
                                         user_init: ReadOnlyVector | None =None,
                                         regularization_parameter_required: bool = False,
                                         check_is_norm_squared_type: bool = True,
-                                        **kwargs
+                                        **kwargs: Any
                                     )->tuple[dict,dict] :
-    """ Checks if regularization methods for linear operators in Hilbert spaces are applicable.
-
+    r"""Checks if regularization methods for linear operators in Hilbert spaces are applicable.
+    
     Parameters and return values as of check_Hilbert_applicability. 
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    user_data: ReadOnlyVector | ObsDataT | None [default: None]
+        Input vector; its coefficients are only read.
+    user_init: ReadOnlyVector | None [default: None]
+        Input vector; its coefficients are only read.
+    regularization_parameter_required: bool [default: False]
+        Regularization parameter required.
+    check_is_norm_squared_type: bool [default: True]
+        Check is norm squared type.
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
+    
+    
+    Returns
+    -------
+    tuple[dict, dict]
+        Result described above.
     """
     out, par = check_Hilbert_applicability(setting,
                                            user_data=user_data,

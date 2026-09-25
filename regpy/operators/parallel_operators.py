@@ -1,3 +1,14 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from types import NotImplementedType
+    from numpy.typing import ArrayLike, DTypeLike
+    import numpy as np
+    from regpy.vecsps.base import ReadOnlyVector, Scalar, Vector
+    from multiprocessing.connection import Connection
+    from types import TracebackType
 from enum import Enum
 import multiprocessing as mp 
 import os
@@ -22,22 +33,21 @@ class ExitCode(Enum):
     TIMEOUT=3
 
 class OperatorAsWorker(mp.Process):
-    r""" 
-    Process that represents an operator and can be used to do operator
+    r"""Process that represents an operator and can be used to do operator
     evaluations in parallel. 
     
     Parameters
     ----------
-    name : string
+    name: str
         name of the process
-    conn : mp.connection.Connection
+    conn: Connection
         connection object to receive commands and 
         send the results back to master
-    F : regpy.operators.Operator
+    F: Operator
         the regpy operator
     """
     log = ClassLogger()
-    def __init__(self, name, conn,F):
+    def __init__(self, name: str, conn: Connection,F: Operator) -> None:
         super(OperatorAsWorker, self).__init__()
         self.F = F
         """the operator"""
@@ -50,17 +60,17 @@ class OperatorAsWorker(mp.Process):
         self._domain_buffer = None
         """Reusable output buffer for adjoint evaluations."""
 
-    def _get_codomain_buffer(self):
+    def _get_codomain_buffer(self) -> Vector:
         if self._codomain_buffer is None:
             self._codomain_buffer = self.F.codomain.empty()
         return self._codomain_buffer
 
-    def _get_domain_buffer(self):
+    def _get_domain_buffer(self) -> Vector:
         if self._domain_buffer is None:
             self._domain_buffer = self.F.domain.empty()
         return self._domain_buffer
 
-    def run(self):
+    def run(self) -> None:
         r"""Starts the process. While running the process may receive the commands:
         'eval_nodiff': evaluates the operator with differentiate=False
         'eval_diff': evaluates the operator with differentiate=True
@@ -71,7 +81,7 @@ class OperatorAsWorker(mp.Process):
         'ideriv': evaluates the derivative into that codomain buffer
         'iadjoint': evaluates the adjoint into a reusable worker-side domain buffer
         'break': ends process
-
+        
         Raises
         ------
         TypeError
@@ -143,18 +153,16 @@ class OperatorAsWorker(mp.Process):
         return 0
             
 
-def check_running(conns,conn_m):
-    r"""
-    Function that runs in separate watcher process and checks if main process is alive.
+def check_running(conns: list[Connection],conn_m: Connection) -> None:
+    r"""Function that runs in separate watcher process and checks if main process is alive.
     Terminates subprocesses after 10 seconds if main process is killed.
-
+    
     Parameters
     ----------
-    conns : list of mp.connection.Connection
+    conns: list[Connection]
         connections to subprocesses of main process
-    conn : mp.connection.Connection
-        connection object used to receive command from main
-        process to shut down this process if subprocesses are closed normally 
+    conn_m: Connection
+        Conn m.
     """
     parent_id=os.getppid()
     terminated=False
@@ -171,16 +179,15 @@ def check_running(conns,conn_m):
 
 
 class ParallelInterface:
-    r""" 
-    Interface for parallel processing 
+    r"""Interface for parallel processing 
     
     Parameters
     ----------
-    conns : list of mp.connection.Connection
+    conns: list[Connection]
         List of connections used to send commands to worker processes
-        and receive results. 
-    end_command : string, optional
-        Command that terminates sub processes. Defaults to "break"
+        and receive results.
+    end_command: str [default: 'break']
+        Command that terminates sub processes. 
     """
 
 
@@ -191,31 +198,34 @@ class ParallelInterface:
     _min_id_inst=0
     _id_manager=0
 
-    def total_subprocess_count():
-        r"""
-        Calculates the total number of running processes.
+    def total_subprocess_count() -> int:
+        r"""Calculates the total number of running processes.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
         """
         tot_sum=0
         for p_inst in ParallelInterface.parallel_instances:
             tot_sum+=sum([instance.subprocess_count for instance in p_inst.values() if instance.running])
         return tot_sum
 
-    def warn_subprocess_count():
-        r"""
-        Produces a warning if the total number of running processes is higher than
+    def warn_subprocess_count() -> None:
+        r"""Produces a warning if the total number of running processes is higher than
         MAX_SUBPROCESSES.
         """
         sp_count=ParallelInterface.total_subprocess_count()
         if(sp_count> ParallelInterface.MAX_SUBPROCESSES):
             warn(f"Warning: There are already {sp_count} subprocesses running.",stacklevel=2)
 
-    def terminate_managed_instances(manager_id):
-        r"""
-        Terminate all instances of ParallelInterface associated with manager_id or a higher id
-
+    def terminate_managed_instances(manager_id: int) -> None:
+        r"""Terminate all instances of ParallelInterface associated with manager_id or a higher id
+        
         Parameters
         ----------
-        manager_id : int
+        manager_id: int
             id of ParallelExecutionManager
         """
         for i in range(manager_id,len(ParallelInterface.parallel_instances)):
@@ -228,23 +238,21 @@ class ParallelInterface:
             ParallelInterface._id_manager=0
             ParallelInterface.parallel_instances=[WeakValueDictionary()]
 
-    def terminate_all_instances():
-        r"""
-        Terminates all instances of ParallelInterface.
+    def terminate_all_instances() -> None:
+        r"""Terminates all instances of ParallelInterface.
         """
         ParallelInterface.terminate_all_managed_instances(0)
 
 
-    def add_manager():
-        r"""
-        Adds a new manager section and returns the corresponding manager id.
+    def add_manager() -> None:
+        r"""Adds a new manager section and returns the corresponding manager id.
         """
         ParallelInterface.parallel_instances.append(WeakValueDictionary())
         ParallelInterface._id_manager+=1
         return ParallelInterface._id_manager
 
 
-    def __init__(self,conns,end_command="break"):
+    def __init__(self,conns: list[Connection],end_command: str="break") -> None:
         self.conns=conns
         """Connection to subprocesses"""
         self.subprocess_count=len(conns)
@@ -263,7 +271,7 @@ class ParallelInterface:
         process = mp.Process(target=check_running, args=(conns,conn_w))
         process.start()
 
-    def terminate_all(self):
+    def terminate_all(self) -> None:
         r"""Terminate all running subprocesses.
         """
         if(self.running):
@@ -275,12 +283,12 @@ class ParallelInterface:
             self.conn_watcher.send(['break'])
             self.running=False
 
-    def handle_errors(self,rec_d):
+    def handle_errors(self,rec_d: list[Any]) -> None:
         r"""Handles received errors by displaying massage and stopping subprocesses.
         
         Parameters
         ----------
-        rec_d : list
+        rec_d: list[Any]
             list where the first entry is an ExitCode that indicates whether an error occurred
             in the subprocess
         """
@@ -291,18 +299,23 @@ class ParallelInterface:
             self.terminate_all()
             raise TimeoutError("Subprocess timed out!")
 
-    def compute_all(self,command,arg_same=None,args_specific=[]):
+    def compute_all(self,command: str,arg_same: np.ndarray | None=None,args_specific: list[Any]=[]) -> list[Any]:
         r"""Sends command and argument to all subprocesses and returns results.
         
         Parameters
         ----------
-        command : string
+        command: str
             command describing task for subprocess
-        arg_same : numpy.ndarray, optional
-            argument send to all subprocesses. Defaults to None.
-        args_specific : list, optional
+        arg_same: np.ndarray | None [default: None]
+            argument send to all subprocesses.
+        args_specific: list[Any] [default: []]
             List of arguments where args_specific[j] is send to subprocess j.
-            Defaults to [].
+        
+        
+        Returns
+        -------
+        list[Any]
+            Result described above.
         """
         if(not self.running):
             raise RuntimeError(f"Computation of {command} is impossible, because process {self} was already terminated.")
@@ -321,9 +334,8 @@ class ParallelInterface:
             self.handle_errors(rec_d)
         return (rec_d[1] for rec_d in rec_data)
 
-    def __del__(self):
-        r"""
-        Terminates all subprocesses when object is garbage collected.
+    def __del__(self) -> None:
+        r"""Terminates all subprocesses when object is garbage collected.
         """
         self.terminate_all()
 
@@ -332,26 +344,28 @@ class ParallelInterface:
 class ParallelVectorOfOperators(Operator,ParallelInterface):
     r"""Vector of operators in which all components are evaluated in parallel. 
     The functionality is identical to the sequential analog `VectorOfOperators`: For
-
+    
         T_i : X -> Y_i
-
+    
     we define
-
+    
         T := VectorOfOperators(T_i) : X -> DirectSum(Y_i)
-
+    
     by `T(x)_i := T_i(x)`. 
     
     Parameters
     ----------
-    *ops : tuple of `regpy.operators.Operator`
-    codomain : vecsps.VectorSpaceBase or callable, optional
+    ops: Operator
+        Ops.
+    domain: VectorSpaceBase | None [default: None]
+        Domain vector space.
+    codomain: VectorSpaceBase | None [default: None]
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
-        The resulting vector space should be iterable, yielding the individual summands.
-        Default: vecsps.DirectSum.
+        The resulting vector space should be iterable, yielding the individual summands.DirectSum.
     """
 
-    def __init__(self, ops,  domain=None, codomain=None):
+    def __init__(self, ops: Operator,  domain: VectorSpaceBase | None=None, codomain: VectorSpaceBase | None=None) -> None:
         if not isinstance(ops,(list,tuple)) or len(ops) == 0:
             raise ValueError(Errors.value_error('At least one operator must be given in the ParallelVectorOperator'))
         if any([not isinstance(op, Operator) for op in ops]):
@@ -387,32 +401,32 @@ class ParallelVectorOfOperators(Operator,ParallelInterface):
         ParallelInterface.__init__(self,conns)
         
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x: ReadOnlyVector, differentiate: bool=False) -> Vector:
         if differentiate:
             return self.codomain.join(*self.compute_all('eval_diff',x))
         else:
             return self.codomain.join(*self.compute_all('eval_nodiff',x))
 
-    def _ieval(self, x, out, differentiate=False):
+    def _ieval(self, x: ReadOnlyVector, out: Vector, differentiate: bool=False) -> Vector:
         command = 'ieval_diff' if differentiate else 'ieval_nodiff'
         results = self.compute_all(command, x)
         for summand, out_i, result_i in zip(self.codomain, out, results):
             summand.copyto(out_i, result_i)
         return out
 
-    def _derivative(self, x):
+    def _derivative(self, x: ReadOnlyVector) -> Vector:
         return self.codomain.join(*self.compute_all('deriv',x))
 
-    def _iderivative(self, x, out):
+    def _iderivative(self, x: ReadOnlyVector, out: Vector) -> Vector:
         results = self.compute_all('ideriv', x)
         for summand, out_i, result_i in zip(self.codomain, out, results):
             summand.copyto(out_i, result_i)
         return out
 
-    def _adjoint(self, y):
+    def _adjoint(self, y: ReadOnlyVector) -> Vector:
         return sum(self.compute_all('adjoint',args_specific=y))
 
-    def _iadjoint(self, y, out):
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector) -> Vector:
         results = iter(self.compute_all('iadjoint', args_specific=y))
         first = next(results)
         self.domain.copyto(out, first)
@@ -424,32 +438,32 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
     r"""Vector of operators in which all components are evaluated in parallel and the input
     is assumed to be from direct sum of spaces that is then distributed to the operators that
     need it
-
+    
     .. math::
         T_i : X_{i_1}\times X_{i_2}... -> Y_i
-
+    
     we define
-
+    
         T := VectorOfOperators(T_i) : DirectSum(X_{i_j}) -> DirectSum(Y_i)
-
+    
     by `T(x)_i := T_i(x_i1,x_i2,...)`. 
     
     Parameters
     ----------
-    *ops : tuple of `regpy.operators.Operator`
-    domain : vecsps.VectorSpaceBase
+    ops: Operator
+        Ops.
+    domain: VectorSpaceBase
         The domain of the operator. It should usually be a direct sum of vector spaces
-    distribution_mat : numpy.ndarray of bools
+    distribution_mat: list[list[int]]
         The matrix that indicates which parts of the arguments are passed to which operator. If the entry M_i,j is True the
         j-th component of the argument is passed to the i-th operator.
-    codomain : vecsps.VectorSpaceBase or callable, optional
+    codomain: VectorSpaceBase | None [default: None]
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
-        The resulting vector space should be iterable, yielding the individual summands.
-        Default: vecsps.DirectSum.
+        The resulting vector space should be iterable, yielding the individual summands.DirectSum.
     """
 
-    def __init__(self, ops,  domain,distribution_mat, codomain=None):
+    def __init__(self, ops: Operator,  domain: VectorSpaceBase,distribution_mat: list[list[int]], codomain: VectorSpaceBase | None=None) -> None:
         if not isinstance(ops,(list,tuple)) or len(ops) == 0:
             raise ValueError(Errors.value_error('At least one operator must be given in the DistributedVectorOfOperators'))
         if any([not isinstance(op, Operator) for op in ops]):
@@ -492,7 +506,7 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
         Operator.__init__(self,domain=domain, codomain=codomain, linear=all(op.linear for op in ops))
         ParallelInterface.__init__(self,conns)
     
-    def _distribute(self,x):
+    def _distribute(self,x: ReadOnlyVector) -> list[ReadOnlyVector]:
         x_ops=[]
         for indices,op in zip(self.distribution_lists,self.ops):
             if(len(indices)==1):
@@ -501,7 +515,7 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
                 x_ops.append(op.domain.join(*[x[j] for j in indices]))
         return x_ops
     
-    def _collect(self,x_res):
+    def _collect(self,x_res: Vector) -> Vector:
         elms=self.domain.zeros()
         for i,indices in enumerate(self.distribution_lists):
             if len(indices) == 1:
@@ -511,7 +525,7 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
                     elms[j] += x_j
         return elms
 
-    def _icollect(self, x_res, out):
+    def _icollect(self, x_res: Vector, out: Vector) -> Vector:
         touched = [False] * len(self.domain)
         for result_i, indices in zip(x_res, self.distribution_lists):
             if len(indices) == 1:
@@ -531,14 +545,14 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
                 self.domain[j].fill(out[j], 0)
         return out
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x: ReadOnlyVector, differentiate: bool=False) -> Vector:
         x_ops=self._distribute(x)
         if differentiate:
             return self.codomain.join(*self.compute_all('eval_diff',args_specific=x_ops))
         else:
             return self.codomain.join(*self.compute_all('eval_nodiff',args_specific=x_ops))
 
-    def _ieval(self, x, out, differentiate=False):
+    def _ieval(self, x: ReadOnlyVector, out: Vector, differentiate: bool=False) -> Vector:
         x_ops = self._distribute(x)
         command = 'ieval_diff' if differentiate else 'ieval_nodiff'
         results = self.compute_all(command, args_specific=x_ops)
@@ -546,45 +560,57 @@ class DistributedVectorOfOperators(Operator,ParallelInterface):
             summand.copyto(out_i, result_i)
         return out
 
-    def _derivative(self, x):
+    def _derivative(self, x: ReadOnlyVector) -> Vector:
         x_ops=self._distribute(x)
         return self.codomain.join(*self.compute_all('deriv',args_specific=x_ops))
 
-    def _iderivative(self, x, out):
+    def _iderivative(self, x: ReadOnlyVector, out: Vector) -> Vector:
         x_ops = self._distribute(x)
         results = self.compute_all('ideriv', args_specific=x_ops)
         for summand, out_i, result_i in zip(self.codomain, out, results):
             summand.copyto(out_i, result_i)
         return out
 
-    def _adjoint(self, y):
+    def _adjoint(self, y: ReadOnlyVector) -> Vector:
         return self._collect(list(self.compute_all('adjoint',args_specific=y)))
 
-    def _iadjoint(self, y, out):
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector) -> Vector:
         results = self.compute_all('iadjoint', args_specific=y)
         return self._icollect(results, out)
 
 class ParallelExecutionManager:
-    r"""
-    Context manager used to manage objects that use the ParallelInterface.
+    r"""Context manager used to manage objects that use the ParallelInterface.
     Before such objects are created a ParallelExecutionManager should be entered using
     `with ParallelExecutionManager()` to guarantee that subprocesses are closed correctly.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
-    def __enter__(self):
-        r"""
-        Gets manager id from ParallelInterface.
+    def __enter__(self) -> Operator | NotImplementedType:
+        r"""Gets manager id from ParallelInterface.
+        
+        
+        Returns
+        -------
+        Operator | NotImplementedType
+            Result described above.
         """
         ParallelInterface.warn_subprocess_count()
         self.manager_id=ParallelInterface.add_manager()
         return self
 
-    def __exit__(self,type, value, traceback):
-        r"""
-        Terminates all managed instances of ParallelInterface.
+    def __exit__(self,type: DTypeLike, value: Scalar | ArrayLike, traceback: TracebackType | None) -> None:
+        r"""Terminates all managed instances of ParallelInterface.
+        
+        Parameters
+        ----------
+        type: DTypeLike
+            Type.
+        value: Scalar | ArrayLike
+            Value.
+        traceback: TracebackType | None
+            Traceback.
         """
         ParallelInterface.terminate_managed_instances(self.manager_id)
 

@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.vecsps.base import ReadOnlyVector
 from typing import Any
 
 from regpy.util import Errors
@@ -13,32 +18,34 @@ __all__ = ["ForwardBackwardSplitting"]
 class ForwardBackwardSplitting(RegSolver):
     r"""Minimize :math:`\mathcal{S}(F(x))+\alpha\mathcal{R}(x)` with
     forward-backward splitting.
-
+    
     Setting ``codomain_free=True`` computes the data-term gradient
     from ``F'[x]^* G_Y F(x)`` and ``F'[x]^* G_Y data`` directly in the
     operator domain. This requires optimized implementations of
     ``Operator.linearize(..., return_adjoint_eval=True)`` and
     ``Derivative.adjoint_data`` that incorporate the codomain Hilbert metric.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         Setting of the forward problem.
-    init : setting.op.domain, optional
+    init: ReadOnlyVector | None [default: None]
         Initial guess. If omitted, it is taken from ``setting``.
-    data : setting.op.codomain or operator-specific data handle, optional
+    data: Vector | Any | None [default: None]
         Measured data. In domain-only mode, the object is passed directly to
         ``Derivative.adjoint_data`` and is not copied into solver-owned
         codomain storage.
-    tau : float, optional
+    tau: float | None [default: None]
         Positive step size. If omitted, the derivative norm at the initial
         guess is used.
-    proximal_pars : dict, optional
+    proximal_pars: dict | None [default: None]
         Keyword arguments for the penalty proximal mapping.
-    update_setting : bool, default: True
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
+    update_setting: bool [default: True]
         Update the setting with explicitly supplied initial values in the
         setting.
-
+    
     Notes
     -----
     If ``setting.codomain_free`` is True, the solver avoids vectors in
@@ -48,12 +55,12 @@ class ForwardBackwardSplitting(RegSolver):
     def __init__(
             self,
             setting: Setting,
-            init: Vector | None = None,
+            init: ReadOnlyVector | None = None,
             data: Vector | Any | None = None,
             tau: float | None = None,
             proximal_pars: dict | None = None,
             logging_level: int | str = "INFO",
-            update_setting: bool = True):
+            update_setting: bool = True) -> None:
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error(
                 "ForwardBackwardSplitting requires the setting to contain a "
@@ -114,7 +121,7 @@ class ForwardBackwardSplitting(RegSolver):
                 "tau, the step size, needs to be positive!"
             ))
 
-    def _next(self):
+    def _next(self) -> None:
         if self.codomain_free:
             # ``_adjoint_eval`` contains F'[x]^* G_Y F(x) from the most
             # recent linearization. Subtract F'[x]^* G_Y data in place.
@@ -154,8 +161,19 @@ class ForwardBackwardSplitting(RegSolver):
             )
 
     @staticmethod
-    def check_applicability(setting) -> tuple[dict, dict]:
-        """Check whether ``setting`` provides the operations ForwardBackwardSplitting needs.
+    def check_applicability(setting: Setting) -> tuple[dict, dict]:
+        r"""Check whether ``setting`` provides the operations ForwardBackwardSplitting needs.
+                
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
         """
 
         out = {"info": "",  "warning": ""}

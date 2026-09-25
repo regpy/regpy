@@ -1,3 +1,9 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.vecsps.base import ReadOnlyVector, Vector
+    from regpy.operators.base import ObsDataT, Operator
 from regpy.util import Errors
 
 from ..solver import Solver
@@ -6,21 +12,21 @@ __all__ = ["RichardsonLucy"]
 
 class RichardsonLucy(Solver):
     r"""The Richardson-Lucy Algorithm
-
+    
     Minimizes :math:`-g\ln Tf, f\geq 0, Tf>0` 
-
+    
     Parameters
     ----------
-    op : regpy.operators.Operator
+    op: Operator
         The linear forward operator.
-    data : Vector
+    data: ReadOnlyVector | ObsDataT
         The non-negative data
-    x_init : Vector, optional
-        The initial guess "f". Must be in setting.op.domain. (Default: None)
-    sigma : float , optional
-        Non-negative parameter to shift the data and operator result to avoid division by zero or appearance of negative numbers. (Default: 0)
+    x_init: Vector | None [default: None]
+        The initial guess "f". Must be in setting.op.domain.
+    sigma: float [default: 0]
+        Non-negative parameter to shift the data and operator result to avoid division by zero or appearance of negative numbers.
     """
-    def __init__(self,op,data,x_init=None,sigma=0):
+    def __init__(self,op: Operator,data: ReadOnlyVector | ObsDataT,x_init: Vector | None=None,sigma: float=0) -> None:
         super().__init__()
         self.op=op
         if not self.op.linear:
@@ -41,7 +47,7 @@ class RichardsonLucy(Solver):
             raise RuntimeError(Errors.runtime_error("The adjoint of constant one returns some negative values! Not possible to use RichardsonLucy!"))
 
 
-    def _next(self):
+    def _next(self) -> None:
         multiplier=self.op.adjoint((self.data+self.sigma)/(self.y+self.sigma))
         self.x=multiplier*self.x/self.adj_ones
         self.y=self.op(self.x)

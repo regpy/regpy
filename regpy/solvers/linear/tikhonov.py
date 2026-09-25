@@ -1,3 +1,9 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from regpy.vecsps.base import Scalar, VectorSpaceBase
 from collections.abc import Iterable
 from math import sqrt,inf
 import numpy as np
@@ -17,16 +23,48 @@ __all__ = [
 ]
 
 
-def _axpy(space, target, scalar, direction, work):
-    """Compute ``target += scalar * direction`` using a reusable buffer."""
+def _axpy(space: VectorSpaceBase, target: Vector, scalar: Scalar, direction: ReadOnlyVector, work: Vector) -> Vector:
+    r"""Compute ``target += scalar * direction`` using a reusable buffer.
+    
+    Parameters
+    ----------
+    space: VectorSpaceBase
+        Space.
+    target: Vector
+        Writable vector used by this operation.
+    scalar: Scalar
+        Scalar.
+    direction: ReadOnlyVector
+        Input vector; its coefficients are only read.
+    work: Vector
+        Writable vector used by this operation.
+    
+    
+    Returns
+    -------
+    Vector
+        Writable result vector.
+    """
     space.copyto(work, direction)
     work *= scalar
     target += work
     return target
 
 
-def _contains_count_iterations(stoprule):
-    """Return whether a possibly combined rule contains an iteration cap."""
+def _contains_count_iterations(stoprule: StopRule) -> bool:
+    r"""Return whether a possibly combined rule contains an iteration cap.
+    
+    Parameters
+    ----------
+    stoprule: StopRule
+        Stoprule.
+    
+    
+    Returns
+    -------
+    bool
+        Whether the stated condition is satisfied.
+    """
     if stoprule is None:
         return False
     if isinstance(stoprule, CountIterations):
@@ -42,7 +80,23 @@ def _regularized_inner_setting(
     regpar: float,
     logging_level: int | str,
 ) -> Setting:
-    """Create an independent regularized setting for an inner CG solve."""
+    r"""Create an independent regularized setting for an inner CG solve.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    regpar: float
+        Regularization parameter.
+    logging_level: int | str
+        Logging level for this object.
+    
+    
+    Returns
+    -------
+    Setting
+        Result described above.
+    """
     if setting.codomain_free:
         return Setting(
             setting.op.adjoint_eval,
@@ -67,7 +121,7 @@ class TikhonovCG(RegSolver):
     
     .. math::
         \Vert T x - data\Vert^2 + \alpha \Vert x - init\Vert^2
-
+    
     using a conjugate gradient method. 
     To determine a stopping index yielding guaranteed error bounds, a partial embedded minimal residual method (MR) is 
     used, which can be implemented by updating a scalar parameter in each iteration. 
@@ -77,83 +131,94 @@ class TikhonovCG(RegSolver):
     see also the Master thesis by Andrea Dietrich 
     "Analytische und numerische Untersuchung eines Abbruchkriteriums für das CG-Verfahren zur Minimierung 
     von Tikhonov Funktionalen", Univ. Göttingen, 2017 
-
+    
     Parameters
     ----------
-    is_primal : bool, optional
-        Whether iterates represent the original primal problem (default True).
-        Pass False when solving its dual. This labels coordinates and does not
-        change the iteration formulas or construct a dual setting.
-    setting : regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem. It must contain a positive
         regularization parameter and have quadratic penalty and data-fidelity
         terms.
-    data : Vector or ObsDataT or None [default: None]
+    data: ReadOnlyVector | ObsDataT | None [default: None]
         The measured data, included for backward compatibility. 
         The preferred way is to specify data in the setting.
-    init: Vector or None [default: None]
+    init: ReadOnlyVector | None [default: None]
         Reference value in the Tikhonov functional. If omitted, the penalty
         functional's reference vector is used.
-    xref : Vector or None [default: None]
-        Deprecated alias for ``init``.
-    x0: Vector or None [default: None]
+    x0: ReadOnlyVector | None [default: None]
         Starting value of the CG iteration. If omitted, ``setting.init`` is
         used. This can differ from the penalty reference, in particular for
         automatically constructed dual settings.
-    tol : float or None [default: None]
+    tol: float | None [default: None]
         The absolute tolerance - it guarantees that difference of the final CG iterate to the exact minimizer of the Tikhonov functional  
         in setting.h_domain.norm is smaller than tol. If None, this criterion is not active (analogously for reltolx and reltoly).   
         If the noise level is given, it is reasonable value to choose tol in the order of the propagated data noise level, 
         which is ``noiselevel / (2 * sqrt(setting.regpar))``.
-    max_it: int [default: 1000]
-        maximal number of CG iterations
-    reltolx: float or None [default: 1e-2]
+    reltolx: float | None [default: 0.01]
         Relative tolerance in domain. Guarantees that the relative error w.r.t. setting.h_domain.norm is smaller than reltolx.
         The motivation for the default value is similar to that given for tol, assuming a reasonable 
-        signal-to-noise ratio for the Tikhonov minimizer. 
-    reltoly: float or None [default: None]
+        signal-to-noise ratio for the Tikhonov minimizer.
+    reltoly: float | None [default: None]
         Relative tolerance in codomain.
     all_tol_criteria: bool [default: True]
         If True, the iteration is stopped if all specified tolerance criteria are satisfied. 
         If False, the iteration is stopped if one criterion is satisfied.
-    krylov_basis : list[Vector] or None [default: None] 
+    max_it: int [default: 1000]
+        maximal number of CG iterations
+    krylov_basis: list[Vector] | None [default: None]
         If not None, an orthonormal basis of the Krylov subspace is computed while running CG solver
-    preconditioner: regpy.operators.operator
+    preconditioner: Operator | None [default: None]
         Preconditioner such that the iteration is done on 
         :math:`\Vert TP x-data\Vert^2+\alpha\Vert Px-init\Vert^2`.
         The iterates (self.x) still solve the original equation without preconditioner.
-    x_exact: Vector or None [default: None]
-    y_exact: Vector or None [default: None]
+    logging_level: int | str [default: logging.INFO]
+        Logging level for this object.
+    x_exact: ReadOnlyVector | None [default: None]
+        Input vector; its coefficients are only read.
+    y_exact: ReadOnlyVector | None [default: None]
         These parameters are intended for monitoring convergence of the CG iteration and the performance of the stopping rules. 
-        If not None (default), they should be (an approximation of) the exact minimizer of the Tikhonov functional and its image 
+        If not None, they should be (an approximation of) the exact minimizer of the Tikhonov functional and its image 
         under setting.op. In this case, the internal stopping rules track the errors in the domain and/or codomain.
-
+    xref: ReadOnlyVector | None [default: None]
+        Deprecated alias for ``init``.
+    is_primal: bool [default: True]
+        Whether iterates represent the original primal problem.
+        Pass False when solving its dual. This labels coordinates and does not
+        change the iteration formulas or construct a dual setting.
+    
     Notes
     -----
     For a codomain-free setting, the method backpropagates ``data`` once and
     delegates the solution of
-
+    
     .. math::
         \left(T^*T + \alpha H\right)x
         = T^*data + \alpha H init
-
+    
     to :class:`LavrentievCG`, using ``setting.op.adjoint_eval`` and
     ``setting.op.adjoint_data``. Consequently no codomain vector is created.
     """
     from regpy.stoprules import StopRule
     class KappaTrackAndMinIt(StopRule):
-        """Stopping rule which tracks the value of kappa and ensures a minimum number of iterations 
-         if a Krylov basis must be computed."""
-        def __init__(self,min_it=0,logging_level="INFO"):
+        r"""Stopping rule which tracks the value of kappa and ensures a minimum number of iterations 
+        if a Krylov basis must be computed.
+        
+        Parameters
+        ----------
+        min_it: int [default: 0]
+            Min it.
+        logging_level: int | str [default: 'INFO']
+            Logging level for this object.
+        """
+        def __init__(self,min_it: int=0,logging_level: int | str="INFO") -> None:
             super().__init__(logging_level)        
             self.history_dict["kappa"] = []
             self.min_it = min_it
             self.it = 0
 
-        def __repr__(self):
+        def __repr__(self) -> str:
             return 'KappaTrackAndMinIt({})'.format(self.min_it)
 
-        def _stop(self):
+        def _stop(self) -> bool:
             kappa = self.solver.kappa
             self.history_dict["kappa"].append(kappa)
             self.log_info = 'kappa:{:1.1e}'.format(kappa)
@@ -161,8 +226,18 @@ class TikhonovCG(RegSolver):
             return (self.it>=self.min_it)
 
     class RelTolXStop(StopRule):
-        """Stopping rule based on relative error in the domain of the operator."""
-        def __init__(self, tol:float = 0.,logging_level="INFO",x_exact=None):
+        r"""Stopping rule based on relative error in the domain of the operator.
+        
+        Parameters
+        ----------
+        tol: float [default: 0.0]
+            Tolerance for the stopping or comparison criterion.
+        logging_level: int | str [default: 'INFO']
+            Logging level for this object.
+        x_exact: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        """
+        def __init__(self, tol:float = 0.,logging_level: int | str="INFO",x_exact: ReadOnlyVector | None=None) -> None:
             super().__init__(logging_level)
             self.x_exact= x_exact
             self.tol, self.tolexpr = tol,  tol/(1.+tol)
@@ -170,10 +245,10 @@ class TikhonovCG(RegSolver):
             if x_exact is not None:
                 self.history_dict["rel_err_x_true"] = []
 
-        def __repr__(self):
+        def __repr__(self) -> str:
             return 'RelTolXStop({})'.format(self.tol)
         
-        def _complete_init_with_solver(self, solver):
+        def _complete_init_with_solver(self, solver: RegSolver) -> None:
             super()._complete_init_with_solver(solver)
             domain = self.solver.op.domain
             self._g_delta_x = domain.empty()
@@ -191,7 +266,7 @@ class TikhonovCG(RegSolver):
                 domain.copyto(self.x0, self.solver.x)
             self._delta_x = domain.empty()
 
-        def _stop(self):
+        def _stop(self) -> bool:
             if self.x0 is None:
                 delta_x = self.solver.x
             else:
@@ -237,9 +312,22 @@ class TikhonovCG(RegSolver):
             return valx < self.tolexpr
 
     class RelTolYStop(StopRule):
-        """Stopping rule based on relative error in the domain of the operator.
+        r"""Stopping rule based on relative error in the domain of the operator.
+                
+        Parameters
+        ----------
+        tol: float [default: 0.0]
+            Tolerance for the stopping or comparison criterion.
+        logging_level: int | str [default: 'INFO']
+            Logging level for this object.
+        y_exact: ReadOnlyVector | None [default: None]
+            Reference data for monitoring only. 
         """        
-        def __init__(self, tol:float = 0.,logging_level="INFO",y_exact=None):
+        def __init__(self, 
+                     tol:float = 0.,
+                     logging_level: int | str="INFO",
+                     y_exact: ReadOnlyVector | None=None
+                     ) -> None:
             super().__init__(logging_level)
             self.tol, self.tolexpr = tol,  tol/(1.+tol)
             self.y_exact = y_exact
@@ -248,10 +336,10 @@ class TikhonovCG(RegSolver):
                 self.history_dict["rel_err_y_true"] = []
             self.first_step=True
 
-        def __repr__(self):
+        def __repr__(self) -> str:
             return 'RelTolYStop({})'.format(self.tol)
 
-        def _complete_init_with_solver(self, solver):
+        def _complete_init_with_solver(self, solver: RegSolver) -> None:
             super()._complete_init_with_solver(solver)
             codomain = self.solver.op.codomain
             self.g_y = codomain.empty()
@@ -270,7 +358,7 @@ class TikhonovCG(RegSolver):
             else:
                 self.g_y0 = None
 
-        def _stop(self):
+        def _stop(self) -> bool:
             codomain = self.solver.op.codomain
             if self.first_step:
                 self.first_step = False
@@ -329,9 +417,18 @@ class TikhonovCG(RegSolver):
             return valy < self.tolexpr
 
     class TolStop(StopRule):
-        """Stopping rule based on absolute tolerance
+        r"""Stopping rule based on absolute tolerance
+                
+        Parameters
+        ----------
+        tol: float [default: 0.0]
+            Tolerance for the stopping or comparison criterion.
+        logging_level: int | str [default: 'INFO']
+            Logging level for this object.
+        x_exact: ReadOnlyVector | None [default: None]
+            Reference solution for monitoring only. 
         """
-        def __init__(self, tol:float = 0.,logging_level="INFO",x_exact=None):
+        def __init__(self, tol:float = 0.,logging_level: int | str="INFO",x_exact: ReadOnlyVector | None=None) -> None:
             super().__init__(logging_level)
             self.tol=tol
             self.x_exact = x_exact
@@ -339,15 +436,15 @@ class TikhonovCG(RegSolver):
             if self.x_exact is not None:
                 self.history_dict["abs_err_true"] = []
 
-        def __repr__(self):
+        def __repr__(self) -> str:
             return 'TolStop({})'.format(self.tol)
 
-        def _complete_init_with_solver(self, solver):
+        def _complete_init_with_solver(self, solver: RegSolver) -> None:
             super()._complete_init_with_solver(solver)
             self._delta_x = self.solver.op.domain.empty()
             self._g_delta_x = self.solver.op.domain.empty()
 
-        def _stop(self):
+        def _stop(self) -> bool:
             val = (
                 sqrt(self.solver.sq_norm_res / self.solver.kappa)
                 / self.solver.regpar
@@ -374,7 +471,7 @@ class TikhonovCG(RegSolver):
                 self, setting:Setting, 
                 data : ReadOnlyVector | ObsDataT | None = None, 
                 init: ReadOnlyVector|None =None, 
-                x0: Vector|None = None, 
+                x0: ReadOnlyVector | None = None, 
                 tol: float|None = None, 
                 reltolx: float|None = 1e-2, 
                 reltoly: float|None = None, 
@@ -387,7 +484,7 @@ class TikhonovCG(RegSolver):
                 y_exact: ReadOnlyVector | None = None,
                 xref: ReadOnlyVector | None = None,
                  is_primal: bool = True,
-                 ):
+                 ) -> None:
         super().__init__(setting, is_primal=is_primal)
         self.tol, self.reltolx, self.reltoly = tol, reltolx, reltoly
         self.all_tol_criteria, self.max_it, self.logging_level = all_tol_criteria, max_it, logging_level
@@ -542,7 +639,8 @@ class TikhonovCG(RegSolver):
             self.converge()            
 
     def _sync_lavrentiev_state(self) -> None:
-        """Mirror the public state of the delegated codomain-free solver."""
+        r"""Mirror the public state of the delegated codomain-free solver.
+        """
         inner = self._lavrentiev
         self.x = inner.x
         self.y = None
@@ -550,7 +648,7 @@ class TikhonovCG(RegSolver):
         self.kappa = inner.kappa
         self.stepsize = getattr(inner, 'stepsize', None)
 
-    def _next(self):
+    def _next(self) -> None:
         if self.setting.codomain_free:
             if not self._lavrentiev.next():
                 self.converge()
@@ -628,11 +726,30 @@ class TikhonovCG(RegSolver):
             self.log.info(f'TikhonovCG: stopped at iteration {self.iteration_step_nr} as residual is 0 to machine precision.')
             self.converge()
 
-    def primal(self): # for duality-based stopping rules
+    def primal(self) -> tuple[Vector | None, Vector | None]: # for duality-based stopping rules
+        r"""Return the current primal iterate and operator image, when available.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
+        """
         return (self.x,self.y)
 
-    def get_stoprule(self,other_stoprule=None):
-        """ Constructs the internal StopRule defined by the parameters of the constructor
+    def get_stoprule(self,other_stoprule: StopRule | None=None) -> StopRule:
+        r"""Constructs the internal StopRule defined by the parameters of the constructor
+                
+        Parameters
+        ----------
+        other_stoprule: StopRule | None [default: None]
+            Other stoprule.
+        
+        
+        Returns
+        -------
+        StopRule
+            Result described above.
         """
         if self.setting.codomain_free:
             return self._lavrentiev.get_stoprule(other_stoprule)
@@ -669,15 +786,28 @@ class TikhonovCG(RegSolver):
 
     def run(self, 
             stoprule: StopRule | None = None, 
-            max_it: int | None = None):
-        """ Runs the method with the stoprule specified by the parameters of the constructor.
-
-        Parameters:
+            max_it: int | None = None) -> tuple[Vector | None, Vector | None]:
+        r"""Runs the method with the stoprule specified by the parameters of the constructor.
+        
+        Parameters
         stoprule: StopRule, optional
             Defaults to None. Otherwise, the given StopRule is (or-) combined with the internal StopRule. 
         max_it: int, optional
             Defaults to None. Otherwise, the given maximal number of
             iterations is added to the internal stopping rule for this run.
+        
+        Parameters
+        ----------
+        stoprule: StopRule | None [default: None]
+            Stoprule.
+        max_it: int | None [default: None]
+            Maximum number of iterations.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
         """
         if self.setting.codomain_free:
             result = self._lavrentiev.run(
@@ -699,8 +829,14 @@ class TikhonovCG(RegSolver):
         self.stoprule = self.get_stoprule(other_stoprule=stoprule)
         return super().run(stoprule=self.stoprule)
         
-    def get_convergence_histories(self):
-        """ Yields the stoprule specified by the parameters of the constructor
+    def get_convergence_histories(self) -> dict[str, Any]:
+        r"""Yields the stoprule specified by the parameters of the constructor
+                
+        
+        Returns
+        -------
+        dict[str, Any]
+            Result described above.
         """
         if self.setting.codomain_free:
             return self._lavrentiev.get_convergence_histories()
@@ -714,15 +850,29 @@ class TikhonovCG(RegSolver):
         return hist
 
 
-    def primal(self):
+    def primal(self) -> tuple[Vector | None, Vector | None]:
+        r"""Return the current primal iterate and operator image, when available.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
+        """
         return (self.x,self.y)
 
-    def dual(self):
-        """Return the dual pair used by duality-based stopping rules.
-
+    def dual(self) -> tuple[Vector | None, Vector | None]:
+        r"""Return the dual pair used by duality-based stopping rules.
+        
         At iteration zero, use the neutral dual point p=0. Afterward,
         reconstruct the dual pair exactly as the setting previously did
         when this solver exposed only primal(). The CG iteration is unchanged.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
         """
         if self.setting.codomain_free:
             return None
@@ -743,10 +893,28 @@ class TikhonovCG(RegSolver):
     def check_applicability(
         setting: Setting,
         op_norm: float | None = None,
-        user_data: Vector | None = None,
-        user_init: Vector | None = None,
+        user_data: ReadOnlyVector | None = None,
+        user_init: ReadOnlyVector | None = None,
     ) -> tuple[dict, dict]:
-        """Check whether TikhonovCG can be used for ``setting``."""
+        r"""Check whether TikhonovCG can be used for ``setting``.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        user_data: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        user_init: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         out, par = check_Hilbert_applicability_linear(
             setting,
             regularization_parameter_required = True,
@@ -775,41 +943,41 @@ class TikhonovAlphaGrid(RegSolver):
     r"""Class running Tikhonov regularization on a grid of different regularization parameters.
     This allows to choose the regularization parameter by some stoprule. 
     Tikhonov functionals are minimized by an inner CG iteration.
-
+    
     Parameters
     ----------
-    setting:  regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem.
-    data : Vector or ObsDataT or None [default: None]
+    data: Vector | ObsDataT | None [default: None]
         Right-hand side in ``setting.op.codomain``. In the default case,
         ``setting.data`` is used. For a codomain-free setting, it may be any
         object accepted by ``setting.op.adjoint_data``.
-    alphas : iterable or tuple [default: (1.0, 2 / 3)]
+    alphas: Iterable[float] | tuple[float, float] [default: (1.0, 2 / 3)]
         Either an iterable giving the grid of alphas or a tuple ``(alpha0, q)``.
         In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
-    init : Vector or None [default: None]
+    init: ReadOnlyVector | None [default: None]
         Initial guess and reference value in the Tikhonov functional. In the
         default case, it is taken from the setting.
-    max_CG_iter : int [default: 1000]
+    max_CG_iter: int [default: 1000]
         Maximum number of CG iterations.
-    delta : float or None [default: None]
+    delta: float | None [default: None]
         Data noise level.
-    tol_fac : float [default: 0.5]
+    tol_fac: float [default: 0.5]
         Absolute tolerance for CG iterations is
         ``tol_fac * delta / sqrt(alpha)``.
-    logging_level : int or str [default: "INFO"]
+    logging_level: int | str [default: 'INFO']
         Logging level for the inner CG iteration.
-
+    
     Notes
     -----
-    Further keyword arguments for TikhonovCG can be given. 
+    Further keyword arguments for TikhonovCG can be given.
     """
     def __init__(
         self,
         setting: Setting,
         data: Vector | ObsDataT | None = None,
         alphas: Iterable[float] | tuple[float, float] = (1.0, 2 / 3),
-        init: Vector | None = None,
+        init: ReadOnlyVector | None = None,
         max_CG_iter: int = 1000,
         delta: float | None = None,
         tol_fac: float = 0.5,
@@ -857,7 +1025,7 @@ class TikhonovAlphaGrid(RegSolver):
         self.logging_level = logging_level
         """logging level for CG iteration."""
 
-    def _next(self):
+    def _next(self) -> None:
         try:
             alpha = next(self._alphas)
         except StopIteration:
@@ -896,9 +1064,27 @@ class TikhonovAlphaGrid(RegSolver):
         setting: Setting,
         op_norm: float | None = None,
         user_data: Vector | ObsDataT | None = None,
-        user_init: Vector | None = None,
+        user_init: ReadOnlyVector | None = None,
     ) -> tuple[dict, dict]:
-        """Check whether the parameter-grid method can be used."""
+        r"""Check whether the parameter-grid method can be used.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        user_data: Vector | ObsDataT | None [default: None]
+            Writable vector used by this operation.
+        user_init: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         out, par = check_Hilbert_applicability_linear(
             setting,
             op_norm=op_norm,
@@ -911,28 +1097,28 @@ class TikhonovAlphaGrid(RegSolver):
 class NonstationaryIteratedTikhonov(RegSolver):
     r"""Iterated Tikhonov regularization with a given (fixed) sequence of regularization parameters.
        Tikhonov functionals are minimized by an inner CG iteration.
-
+    
     Parameters
     ----------
-    setting:  regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem.
-    data : Vector or ObsDataT or None [default: None]
+    data: Vector | ObsDataT | None [default: None]
         Right-hand side in ``setting.op.codomain``. In the default case,
         ``setting.data`` is used. For a codomain-free setting, it may be any
         object accepted by ``setting.op.adjoint_data``.
-    alphas : iterable or tuple [default: (1.0, 2 / 3)]
+    alphas: Iterable[float] | tuple[float, float] [default: (1.0, 2 / 3)]
         Either an iterable giving the grid of alphas or a tuple ``(alpha0, q)``.
         In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
-    init : Vector or None [default: None]
+    init: ReadOnlyVector | None [default: None]
         Initial guess. In the default case, it is taken from the setting.
-    max_CG_iter : int [default: 1000]
+    max_CG_iter: int [default: 1000]
         Maximum number of CG iterations.
-    delta : float or None [default: None]
+    delta: float | None [default: None]
         Data noise level.
-    tol_fac : float [default: 0.5]
+    tol_fac: float [default: 0.5]
         Absolute tolerance for CG iterations is
         ``tol_fac * delta / sqrt(alpha)``.
-    logging_level : int or str [default: "INFO"]
+    logging_level: int | str [default: 'INFO']
         Logging level for the inner CG iteration.
     """
     def __init__(
@@ -940,7 +1126,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
         setting: Setting,
         data: Vector | ObsDataT | None = None,
         alphas: Iterable[float] | tuple[float, float] = (1.0, 2 / 3),
-        init: Vector | None = None,
+        init: ReadOnlyVector | None = None,
         max_CG_iter: int = 1000,
         delta: float | None = None,
         tol_fac: float = 0.5,
@@ -990,7 +1176,7 @@ class NonstationaryIteratedTikhonov(RegSolver):
         self.alpha_eff = inf
         r"""effective regularization parameter. 1/alpha_eff is the sum of the reciprocals of the previous alpha's"""
 
-    def _next(self):
+    def _next(self) -> None:
         try:
             alpha = next(self._alphas)
         except StopIteration:
@@ -1029,49 +1215,57 @@ class NonstationaryIteratedTikhonov(RegSolver):
 
 class LavrentievCG(RegSolver):
     r"""Lavrentiev regularization for a self-adjoint linear problem.
-
+    
     The method computes the solution of
-
+    
     .. math::
         \left(A + \alpha H\right)x
         = data + \alpha H x_{\rm init},
-
+    
     by conjugate gradients. Here :math:`A` is the self-adjoint forward
     operator, :math:`H` is the Hessian of the quadratic penalty, and
     :math:`\alpha` is ``setting.regpar``. Thus ``init`` is both the reference
     vector of the Lavrentiev regularization and, unless ``x0`` is supplied,
     the initial CG iterate.
-
+    
     The embedded minimal-residual quantity ``kappa`` and the absolute and
     relative domain stopping rules are the same as in :class:`TikhonovCG`.
     No codomain residual is required.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         Hilbert setting with a linear self-adjoint forward operator and a
         positive regularization parameter.
-    data : ReadOnlyVector or None [default: None]
+    data: ReadOnlyVector | None [default: None]
         Right-hand side in ``setting.op.codomain``. If omitted, it is resolved
         from the setting.
-    init : ReadOnlyVector or None [default: None]
+    init: ReadOnlyVector | None [default: None]
         Reference vector in the Lavrentiev functional. If omitted, the
         penalty functional's reference vector is used.
-    x0 : ReadOnlyVector or None [default: None]
+    x0: ReadOnlyVector | None [default: None]
         Initial CG iterate. If omitted, ``setting.init`` is used independently
         of the functional's reference vector.
-    tol, reltolx : float or None
+    tol: float | None [default: None]
         Absolute and relative domain tolerances for the internal stopping
         rule. If both are ``None``, the same fallback as in
         :class:`TikhonovCG` is used.
-    all_tol_criteria : bool [default: True]
+    reltolx: float | None [default: 0.01]
+        Absolute and relative domain tolerances for the internal stopping
+        rule. If both are ``None``, the same fallback as in
+        :class:`TikhonovCG` is used.
+    all_tol_criteria: bool [default: True]
         Require all active tolerances instead of any one of them.
-    max_it : int [default: 1000]
+    max_it: int [default: 1000]
         Maximum number of inner CG iterations.
-    krylov_basis : array-like or None [default: None]
+    krylov_basis: list[Vector] | None [default: None]
         Optional storage for an orthonormal Krylov basis.
-    preconditioner : Operator or None [default: None]
+    preconditioner: Operator | None [default: None]
         Optional right preconditioner.
+    logging_level: int | str [default: logging.INFO]
+        Logging level for this object.
+    x_exact: ReadOnlyVector | None [default: None]
+        Input vector; its coefficients are only read.
     """
 
     def __init__(
@@ -1206,7 +1400,7 @@ class LavrentievCG(RegSolver):
             self.log.info(f'LavrentievCG: stopped at iteration 0 as residual is 0 to machine precision.')
             self.converge()
 
-    def _next(self):
+    def _next(self) -> None:
         domain = self.op.domain
 
         self.op(self.dir, out=self._A_dir)
@@ -1276,8 +1470,20 @@ class LavrentievCG(RegSolver):
             self.log.info(f'LavrentievCG: stopped at iteration {self.iteration_step_nr} as residual is 0 to machine precision.')
             self.converge()         
 
-    def get_stoprule(self, other_stoprule=None):
-        """Construct the MR-based internal stopping rule."""
+    def get_stoprule(self, other_stoprule: StopRule | None=None) -> StopRule:
+        r"""Construct the MR-based internal stopping rule.
+        
+        Parameters
+        ----------
+        other_stoprule: StopRule | None [default: None]
+            Other stoprule.
+        
+        
+        Returns
+        -------
+        StopRule
+            Result described above.
+        """
         from regpy.stoprules import AndCombineRules, CombineRules
 
         stoprule_list = []
@@ -1330,15 +1536,21 @@ class LavrentievCG(RegSolver):
         self,
         stoprule: StopRule | None = None,
         max_it: int | None = None,
-    ):
-        """Run CG with its internal rule and optional external limits.
-
+    ) -> tuple[Vector | None, Vector | None]:
+        r"""Run CG with its internal rule and optional external limits.
+        
         Parameters
         ----------
-        stoprule : StopRule or None, optional
+        stoprule: StopRule | None [default: None]
             An additional stopping rule combined with the internal rule.
-        max_it : int or None, optional
+        max_it: int | None [default: None]
             An additional maximum number of iterations for this run.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
         """
         if max_it is not None:
             iteration_limit = CountIterations(
@@ -1352,8 +1564,15 @@ class LavrentievCG(RegSolver):
         self.stoprule = self.get_stoprule(other_stoprule=stoprule)
         return super().run(stoprule=self.stoprule)
 
-    def get_convergence_histories(self):
-        """Return histories recorded by the internal stopping rules."""
+    def get_convergence_histories(self) -> dict[str, Any]:
+        r"""Return histories recorded by the internal stopping rules.
+        
+        
+        Returns
+        -------
+        dict[str, Any]
+            Result described above.
+        """
         hist = self.kappa_track.history_dict.copy()
         if hasattr(self, 'tol_stop'):
             hist.update(self.tol_stop.history_dict)
@@ -1361,7 +1580,15 @@ class LavrentievCG(RegSolver):
             hist.update(self.reltolx_stop.history_dict)
         return hist
 
-    def primal(self):
+    def primal(self) -> tuple[Vector | None, Vector | None]:
+        r"""Return the current primal iterate and operator image, when available.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
+        """
         return self.x, self.y
 
     @staticmethod
@@ -1370,9 +1597,29 @@ class LavrentievCG(RegSolver):
         op_norm: float | None = None,
         user_data: ReadOnlyVector | None = None,
         user_init: ReadOnlyVector | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> tuple[dict, dict]:
-        """Check Hilbert applicability and self-adjointness."""
+        r"""Check Hilbert applicability and self-adjointness.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        user_data: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        user_init: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         out, par = check_Hilbert_applicability_linear(
             setting,
             regularization_parameter_required=True,

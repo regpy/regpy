@@ -23,6 +23,7 @@ space equality for consistency checks. as_real_space selects real or complex
 scalars. The default is real, even for complex storage; in that case coordinates
 interleave real and imaginary parts and dimension doubles.
 """
+from __future__ import annotations
 
 import logging
 
