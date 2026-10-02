@@ -22,8 +22,18 @@ from .integral_functionals import LppPower, L1MeasureSpace, Huber
 __all__ = ["VectorIntegralFunctional", "LppL2", "L1L2", "TVUniformGridFcts"]
 
 class VectorIntegralFunctional(Functional):
-    r"""Implements a vector-valued integral functional :math:`v\mapsto \sum_i f_i(\|v(x)\|)dx` on some domain in `regpy.vecsps.MeasureSpaceFcts`
-    as a functional. Here, :math:`f_i` are scalar functions on the real line that are assumed to be even and convex, 
+    r"""Implements a discrete version of vector-valued integral functionals 
+
+    .. math::
+        v\mapsto \int_D f(|v(x)|,x)d\mu(x)
+
+    defined on vector-valued functions :math:`f:D\to \mathbb{R}^n` given by 
+
+    .. math::
+        v\mapsto \sum_i w_if_i(\|v_i\|)
+    
+    for v in  `regpy.vecsps.MeasureSpaceFcts`. 
+    Here, :math:`f_i` are scalar functions on the real line that are assumed to be even and convex, 
     and :math:`\|\cdot\|` some norm on the vector values. 
     
     The norm on the vector values can be given as a method taking the vector-valued function and the vector axis 

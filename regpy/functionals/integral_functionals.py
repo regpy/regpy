@@ -33,19 +33,19 @@ class IntegralFunctionalBase(Functional):
         F\colon X &\to \mathbb{R} \\
         v&\mapsto \int_\Omega f(v(x),x)\mathrm{d}x
     
-    with :math:`f\colon \mathbb{R}^2\to \mathbb{R})`. 
+    with :math:`f\colon \mathbb{R}^2\to \mathbb{R}`. 
     
     Subclasses defining explicit functionals of this type have to implement
      * `_f` evaluation the function :math:`f`
      * `_f_deriv` the derivative :math:`\partial_v f`
-     * `_f_second_deriv' the second derivative :math:`\partial f^2/\partial v^2` (often not needed!)
+     * `_f_second_deriv' the second derivative :math:`\partial_v^2 f` (often not needed!)
      * `_f_prox` giving the proximal function :math:`\mathrm{prox}_{\tau f(.,x)}` for each :math:`x\in\Omega`
      * `_f_conj` evaluation the Fenchel conjugate function :math:`f^*(v^*,x)`
-     * `_f_conj_deriv` the derivative :math:`\partial_{v^*}f*`
-     * `_f_conj_second_deriv' the second derivative :math:`\partial f*^2/\partial v_*^2` (often not needed!)
+     * `_f_conj_deriv` the derivative :math:`\partial_{v^*}f^*`
+     * `_f_conj_second_deriv' the second derivative :math:`\partial_{v^*}^2 f^*` (often not needed!)
      * `_f_conj_prox` giving the proximal  function :math:`\mathrm{prox}_{\tau f^*(\cdot,x)}`     
     
-    (where _f_deriv, _f_prox, _f_conj, and _f_conj_prox must be able to handle out=input) since 
+    (where `_f_deriv`, `_f_prox`, `_f_conj`, and `_f_conj_prox` must be able to handle out=input) since 
     
     .. math::
         F'[g]h = \int_\Omega h(x)(\partial_1 f)(g(x),x)
@@ -96,11 +96,11 @@ class IntegralFunctionalBase(Functional):
     lin_taylor_l: float | ReadOnlyVector | None [default: None]
         If not None, :math:`a(x)` for linear Taylor on the left hand side
     lin_taylor_u: float | ReadOnlyVector | None [default: None]
-        If not None, :math:`b(x)` for linear Taylor on the right-hand side
+        If not None, :math:`a(x)` for linear Taylor on the right-hand side
     quad_taylor_l: float | ReadOnlyVector | None [default: None]
         If not None, :math:`a(x)` for quadratic Taylor on the left hand side
     quad_taylor_u: float | ReadOnlyVector | None [default: None]
-        If not None, :math:`b(x)` for quadratic Taylor on the right-hand side
+        If not None, :math:`a(x)` for quadratic Taylor on the right-hand side
     Lipschitz: float [default: np.inf]
         Lipschitz bound for the derivative.
     convexity_param: float [default: 0.0]
@@ -130,8 +130,11 @@ class IntegralFunctionalBase(Functional):
         if not domain.shape_codomain == () or not np.issubdtype(domain.dtype, np.floating):
             raise RuntimeError(Errors.runtime_error(f'IntegralFunctionalBase only implemented for real-valued MeasureSpaceFcts. Got dtype={domain.dtype}, shape_codomain = {domain.shape_codomain}. Consider using  VectorIntegralFunctional instead.'))
         self.h_domain = L2(domain)
+        r""":math:`L^2` Hilbert space on self.domain with respect to self.measure."""
         self.measure = np.broadcast_to(domain.measure,domain.shape) if np.isscalar(domain.measure) else domain.measure
+        r"""The measure of self.domain"""
         self.domain = domain
+        r"""The vector space on which the functional is defined."""
 
         all_methods = {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'}
 
@@ -3032,7 +3035,7 @@ class KullbackLeibler(IntegralFunctionalBase):
 
     @property
     def w(self) -> np.ndarray:
-        r"""W.
+        r"""w.
         
         
         Returns
@@ -3046,7 +3049,7 @@ class KullbackLeibler(IntegralFunctionalBase):
             return self._w
     @w.setter
     def w(self, new_w: ReadOnlyVector) -> None:
-        r"""W.
+        r"""w -- first (fixed) argument of KL.
         
         Parameters
         ----------
@@ -3452,7 +3455,7 @@ class RelativeEntropy(IntegralFunctionalBase):
 
     @w.setter
     def w(self, new_w: ReadOnlyVector) -> None:
-        r"""W.
+        r"""w -- the reference value or second (fixed) argument of KL. 
         
         Parameters
         ----------
