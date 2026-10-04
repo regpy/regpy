@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Literal, overload
 
 from typing import TYPE_CHECKING
+from unittest import result
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike, DTypeLike
     from regpy.operators.base import Operator
@@ -335,20 +336,17 @@ class TupleVector:
         return deepcopy(self)
     
     def __deepcopy__(self, memo: dict[int, Any]) -> Self:
-        cls = type(self)
-        result = cls.__new__(cls)
+        result = type(self).__new__(type(self))
         memo[id(self)] = result
 
         for key, value in self.__dict__.items():
             if key.startswith("__memoized_"):
                 continue
-            if key in self._no_pickle:
-                setattr(result, key, value)
-            else:
-                setattr(result, key, deepcopy(value, memo))
+            setattr(result, key, deepcopy(value, memo))
 
         return result
-        
+
+         
     def component_wise(self, method: Callable[[Vector], Vector]) -> Self:
         r"""Component wise.
         
