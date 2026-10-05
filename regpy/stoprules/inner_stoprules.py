@@ -1,66 +1,98 @@
 """Stopping rules used inside iterative optimization methods.
 """
 
+from __future__ import annotations
+
 import logging
-from typing import Iterable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, TypeAlias, cast
 
 import numpy as np
 
 from regpy.util import Errors
-from .general import MissingValueError, StopRule, _copy_vector
+from regpy.vecsps import ReadOnlyVector, Vector
+from .general import (
+    Schedule,
+    LoggingLevel,
+    MissingValueError,
+    StopRule,
+    _copy_vector,
+)
 
-__all__ = [
-    "RelativeChangeData", "RelativeChangeSol", "LinearSequence",
-    "OptimalityCondStopping", "DualityGapStopping",
+if TYPE_CHECKING:
+    from regpy.solvers import RegSolver, Solver
+    from regpy.solvers.setting import Setting
+
+Norm: TypeAlias = Callable[[ReadOnlyVector], float]
+GapPair: TypeAlias = tuple[ReadOnlyVector | None, ReadOnlyVector | None] | None
+GapFunctional: TypeAlias = Callable[[GapPair, GapPair], float]
+_EVERY_TENTH_STEP = range(0, 10**18, 10)
+
+__all__: list[str] = [
+    "RelativeChangeData", "RelativeChangeSol",
+    "OptimalityCondStopping", "OptimalityCondStoppingNonConvex",
+    "DualityGapStopping",
 ]
 
 class RelativeChangeData(StopRule):
-    r"""Stops if the relative change in the residual becomes small
-
+    r"""Stop if the relative change in the residual becomes small.
+    
     Stops at the first iterate at which the difference between the old residual
     and the new residual is smaller than a pre-determined tol::
-
+    
         ||y_k-y_{k+1}|| < tol max(||y_k||,||y_{k+1}||)
-
+    
     Parameters
     ----------
-    norm : callable [default=None]
+    norm: Norm | None [default: None]
         The norm with respect to which the difference should be measured.
-        In the default case this is the `norm` method of some :class:`~self.solver.op.codomain`.
-    tol : float [default=0.]
-        The tol value at which the iteration should be stopped
-        norm : callable
+        By default, ``solver.op.codomain.norm`` is used after a solver is
+        attached.
+    tol: float [default: 0.0]
+        Nonnegative relative tolerance.
+    schedule: Schedule | None [default: None]
+        Iterations at which the rule is evaluated. If ``None``, it
+        is evaluated at every iteration.
     """
 
-    def __init__(self, norm=None, tol=0.):
+    def __init__(
+        self,
+        norm: Norm | None = None,
+        tol: float = 0.,
+        schedule: Schedule | None = None,
+    ) -> None:
         if not callable(norm) and not norm is None:
             raise TypeError(Errors.type_error("The norm in the relative change of data stopping needs to be a callable or None!"))
         if not isinstance(tol,(int,float)):
             raise TypeError(Errors.type_error("The tol in the relative change of data stopping should be real scalar!"))
         if tol<0:
             raise ValueError(Errors.value_error("The tol in the relative change of data stopping needs to be bigger or equal to zero!"))
-        super().__init__()
-        self.norm = norm
-        self.tol = tol
-        self.data_old = None
+        super().__init__(schedule=schedule)
+        self.norm: Norm | None = norm
+        self.tol: float = float(tol)
+        self.data_old: Vector | None = None
         self.history_dict["relative change of y"] = []
 
-    def _complete_init_with_solver(self, solver):
+    def _complete_init_with_solver(self, solver: Solver) -> None:
         if self.norm is None:
             self.norm = solver.op.codomain.norm
         super()._complete_init_with_solver(solver)   
 
-    def reset(self):
+    def reset(self) -> None:
+        r"""Reset the state for a new run.
+        """
         super().reset()
         self.data_old = None
         
-    def __repr__(self):
+    def __repr__(self) -> str:
         return 'RelativeChangeData(tol={})'.format(
             self.tol)
 
-    def _stop(self):
-        if self.solver.y is None:
+    def _stop(self) -> bool:
+        if self.solver is None or self.solver.y is None:
             raise MissingValueError
+        if self.norm is None:
+            raise MissingValueError("No norm is available for data vectors.")
         if self.data_old is None:   
             self.data_old = _copy_vector(self.solver.op.codomain, self.solver.y)
             self.log_info = 'First iteration, no change computed.'
@@ -79,49 +111,64 @@ class RelativeChangeData(StopRule):
 
 
 class RelativeChangeSol(StopRule):
-    r"""Stops if the relative change in the solution space becomes small
-
+    r"""Stop if the relative change in the solution space becomes small.
+    
     Stops at the first iterate at which the difference between the old estimate
     and the new estimate is smaller than a pre-determined tol::
-
+    
         ||x_k-x_{k+1}|| < tol max(||x_k||,||x_{k+1}||)
-
- a   Parameters
+    
+    Parameters
     ----------
-    norm : callable [default=None]
+    norm: Norm | None [default: None]
         The norm with respect to which the difference should be measured.
-        In the default case this is the `norm` method of some :class:`~self.solver.op.domain`.
-    tol : float [default=0.]
-        The tol value at which the iteration should be stopped
+        By default, ``solver.op.domain.norm`` is used after a solver is
+        attached.
+    tol: float [default: 0.0]
+        Nonnegative relative tolerance.
+    schedule: Schedule | None [default: None]
+        Iterations at which the rule is evaluated. If ``None``, it
+        is evaluated at every iteration.
     """
 
-    def __init__(self, norm=None, tol=0.):
+    def __init__(
+        self,
+        norm: Norm | None = None,
+        tol: float = 0.,
+        schedule: Schedule | None = None,
+    ) -> None:
         if not callable(norm) and not norm is None:
             raise TypeError(Errors.type_error("The norm in the relative change of solution stopping needs to be a callable!"))
         if not isinstance(tol,(int,float)):
             raise TypeError(Errors.type_error("The tol in the relative change of solution stopping should be real scalar!"))
         if tol<0:
             raise ValueError(Errors.value_error("The tol in the relative change of solution stopping needs to be larger or equal to zero!"))
-        super().__init__()
-        self.norm = norm
-        self.tol = tol
-        self.sol_old = None
+        super().__init__(schedule=schedule)
+        self.norm: Norm | None = norm
+        self.tol: float = float(tol)
+        self.sol_old: Vector | None = None
         self.history_dict["relative change of x"] = []
 
-    def _complete_init_with_solver(self, solver):
+    def _complete_init_with_solver(self, solver: Solver) -> None:
         if self.norm is None:
             self.norm = solver.op.domain.norm
         super()._complete_init_with_solver(solver)   
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return 'RelativeChangeSol(tol={})'.format(
             self.tol)
     
-    def reset(self):
+    def reset(self) -> None:
+        r"""Reset the state for a new run.
+        """
         super().reset()
         self.sol_old = None
 
-    def _stop(self,):
+    def _stop(self) -> bool:
+        if self.solver is None or self.solver.x is None:
+            raise MissingValueError
+        if self.norm is None:
+            raise MissingValueError("No norm is available for domain vectors.")
         if self.sol_old is None:   
             self.sol_old = _copy_vector(self.solver.op.domain, self.solver.x)
             self.log_info = 'First iteration, no change computed.'
@@ -140,62 +187,54 @@ class RelativeChangeSol(StopRule):
 
 ######### stopping rules for convex optimization problems #########
 
-class LinearSequence:
-    r"""Iterator generating a linear sequence (c,c+a,c+2a,c+3a, ....)
+class OptimalityCondStopping(StopRule):
+    r"""Stopping rule based on optimality condition violation.
     
     Parameters
     ----------
-    a: int, optional
-        difference between neighboring sequence elements. Defaults to 1 
-    start: int, optional
-        first element of the sequence. Defaults to 0
-    """    
-    def __init__(self, a:int=1,start:int=0):
-        self.a=a, self.x= start
-
-    def __iter__(self):
-        return self
-
-    def __next__(self)->int:
-        result = self.x
-        self.x += self.a
-        return result
-
-class OptimalityCondStopping(StopRule):
-    r"""Stopping rule based on optimality condition violation.
-        
-        Parameters
-        ----------
-        tol : float [default=0.]
-            The tolerance for the duality gap.
-        logging_level : str
-            The logging level for the stoprule.
+    tol: float [default: 0.0]
+        Tolerance for the sum of the two optimality-condition residuals.
+    logging_level: LoggingLevel [default: 'INFO']
+        Logging level.
+    schedule: Schedule [default: _EVERY_TENTH_STEP]
+        Iterations at which the condition is evaluated. By default it is
+        evaluated at iterations ``0, 10, 20, ...``. Pass ``None`` to
+        evaluate it at every iteration.
     """
-    def __init__(self, 
-                 tol = 0., 
-                 steps: int | Iterable[int]=1,
-                 logging_level = "INFO"):   
-        super().__init__()
-        self.tol = tol
-        self.log.setLevel(logging_level)
+    def __init__(
+        self,
+        tol: float = 0.,
+        logging_level: LoggingLevel = "INFO",
+        schedule: Schedule = _EVERY_TENTH_STEP,
+    ) -> None:
+        super().__init__(
+            logging_level=logging_level,
+            schedule=schedule,
+        )
+        self.tol: float = float(tol)
         self.history_dict["dSstar"] = []
         self.history_dict["dR"] = []
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return 'OptimalityCondStopping(tol={})'.format(
             self.tol)
 
-    def _complete_init_with_solver(self, solver):
-        if not solver.setting.is_tikhonov and  solver.setting.is_convex:
+    def _complete_init_with_solver(self, solver: Solver) -> None:
+        reg_solver = cast("RegSolver", solver)
+        if not (reg_solver.setting.is_tikhonov
+                and reg_solver.setting.is_convex):
             raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting. The setting needs to be convex and contain a regularization parameter!"))
         super()._complete_init_with_solver(solver)
 
-    def _stop(self):
-        primal = self.solver.primal() if hasattr(self.solver,"primal") and callable(self.solver.primal) else None
-        dual = self.solver.dual() if hasattr(self.solver,"dual") and callable(self.solver.dual) else None
+    def _stop(self) -> bool:
+        if self.solver is None:
+            raise MissingValueError("No solver is attached to this rule.")
+        solver = cast("RegSolver", self.solver)
+        primal = solver.primal() if hasattr(solver,"primal") and callable(solver.primal) else None
+        dual = solver.dual() if hasattr(solver,"dual") and callable(solver.dual) else None
         if primal is None and dual is None:
             raise RuntimeError(Errors.generic_message("The solver needs to provide at least one of the methods 'primal' or 'dual'."))
-        dSstar,dR = self.solver.setting.violation_optimality_cond(primal, dual)
+        dSstar,dR = solver.setting.violation_optimality_cond(primal, dual)
         self.history_dict["dSstar"].append(dSstar)
         self.history_dict["dR"].append(dR)
         triggered = (dSstar+dR<=self.tol)
@@ -203,46 +242,233 @@ class OptimalityCondStopping(StopRule):
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)    
         return triggered 
+
+class OptimalityCondStoppingNonConvex(StopRule):
+    r"""Stop when the nonconvex first-order optimality violation is small.
+    
+    This rule evaluates :meth:`Setting.violation_optimality_cond` at the
+    solver's current primal iterate and stops when the returned violation is
+    at most ``tol``. The solver must provide a callable ``primal`` method.
+    
+    If the solver has an attribute ``deriv``, it is passed to the setting to
+    avoid computing the derivative again. Such an attribute is expected to
+    contain the derivative of the forward operator at the *current* iterate;
+    a stale derivative makes the stopping criterion invalid.
+    
+    Parameters
+    ----------
+    tol: float [default: 0.0]
+        Tolerance for the optimality-condition violation.
+    logging_level: LoggingLevel [default: 'INFO']
+        Logging level.
+    schedule: Schedule [default: _EVERY_TENTH_STEP]
+        Iterations at which the condition is evaluated. By default it is
+        evaluated at iterations ``0, 10, 20, ...``. Pass ``None`` to evaluate
+        it at every iteration.
+    """
+
+    def __init__(self, tol: float = 0.,
+                 logging_level: LoggingLevel = "INFO",
+                 schedule: Schedule = _EVERY_TENTH_STEP) -> None:
+        super().__init__(logging_level=logging_level, schedule=schedule)
+        self.tol: float = float(tol)
+        self.history_dict["optimality condition violation"] = []
+
+    def __repr__(self) -> str:
+        return 'OptimalityCondStoppingNonConvex(tol={})'.format(self.tol)
+
+    def _complete_init_with_solver(self, solver: Solver) -> None:
+        reg_solver = cast("RegSolver", solver)
+        if not (reg_solver.setting.is_tikhonov
+                and not reg_solver.setting.is_convex):
+            raise RuntimeError(Errors.generic_message(
+                "This stopping rule requires a nonconvex setting with a "
+                "regularization parameter."
+            ))
+        if not (hasattr(reg_solver, "primal")
+                and callable(reg_solver.primal)):
+            raise RuntimeError(Errors.generic_message(
+                "The solver needs to provide the method 'primal'."
+            ))
+        super()._complete_init_with_solver(solver)
+
+    def _stop(self) -> bool:
+        if self.solver is None:
+            raise MissingValueError("No solver is attached to this rule.")
+        solver = cast("RegSolver", self.solver)
+        primal = solver.primal()
+        if primal is None:
+            raise RuntimeError(Errors.generic_message(
+                "The solver's 'primal' method must return the current iterate."
+            ))
+        deriv = solver.deriv if hasattr(solver, "deriv") else None
+        violation = solver.setting.violation_optimality_cond(
+            primal, deriv=deriv
+        )
+        self.history_dict["optimality condition violation"].append(violation)
+        triggered = violation <= self.tol
+        self.log_info = '{:.2e} <= {:.1e}'.format(violation, self.tol)
+        if self.is_main_rule:
+            self.log.log(logging.INFO if triggered else logging.DEBUG,
+                         self.log_info)
+        return triggered
     
 class DualityGapStopping(StopRule):
     r"""Stopping rule based on duality gap.
-
+    
     Parameters
     ----------
-    tol : float [default=0.]
+    tol: float [default: 0.0]
         The tolerance for the duality gap.
-    logging_level : str
-        The logging level for the stoprule.
-    """    
-    def __init__(self, tol = 0, stop_at_infty = True, logging_level = "INFO"):
-        super().__init__()
-        self.tol = tol
-        self.log.setLevel(logging_level)
+    reltol: float [default: 0.1]
+        relative tolerance
+    rpow: int [default: 2]
+        Rpow.
+    stop_at_infty: bool [default: True]
+        Whether an infinite duality gap triggers the rule.
+    logging_level: LoggingLevel [default: 'INFO']
+        Logging level.
+    schedule: Schedule [default: _EVERY_TENTH_STEP]
+        Iterations at which the duality gap is evaluated. By default it is
+        evaluated at iterations ``0, 10, 20, ...``. Pass ``None`` to evaluate
+        it at every iteration. After the solver marks itself converged, its
+        final iterate is checked regardless of this schedule. Repeated checks
+        of that converged iterate reuse the recorded result.
+    additional_gap_functions: list[GapFunctional] | None [default: None]
+        Extra functionals called as ``gap(primal, dual)`` using the same
+        arguments as the setting's duality gap. Each argument is a pair of
+        vectors (entries may be None), or None if unavailable. These values
+        are monitored only and do not affect stopping. They are evaluated
+        on the same schedule, including the final converged iterate.
+        Histories are stored under ``additional_gap_keys``, in list order;
+        keys include a one-based index and the callable name when available.
+    """
+    def __init__(
+        self,
+        tol: float = 0.,
+        reltol: float = 1e-1,
+        rpow: int = 2,
+        stop_at_infty: bool = True,
+        logging_level: LoggingLevel = "INFO",
+        schedule: Schedule = _EVERY_TENTH_STEP,
+        additional_gap_functions: list[GapFunctional] | None = None,
+    ) -> None:
+        super().__init__(
+            logging_level=logging_level,
+            schedule=schedule,
+        )
+        if additional_gap_functions is not None and (
+            not isinstance(additional_gap_functions, list)
+            or not all(callable(gap) for gap in additional_gap_functions)
+        ):
+            raise TypeError("additional_gap_functions must be a list of callables or None.")
+        self.additional_gap_functions = tuple(additional_gap_functions or ())
+        self.additional_gap_keys = tuple(
+            f"additional duality gap {index}: {getattr(gap, '__name__', type(gap).__name__)}"
+            for index, gap in enumerate(self.additional_gap_functions, start=1)
+        )
+        for key in self.additional_gap_keys:
+            self.history_dict[key] = []
+        self.tol: float = float(tol)
+        if (reltol>=1):
+            raise ValueError('Relative tolerance must be smaller than 1.', reltol)
+        self.reltol: float = float(reltol)
+ 
+        self.rpow = rpow
         self.history_dict["duality gap"] = []
-        self.stop_at_infty = stop_at_infty
+        self.stop_at_infty: bool = stop_at_infty
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return 'DualityGapStopping(tol={})'.format(
             self.tol)
     
-    def _complete_init_with_solver(self, solver):
-        if not solver.setting.is_tikhonov and  solver.setting.is_convex:
+    def _complete_init_with_solver(self, solver: Solver) -> None:
+        reg_solver = cast("RegSolver", solver)
+        if not (reg_solver.setting.is_tikhonov
+                and reg_solver.setting.is_convex):
             raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting. The setting needs to be convex and contain a regularization parameter!"))
-        solver.setting.duality_gap_warning_incr = 1.
+        reg_solver.setting.duality_gap_warning_incr = 1.
         super()._complete_init_with_solver(solver)
+        if self.reltol>0:
+            pen = reg_solver.setting.penalty
+            refsol = pen.reference_vector()
+            dist = pen.dist_subdiff(pen.domain.zeros(),refsol)
+            if dist>0:
+                self.log.warning(f"penalty reference vector is no minimizer. {dist}" 
+                                 "Assuming 0 as infimum in duality gap relative error estimate.")
+                self.minpen  = 0.
+            else:
+                self.minpen = pen(refsol)
 
-    def _stop(self):
-        primal = self.solver.primal() if hasattr(self.solver,"primal") and callable(self.solver.primal) else None
-        dual = self.solver.dual() if hasattr(self.solver,"dual") and callable(self.solver.dual) else None
+    def stop(self) -> bool:
+        r"""Always record the converged solver's final gap, even off schedule.
+        
+        The solver's converge() flag is not a certificate that the gap is
+        below tolerance: the final value is evaluated and recorded normally.
+        The configured schedule is restored afterwards, including on errors.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        if self.solver is None or not self.solver.is_converged():
+            return super().stop()
+        step = getattr(self.solver, 'iteration_step_nr', None)
+        recorded = self.history_step_dict.get('duality gap', ())
+        if step is not None and recorded and recorded[-1] == step:
+            return self._last_result
+        schedule = self.schedule
+        try:
+            self.schedule = None
+            return super().stop()
+        finally:
+            self.schedule = schedule
+
+    def _stop(self) -> bool:
+        if self.solver is None:
+            raise MissingValueError("No solver is attached to this rule.")
+        solver = cast("RegSolver", self.solver)
+        primal = solver.primal() if hasattr(solver,"primal") and callable(solver.primal) else None
+        dual = solver.dual() if hasattr(solver,"dual") and callable(solver.dual) else None
         if primal is None and dual is None:
             raise RuntimeError(Errors.generic_message("The solver needs to provide at least one of the methods 'primal' or 'dual'."))        
-        gap = self.solver.setting.duality_gap(primal = primal, dual = dual)
+        gap = solver.setting.duality_gap(primal = primal, dual = dual)
+        # Evaluate before appending so a failing monitor cannot leave partial
+        # gap histories or make the final-iterate cache skip a retry.
+        additional_gaps = [
+            float(functional(primal, dual))
+            for functional in self.additional_gap_functions
+        ]
         self.history_dict["duality gap"].append(gap)
-        triggered = (gap<=self.tol) or (gap == np.nan) or (gap == np.inf and self.stop_at_infty)
-        if gap==np.nan:
+        for key, value in zip(self.additional_gap_keys, additional_gaps):
+            self.history_dict[key].append(value)
+        if self.reltol>0:
+            prim = primal[0] if isinstance(primal,tuple) else primal
+            if prim is None:
+                raise RuntimeError(Errors.runtime_error('primal does not provide a domain solution.',primal))
+            pen_val = solver.setting.penalty(prim)
+            rel_bound = (self.reltol/(1.-self.reltol))**self.rpow * (pen_val - self.minpen)
+        triggered = (
+            gap <= self.tol
+            or (self.reltol > 0 and gap <= rel_bound)
+            or np.isnan(gap)
+            or (np.isinf(gap) and self.stop_at_infty)
+        )
+        if np.isnan(gap):
             self.log_info = 'duality gap is NaN'
         else:
-            self.log_info ='duality gap:{:.2e} <= {:.1e}'.format(gap,self.tol)
+            self.log_info ='duality gap:{:.2e} <= {:.1e}'.format(gap, 
+                                                    rel_bound if self.reltol>0 else self.tol)
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)    
         return triggered
+
+from .general import _capped_factory
+RelativeChangeData_factory = _capped_factory(RelativeChangeData)
+RelativeChangeSol_factory = _capped_factory(RelativeChangeSol)
+OptimalityCondStopping_factory = _capped_factory(OptimalityCondStopping)
+OptimalityCondStoppingNonConvex_factory = _capped_factory(OptimalityCondStoppingNonConvex)
+DualityGapStopping_factory = _capped_factory(DualityGapStopping)
+__all__ += ['RelativeChangeData_factory', 'RelativeChangeSol_factory', 'OptimalityCondStopping_factory', 'OptimalityCondStoppingNonConvex_factory', 'DualityGapStopping_factory']

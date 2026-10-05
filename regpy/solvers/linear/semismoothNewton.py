@@ -1,3 +1,10 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any, Iterable
+    from regpy.vecsps.base import ReadOnlyVector
+    from regpy.operators.base import ObsDataT, Operator
 from math import sqrt,inf
 import numpy as np
 
@@ -8,41 +15,47 @@ from regpy.functionals.base import Functional, HorizontalShiftDilation, Conj, Li
 from regpy.functionals.integral_functionals import QuadraticBilateralConstraints,QuadraticLowerBound, QuadraticNonneg, Huber,LppPower
 from regpy.stoprules import CountIterations
 
-from ..general import RegSolver, Setting
+from ..solver import RegSolver
+from ..setting import Setting
 from .tikhonov import TikhonovCG
 __all__ = ["SemismoothNewton_bilateral","SemismoothNewton_nonneg","SemismoothNewtonAlphaGrid"]
 
 class SemismoothNewton_bilateral(RegSolver):
     r"""Semi-smooth Newton method for minimizing quadratic Tikhonov functionals
-
+    
     .. math::
         \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2 
-
+    
     subject to bilateral constraints :math:`psi_{minus} \leq x \leq psi_{plus}`
-
+    
     
     Parameters
     ----------
-    *args : [regpy.solvers.Setting,array-like,float] or [regpy.solver.Setting]
-        Either 3 positional arguments [setting : `regpy.solvers.Setting`, data : `array-like`,
+    cg_pars: dict[str, Any] | None [default: None]
+        Parameters of CG method for minimizing Tikhonov functional on inactive set in each SS Newton step.
+    logging_level: int | str [default: 'INFO']
+        default: logging:INFO
+    cg_logging_level: int | str [default: 'INFO']
+        default: logging.INFO
+    x0: ReadOnlyVector | None [default: None]
+        Zeroth iterate. If None, x0=xref
+    *args: Any
+        Either 3 positional arguments [setting : `regpy.solvers.Setting`, data : `Vector`,
         regpar : `float`] consisting og the regularization setting, data and a positive float for the 
         regularization parameter or 1 positional argument [setting : regpy.solver.Setting] which 
         already binds the former arguments together.
-    xref: array-like, default: None
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
+    
+    Other Parameters
+    ----------------
+    xref: Vector, default: None
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
-    x0: array-like, default: None
-        Zeroth iterate. If None, x0=xref
-    psi_plus: array-like, default: None
+    psi_plus: Vector, default: None
         The upper bound. In the default case it is +inf
-    psi_minus: array-like, default: None
+    psi_minus: Vector, default: None
         The lower bound. In the default case it is -inf
-    cg_pars: dictionary, default: None
-        Parameters of CG method for minimizing Tikhonov functional on inactive set in each SS Newton step.
-    logging_level: Loglevel
-        default: logging:INFO
-    cg_logging_level: Loglevel
-        default: logging.INFO
-
+    
     Notes
     -----
     In this case 
@@ -54,14 +67,13 @@ class SemismoothNewton_bilateral(RegSolver):
      * setting.data_fid has to be a shifted quadratic functional, and data is extracted from the shift.
      * regpar is setting.regpar
     
-    Keyword arguments x0, cg_pars, logging_level, and cg_logging_level are as for the case of 3 positional arguments. 
-
+    Keyword arguments x0, cg_pars, logging_level, and cg_logging_level are as for the case of 3 positional arguments.
     """
 
-    def __init__(self, *args,
-                 cg_pars = None, logging_level = "INFO", cg_logging_level = "INFO",x0=None,
-                 **kwargs
-                 ):
+    def __init__(self, *args: Any,
+                 cg_pars: dict[str, Any] | None = None, logging_level: int | str = "INFO", cg_logging_level: int | str = "INFO",x0: ReadOnlyVector | None=None,
+                 **kwargs: Any
+                 ) -> None:
         if len(args)==3:
             setting, data, regpar = args
             if setting.is_tikhonov:
@@ -135,6 +147,7 @@ class SemismoothNewton_bilateral(RegSolver):
             raise ValueError(Errors.value_error("The upper bound is less or equal the lower bound in SemismoothNewton_bilateral. Given: "+"\n\t "+f"psi_minus = {self.psi_minus} "+"\t\n "+f"psi_plus = {self.psi_plus}"))
 
         self.log.setLevel(logging_level)
+        self.log.warning('SemismoothNewton_bilateral is deprecated and no longer maintained. Use SemiSmoothNewton instaad!')
         self.cg_logging_level = cg_logging_level
 
         self.b=self.h_domain.gram_inv(self.op.adjoint(self.h_codomain.gram(self.data)))
@@ -146,9 +159,8 @@ class SemismoothNewton_bilateral(RegSolver):
         self.lam_minus = self.op.domain.zeros()
 
         tikhcg=TikhonovCG(
-                setting=Setting(self.op, self.h_domain, self.h_codomain),
+                setting=Setting(self.op, self.h_domain, self.h_codomain,regpar=self.regpar),
                 data=self.data, 
-                regpar=self.regpar,
                 xref=self.xref,
                 x0 = self.x,
                 logging_level=self.cg_logging_level,
@@ -167,8 +179,9 @@ class SemismoothNewton_bilateral(RegSolver):
         )
 
 
-    def _next(self):
-        """compute active and inactive sets, need to be computed in each step again"""
+    def _next(self) -> None:
+        r"""compute active and inactive sets, need to be computed in each step again
+        """
         self.active_plus_old=self.active_plus
         self.active_minus_old=self.active_minus
         self.active  = self.active_plus | self.active_minus
@@ -190,9 +203,8 @@ class SemismoothNewton_bilateral(RegSolver):
             self.log.info('all indices active!')
         else:
             tikhcg = TikhonovCG(
-                setting=Setting(self.op * projection, self.h_domain, self.h_codomain),
+                setting=Setting(self.op * projection, self.h_domain, self.h_codomain,regpar=self.regpar),
                 data=self.data-self.op(self.x-projection(self.x)), 
-                regpar=self.regpar,
                 xref=projection(self.xref),
                 x0 = projection(self.x),
                 logging_level=self.cg_logging_level,
@@ -223,9 +235,28 @@ class SemismoothNewton_bilateral(RegSolver):
             self.converge()
 
     @staticmethod
-    def check_applicability(setting,op_norm=None):
+    def check_applicability(setting: Setting,op_norm: float | None=None) -> tuple[dict[str, Any], dict[str, Any]]:
+        r"""Check the requirements of this solver for the supplied setting.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        
+        
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any]]
+            Result described above.
+        """
         out = {'info':''}
-        if not isQuadratic(setting.data_fid):
+        if setting.codomain_free:
+            out['info'] += (
+                'SemismoothNewton_bilateral requires codomain vectors. '
+            )
+        elif not isQuadratic(setting.data_fid):
             out['info'] += 'Data functional not quadratic. '
         if not isQuadratic(setting.penalty):
             out['info'] += 'Penalty term not quadratic. '
@@ -233,8 +264,20 @@ class SemismoothNewton_bilateral(RegSolver):
         out['rate'] = np.nan
         return out, None
 
-def isQuadratic(func):
-    r"""checks if a functional is quadratic."""
+def isQuadratic(func: Functional) -> bool:
+    r"""checks if a functional is quadratic.
+    
+    Parameters
+    ----------
+    func: Functional
+        Functional to evaluate or transform.
+    
+    
+    Returns
+    -------
+    bool
+        Whether the stated condition is satisfied.
+    """
     if isinstance(func,(QuadraticBilateralConstraints,QuadraticNonneg)):
         return True
     elif isinstance(func,LppPower):
@@ -251,7 +294,20 @@ def isQuadratic(func):
     else:
         return False
 
-def isQuadraticConj(func):
+def isQuadraticConj(func: Functional) -> bool:
+    r"""Isquadraticconj.
+    
+    Parameters
+    ----------
+    func: Functional
+        Functional to evaluate or transform.
+    
+    
+    Returns
+    -------
+    bool
+        Whether the stated condition is satisfied.
+    """
     if isinstance(func, Huber):
         return True
     elif isinstance(func,LppPower):
@@ -268,20 +324,25 @@ def isQuadraticConj(func):
 
  
 
-def getPenaltyParamsFromFunctional(R,gram=None):
-    r"""
-    Extract the parameters :math:`u_b`, :math:`l_b`, :math:`x_0`, :math:`\alpha` from a functional 
-
+def getPenaltyParamsFromFunctional(R: Functional,gram: Operator | None=None) -> tuple[ReadOnlyVector | float, ReadOnlyVector | float, ReadOnlyVector, float]:
+    r"""Extract the parameters :math:`u_b`, :math:`l_b`, :math:`x_0`, :math:`\alpha` from a functional 
+    
     .. math::
         R(x) &= \frac{\alpha}{2} \|x-x_0\|^2 +c   if l_b\leq x\leq u_b\\
         R(x) &= \infty else
-
+    
     Parameters
     ----------
-    R: regpy.functional.Functional
-       The functional to be analyzed.
-    gram: regpy.operator.Operator [default: None]
-       Gram matrix of the dual Hilbert space. Only used if R is a conjugate functional       
+    R: Functional
+        The functional to be analyzed.
+    gram: Operator | None [default: None]
+        Gram matrix of the dual Hilbert space. Only used if R is a conjugate functional
+    
+    
+    Returns
+    -------
+    tuple[ReadOnlyVector | float, ReadOnlyVector | float, ReadOnlyVector, float]
+        Result described above.
     """
     if not isinstance(R,Functional):
         raise TypeError(Errors.not_instance(R,Functional,add_info="Construction the parameters of upper and lower bound, x_0 and alpha from the regularization functional is only defined for a Functional!"))
@@ -302,21 +363,26 @@ def getPenaltyParamsFromFunctional(R,gram=None):
     else:
         raise TypeError(Errors.type_error('Unknown or inappropriate type of functional. Cannot construct the parameters of upper and lower bound, x_0 and alpha from the regularization functional.'))
     
-def getPenaltyParamsFromConjFunctional(Rs,gram):
-    r"""
-    Extract the parameters :math:`u_b`, :math:`l_b`, :math:`x_0`, :math:`\alpha` from a functional 
-
+def getPenaltyParamsFromConjFunctional(Rs: Functional,gram: Operator) -> tuple[ReadOnlyVector | float, ReadOnlyVector | float, ReadOnlyVector, float]:
+    r"""Extract the parameters :math:`u_b`, :math:`l_b`, :math:`x_0`, :math:`\alpha` from a functional 
+    
     .. math::
         R^*(x) &= \frac{\alpha}{2} \|x-x_0\|^2 +c   if lb\leq x\leq ub \\
         R^*(x) &= \infty else
-
-
+    
+    
     Parameters
     ----------
-    Rs: regpy.functional.Functional
-       The functional to be analyzed.
-    gram: regpy.operator.Operator [default: None]
-       Gram matrix of the Hilbert space on which Rs is defined 
+    Rs: Functional
+        The functional to be analyzed.
+    gram: Operator
+        Gram matrix of the Hilbert space on which Rs is defined
+    
+    
+    Returns
+    -------
+    tuple[ReadOnlyVector | float, ReadOnlyVector | float, ReadOnlyVector, float]
+        Result described above.
     """
     if not isinstance(Rs,Functional):
         raise TypeError(Errors.not_instance(Rs,Functional,add_info="Construction the parameters of upper and lower bound, x_0 and alpha from the conjugate regularization functional is only defined for a Functional!"))
@@ -345,37 +411,37 @@ class SemismoothNewton_nonneg(RegSolver):
     .. math::
         \Vert T x - data\Vert^2 + regpar * \Vert x - xref\Vert^2 \\
         subject to x>=0
-
-
+    
+    
     Compared to SemismoothNewton_bilateral, less storage is needed, and an a-posteriori stoprule 
     can be used. By a change of variables, arbitrary lower bounds x\geq \psi may be used.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem.
-    data : array-like, default None
+    data: ReadOnlyVector | ObsDataT | None [default: None]
         The measured data. If it is None it is taken from the setting.
-    regpar : float, default None
+    regpar: float | None [default: None]
         The regularization parameter. Must be positive. If it is None it is taken from the setting.
-    xref: array-like, default: None
+    xref: ReadOnlyVector | None [default: None]
         Reference value in the Tikhonov functional. The default is equivalent to xref = setting.op.domain.zeros().
-    x0: array-like, default: None
+    x0: ReadOnlyVector | None [default: None]
         First iterate. If None, then x0=xref
-    lambda0: array-like, default: None
+    lambda0: ReadOnlyVector | None [default: None]
         Initial guess for Lagrange parameter
-    cg_pars: dictionary, default: None
+    cg_pars: dict[str, Any] | None [default: None]
         Parameters of CG method for minimizing Tikhonov functional on inactive set in each SS Newton step.
-    TOL: float, default: 0
+    TOL: float [default: 0.0]
         Tolerance for absolute error in standard l^2-norm for a-posteriori duality gap error estimate given by 
          :math:`\|x-xtrue\|_2^2 \leq \|[T^*p-xref]_+-x\|^2 - 2 <[T^*p-xref]_-,x> \leq TOL^2`  where :math:`p =-(Tx-data)/regpar`
-    logging_level: default: logging:INFO
-
-    cg_logging_level: default: logging.INFO
-
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
+    cg_logging_level: int | str [default: 'INFO']
+        Cg logging level.
     """
-    def __init__(self,setting, data=None, regpar=None, xref = None,  x0=None, lambda0=None, cg_pars = None, TOL = 0.,
-                 logging_level = "INFO", cg_logging_level = "INFO"):
+    def __init__(self,setting: Setting, data: ReadOnlyVector | ObsDataT | None=None, regpar: float | None=None, xref: ReadOnlyVector | None = None,  x0: ReadOnlyVector | None=None, lambda0: ReadOnlyVector | None=None, cg_pars: dict[str, Any] | None = None, TOL: float = 0.,
+                 logging_level: int | str = "INFO", cg_logging_level: int | str = "INFO") -> None:
         super().__init__(setting)
         if data is None:
             if(setting.data is not None):
@@ -420,6 +486,8 @@ class SemismoothNewton_nonneg(RegSolver):
         self.TOL = TOL
         """Absolute tolerance."""
         self.log.setLevel(logging_level)
+        self.log.warning('SemismoothNewton_nonneg is deprecated and no longer maintained. Use SemiSmoothNewton instaad!')
+      
         self.cg_logging_level = cg_logging_level
 
         """Prepare first iteration step"""
@@ -430,9 +498,8 @@ class SemismoothNewton_nonneg(RegSolver):
 
         self.lam = lambda0 if lambda0 is not None else self.op.domain.zeros()
         tikhcg=TikhonovCG(
-                setting=Setting(self.op, self.h_domain, self.h_codomain),
+                setting=Setting(self.op, self.h_domain, self.h_codomain,regpar=self.regpar),
                 data=self.data, 
-                regpar=self.regpar,
                 xref=self.xref,
                 x0 = self.xref,
                 logging_level=self.cg_logging_level,
@@ -449,9 +516,28 @@ class SemismoothNewton_nonneg(RegSolver):
         )
 
     @staticmethod
-    def check_applicability(setting,op_norm=None):
+    def check_applicability(setting: Setting,op_norm: float | None=None) -> tuple[dict[str, Any], dict[str, Any]]:
+        r"""Check the requirements of this solver for the supplied setting.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        
+        
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any]]
+            Result described above.
+        """
         out = {'info':''}   
-        if not setting.data_fid.is_quadratic:
+        if setting.codomain_free:
+            out['info'] += (
+                'SemismoothNewton_nonneg requires codomain vectors. '
+            )
+        elif not setting.data_fid.is_quadratic:
             out['info'] += 'Data functional not quadratic. '
         if not setting.penalty.is_quadratic:
             out['info'] += 'Penalty term not quadratic. '
@@ -459,9 +545,10 @@ class SemismoothNewton_nonneg(RegSolver):
         out['rate'] = np.nan
         return out, None
 
-    def _next(self):
+    def _next(self) -> None:
 
-        """compute active and inactive sets, need to be computed in each step again"""
+        r"""compute active and inactive sets, need to be computed in each step again
+        """
         self.active_old=self.active
         self.inactive= self.op.domain.logical_not(self.active)
 
@@ -477,9 +564,8 @@ class SemismoothNewton_nonneg(RegSolver):
             self.log.debug('all indices active!')
         else:
             tikhcg=TikhonovCG(
-                setting=Setting(self.op * projection, self.h_domain, self.h_codomain),
+                setting=Setting(self.op * projection, self.h_domain, self.h_codomain, regpar=self.regpar),
                 data=self.data-self.op(self.x-projection(self.x)), 
-                regpar=self.regpar,
                 xref=self.xref,
                 x0 = projection(self.x),
                 logging_level=self.cg_logging_level,
@@ -515,27 +601,31 @@ class SemismoothNewton_nonneg(RegSolver):
 
 class SemismoothNewtonAlphaGrid(RegSolver):
     r"""Class running Tikhonov regularization with bound constraints on a grid of different regularization parameters.
-
+    
     Parameters
     ----------
-    setting:  regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem.
-    alphas: Either an iterable giving the grid of alphas or a tuple (alpha0,q)
+    alphas: Iterable[float]
         In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
-    data: array-like, default None
+    data: ReadOnlyVector | ObsDataT | None [default: None]
         The right-hand side. If it is None the data is taken from setting.
-    xref: array-like, default None
+    xref: ReadOnlyVector | None [default: None]
         initial guess in Tikhonov functional. Default corresponds to zeros()
-    max_Newton_iter: int, default: 50
+    max_Newton_iter: int [default: 50]
         maximum number of Newton iterations
-    tol_fac: float, default: 0.33
+    delta: float | None [default: None]
+        Delta.
+    tol_fac: float [default: 0.33]
         absolute tolerance for termination of SSNewton by a-posteriori error estimation is tol_fac/sqrt(alpha)
-    tol_fac_cg: float, default: 1e-6
+    tol_fac_cg: float [default: 1e-06]
         absolute tolerance for inner cg iteration is tol_fac_cg/sqrt(alpha)
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
     """
-    def __init__(self,setting,alphas, data=None, xref=None,max_Newton_iter=50,
-                 delta=None, tol_fac = 0.33, tol_fac_cg = 1e-6, logging_level= "INFO"):
-        from regpy.solvers.nonlinear.gen_tikhonov import GeometricSequence
+    def __init__(self,setting: Setting,alphas: Iterable[float], data: ReadOnlyVector | ObsDataT | None=None, xref: ReadOnlyVector | None=None,max_Newton_iter: int=50,
+                 delta: float | None=None, tol_fac: float = 0.33, tol_fac_cg: float = 1e-6, logging_level: int | str= "INFO") -> None:
+        from ..sequences import Naturals
         super().__init__(setting)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="SemismoothNewtonAlphaGrid in as a linear solver requires the operator to be linear!"))
@@ -551,7 +641,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
         if xref is not None and xref not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(xref,self.op.domain,vec_name="reference",space_name="domain"))
         if isinstance(alphas,tuple) and len(alphas)==2:
-            self._alphas = GeometricSequence(alphas[0],alphas[1])
+            self._alphas = (alphas[0] * (alphas[1]) ** Naturals())
         else:
             self._alphas = iter(alphas)
         self.data = data
@@ -573,7 +663,7 @@ class SemismoothNewtonAlphaGrid(RegSolver):
         self.logging_level = logging_level
         """logging level for CG iteration."""
 
-    def _next(self):
+    def _next(self) -> None:
         try:
             if hasattr(self,'alpha'):
                 self.alpha_old = self.alpha

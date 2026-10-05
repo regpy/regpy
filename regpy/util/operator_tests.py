@@ -1,19 +1,60 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Callable, Iterable
+    from numpy.typing import ArrayLike
+    from regpy.vecsps.base import ReadOnlyVector, Scalar, Vector, VectorSpaceBase
+    from regpy.operators.base import Operator
+    import logging
 from random import uniform
 
 
-def _copy_vector(space, value):
-    """Create an independent copy using the vector-space copy protocol."""
+def _copy_vector(space: VectorSpaceBase, 
+                 value: Scalar | ArrayLike
+                 ) -> Vector:
+    r"""Create an independent copy using the vector-space copy protocol.
+    
+    Parameters
+    ----------
+    space: VectorSpaceBase
+        Space.
+    value: Scalar | ArrayLike
+        Value.
+    
+    
+    Returns
+    -------
+    Vector
+        Writable result vector.
+    """
     result = space.empty()
     space.copyto(result, value)
     return result
 
 
-def _comparison_bound(space, reference, tolerance):
-    """Scale an absolute tolerance by the norm of the reference vector."""
+def _comparison_bound(space: VectorSpaceBase, reference: ReadOnlyVector, tolerance: float) -> float:
+    r"""Scale an absolute tolerance by the norm of the reference vector.
+    
+    Parameters
+    ----------
+    space: VectorSpaceBase
+        Space.
+    reference: ReadOnlyVector
+        Input vector; its coefficients are only read.
+    tolerance: float
+        Tolerance used in the consistency check.
+    
+    
+    Returns
+    -------
+    float
+        Computed scalar value.
+    """
     return tolerance * max(1., space.norm(reference))
 
 
-def _compare_vectors(space, actual, reference, tolerance, log, label):
+def _compare_vectors(space: VectorSpaceBase, actual: ReadOnlyVector, reference: ReadOnlyVector, tolerance: float, log: logging.Logger, label: str) -> bool:
     err = space.norm(actual-reference)
     bound = _comparison_bound(space, reference, tolerance)
     if err <= bound:
@@ -25,7 +66,7 @@ def _compare_vectors(space, actual, reference, tolerance, log, label):
     return False
 
 
-def _input_unchanged(space, current, reference, tolerance, log, label):
+def _input_unchanged(space: VectorSpaceBase, current: ReadOnlyVector, reference: ReadOnlyVector, tolerance: float, log: logging.Logger, label: str) -> bool:
     err = space.norm(current-reference)
     bound = _comparison_bound(space, reference, tolerance)
     if err <= bound:
@@ -37,8 +78,22 @@ def _input_unchanged(space, current, reference, tolerance, log, label):
     return False
 
 
-def _spaces_compatible(space1, space2):
-    """Return whether one vector can be used as input and output."""
+def _spaces_compatible(space1: VectorSpaceBase, space2: VectorSpaceBase) -> bool:
+    r"""Return whether one vector can be used as input and output.
+    
+    Parameters
+    ----------
+    space1: VectorSpaceBase
+        Space1.
+    space2: VectorSpaceBase
+        Space2.
+    
+    
+    Returns
+    -------
+    bool
+        Whether the stated condition is satisfied.
+    """
     try:
         return space1.compatible(space2)
     except (AttributeError, TypeError, ValueError):
@@ -46,13 +101,40 @@ def _spaces_compatible(space1, space2):
 
 
 def _test_out_action(
-        label, allocating_call, inplace_call,
-        input_space, output_space, value,
-        log, tolerance=1e-10, test_aliasing=True):
-    """Compare allocating and ``out=`` variants of a vector-valued call.
-
+        label: str, allocating_call: Callable[[ReadOnlyVector], Vector], inplace_call: Callable[[ReadOnlyVector, Vector], Vector],
+        input_space: VectorSpaceBase, output_space: VectorSpaceBase, value: Scalar | ArrayLike,
+        log: logging.Logger, tolerance: float=1e-10, test_aliasing: bool=True) -> bool | None:
+    r"""Compare allocating and ``out=`` variants of a vector-valued call.
+    
     A return value of ``None`` means that the allocating variant is not
     implemented and the check was skipped.
+    
+    Parameters
+    ----------
+    label: str
+        Label.
+    allocating_call: Callable[[ReadOnlyVector], Vector]
+        Input vector; its coefficients are only read.
+    inplace_call: Callable[[ReadOnlyVector, Vector], Vector]
+        Input vector; its coefficients are only read.
+    input_space: VectorSpaceBase
+        Input space.
+    output_space: VectorSpaceBase
+        Output space.
+    value: Scalar | ArrayLike
+        Value.
+    log: logging.Logger
+        Log.
+    tolerance: float [default: 1e-10]
+        Tolerance used in the consistency check.
+    test_aliasing: bool [default: True]
+        Whether to test aliased input and output buffers.
+    
+    
+    Returns
+    -------
+    bool | None
+        Result described above.
     """
     original = _copy_vector(input_space, value)
     try:
@@ -113,9 +195,29 @@ def _test_out_action(
 
 
 def _test_linearize_variant(
-        op, x, return_adjoint_eval,
-        tolerance=1e-10, test_aliasing=True):
-    """Compare allocating and in-place variants of ``Operator.linearize``."""
+        op: Operator, x: ReadOnlyVector, return_adjoint_eval: bool,
+        tolerance: float=1e-10, test_aliasing: bool=True) -> bool | None:
+    r"""Compare allocating and in-place variants of ``Operator.linearize``.
+    
+    Parameters
+    ----------
+    op: Operator
+        Operator used by this construction.
+    x: ReadOnlyVector
+        Input vector; its coefficients are only read.
+    return_adjoint_eval: bool
+        Return adjoint eval.
+    tolerance: float [default: 1e-10]
+        Tolerance used in the consistency check.
+    test_aliasing: bool [default: True]
+        Whether to test aliased input and output buffers.
+    
+    
+    Returns
+    -------
+    bool | None
+        Result described above.
+    """
     label = (
         "linearize(return_adjoint_eval=True)"
         if return_adjoint_eval else "linearize"
@@ -188,8 +290,26 @@ def _test_linearize_variant(
 
 
 def _test_linear_operator_inplace(
-        op, tolerance=1e-10, test_aliasing=True, test_evaluation=True):
-    """Check all public allocating/in-place paths of a linear operator."""
+        op: Operator, tolerance: float=1e-10, test_aliasing: bool=True, test_evaluation: bool=True) -> bool:
+    r"""Check all public allocating/in-place paths of a linear operator.
+    
+    Parameters
+    ----------
+    op: Operator
+        Operator used by this construction.
+    tolerance: float [default: 1e-10]
+        Tolerance used in the consistency check.
+    test_aliasing: bool [default: True]
+        Whether to test aliased input and output buffers.
+    test_evaluation: bool [default: True]
+        Test evaluation.
+    
+    
+    Returns
+    -------
+    bool
+        Whether the stated condition is satisfied.
+    """
     passed = True
 
     if test_evaluation:
@@ -241,22 +361,39 @@ def _test_linear_operator_inplace(
 
 
 def test_inplace_operator_methods(
-        op, x=None, tolerance=1e-10, test_aliasing=True):
-    """Compare allocating and in-place variants of the Operator API.
-
+        op: Operator, x: ReadOnlyVector | None=None, tolerance: float=1e-10, test_aliasing: bool=True) -> bool:
+    r"""Compare allocating and in-place variants of the Operator API.
+    
     The following public paths are checked when implemented:
-
+    
     * evaluation,
     * both variants of :meth:`Operator.linearize`,
     * derivative evaluation,
     * adjoint evaluation,
     * :meth:`Operator.adjoint_data`,
     * :meth:`Operator.adjoint_eval`, including the adjoint derivative.
-
+    
     Besides numerical equality, the test checks that the supplied output
     object is returned and that a non-aliasing call does not modify its input.
     If the input and output spaces are compatible, ``out is input`` is tested
     as well.
+    
+    Parameters
+    ----------
+    op: Operator
+        Operator used by this construction.
+    x: ReadOnlyVector | None [default: None]
+        Input vector; its coefficients are only read.
+    tolerance: float [default: 1e-10]
+        Tolerance used in the consistency check.
+    test_aliasing: bool [default: True]
+        Whether to test aliased input and output buffers.
+    
+    
+    Returns
+    -------
+    bool
+        Whether the stated condition is satisfied.
     """
     if x is None:
         x = op.domain.randn()
@@ -315,32 +452,31 @@ def test_inplace_operator_methods(
     return passed
 
 
-def test_linearity(op, tolerance=1e-10):
+def test_linearity(op: Operator, tolerance: float=1e-10) -> bool:
     r"""Numerically tests if operator is linear.
-
+    
     Checks if ::
-
+    
     .. highlight:: python
     .. code:: python
-
+    
         op(x+y) == op(x)+op(y)
         r*op(x) == op(r*x)
     
     for random choices of `x` and `y`.
-
+    
     Parameters
     ----------
-    op : regpy.operators.Operator
+    op: Operator
         The operator.
-    tolerance : float, optional
-        The maximum allowed difference between the results. Defaults to
-        1e-10.
-
+    tolerance: float [default: 1e-10]
+        The maximum allowed difference between the results.
+    
     Returns
     -------
     bool
         True if the operator is linear within the specified tolerance
-        and False otherwise.    
+        and False otherwise.
     """
     x = op.domain.randn()
     y = op.domain.randn()
@@ -354,25 +490,24 @@ def test_linearity(op, tolerance=1e-10):
         op.log.warning(f'Linearity test failed: err_sum = {err_sum}, err_mult = {err_mult}')
         return False
     
-def test_affine_linearity(op, tolerance=1e-10):
-    """NUmerically test if the operator is affine linear. 
+def test_affine_linearity(op: Operator, tolerance: float=1e-10) -> bool:
+    r"""NUmerically test if the operator is affine linear. 
     
     Checks if ::
         op_unshifted(x) := op(x) - op(0) is linear
-
+    
     Parameters
     ----------
-    op : regpy.operators.Operator
+    op: Operator
         The operator to be tested.
-    tolerance : float, optional
-        The maximum allowed difference between the results. Defaults to 
-        1e-10.
-
+    tolerance: float [default: 1e-10]
+        The maximum allowed difference between the results.
+    
     Returns
     -------
     bool
         True if the operator is linear within the specified tolerance.
-
+    
     Raises
     ------
     AssertionError
@@ -385,26 +520,25 @@ def test_affine_linearity(op, tolerance=1e-10):
         op.log.warning(f'Affine linearity test failed!')
         return False
 
-def test_adjoint(op, tolerance=1e-10):
+def test_adjoint(op: Operator, tolerance: float=1e-10) -> bool:
     r"""Numerically test validity of :meth:`adjoint` method.
-
+    
     Checks if
-
+    
     .. highlight:: python
     .. code:: python
-
-        inner(y, op(x)) == inner(op.adjoint(x), y)
-
+    
+        inner(y, op(x)) == inner(op.adjoint(y), x)
+    
     in :math:`L^2` up to some tolerance for random choices of `x` and `y`.
-
+    
     Parameters
     ----------
-    op : regpy.operators.Operator
+    op: Operator
         The operator.
-    tolerance : float, optional
-        The maximum allowed difference between the inner products. Defaults to
-        1e-10.
-
+    tolerance: float [default: 1e-10]
+        The maximum allowed difference between the inner products.
+    
     Returns
     -------
     bool
@@ -422,26 +556,66 @@ def test_adjoint(op, tolerance=1e-10):
         op.log.warning(f'Adjoint test failed: err = {err}')
         return False
 
-def test_adjoint_eval(op, tolerance=1e-10):
-    r"""Numerically test validity of :meth:`adjoint_eval` method.
 
-    Checks if
-
-    .. highlight:: python
-    .. code:: python
-
-        norm(adjoint_eval(x)-adjoint(eval(x))) < tolerance
-
-    in :math:`L^2` up to some tolerance for random choices of `x` and `y`.
-
+def test_self_adjoint(op: Operator, tolerance: float=1e-10) -> bool:
+    r"""Test the public contract of a declared self-adjoint operator.
+    
+    Besides the numerical adjoint identity checked by :func:`test_adjoint`,
+    self-adjoint operators must be linear, map a vector space to itself, and
+    expose themselves through :attr:`Operator.adjoint` rather than construct
+    an adjoint proxy.
+    
     Parameters
     ----------
-    op : regpy.operators.Operator
-        The operator.
-    tolerance : float, optional
-        The maximum allowed difference between the inner products. Defaults to
-        1e-10.
+    op: Operator
+        An operator whose :attr:`~regpy.operators.Operator.self_adjoint` flag
+        is expected to be true.
+    tolerance: float [default: 1e-10]
+        The maximum allowed error in the numerical adjoint test.
+    
+    Returns
+    -------
+    bool
+        Whether the structural and numerical self-adjointness checks pass.
+    """
+    if not op.self_adjoint:
+        op.log.warning('Self-adjointness test requested for an unmarked operator.')
+        return False
+    if not op.linear:
+        op.log.warning('A self-adjoint operator must be linear.')
+        return False
+    if op.domain != op.codomain:
+        op.log.warning(
+            'A self-adjoint operator must have identical domain and codomain.'
+        )
+        return False
+    if op.adjoint is not op:
+        op.log.warning(
+            'The adjoint property of a self-adjoint operator must return the '
+            'operator itself.'
+        )
+        return False
+    return test_adjoint(op, tolerance=tolerance)
 
+def test_adjoint_eval(op: Operator, tolerance: float=1e-10) -> bool:
+    r"""Numerically test validity of :meth:`adjoint_eval` method.
+    
+    Checks if
+    
+    .. highlight:: python
+    .. code:: python
+    
+        norm(adjoint_eval(x)-adjoint(eval(x))) < tolerance
+    
+    in :math:`L^2` up to some tolerance for random choices of `x` and `y`.
+    
+    Parameters
+    ----------
+    op: Operator
+        The operator.
+    tolerance: float [default: 1e-10]
+        The maximum allowed difference between the inner products.
+    
     Returns
     -------
     bool
@@ -458,26 +632,27 @@ def test_adjoint_eval(op, tolerance=1e-10):
         op.log.warning(f'AdjointEval test failed: err = {err}')
         return False
 
-def test_derivative(op, steps=None,ret_sequence=False,x=None):
+def test_derivative(op: Operator, steps: float | None=None,ret_sequence: bool=False,x: ReadOnlyVector | None=None) -> bool:
     r"""Numerically test derivative of operator.
-
+    
     Computes :math:` ||\frac{F(x+tv)-F(x)}{t}-F'(x)v|| `
     for randomly chosen .:math:`x` and :math:`v` and different :math:`t` given in steps.
-
+    
     Parameters
     ----------
-    op : regpy.operators.Operator
+    op: Operator
         The operator.
-    steps : float, optional
-        The used steps. Defaults to
-        [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7].
-    x: domain of op or None [default none]
+    steps: float | None [default: None]
+        The used steps.
+    ret_sequence: bool [default: False]
+        Ret sequence.
+    x: ReadOnlyVector | None [default: None]
         The point at which the derivative is tested. Chosen randomly if None.
-
+    
     Returns
     -------
     bool
-        If the sequence of differences is decreasing then True, otherwise False. 
+        If the sequence of differences is decreasing then True, otherwise False.
     """
     if steps is None:
         steps = [10**k for k in range(-1, -8, -1)]
@@ -496,17 +671,17 @@ def test_derivative(op, steps=None,ret_sequence=False,x=None):
         return False
 
 
-def test_adjoint_derivative(op, tolerance=1e-10):
-    """Numerically test if adjoint derivative is correct implementation aligns
+def test_adjoint_derivative(op: Operator, tolerance: float=1e-10) -> bool:
+    r"""Numerically test if adjoint derivative is correct implementation aligns
     with the normal composition of the adjoint and derivative.
-
+    
     Parameters
     ----------
-    op : regpy.operators.Operator
+    op: Operator
         The operator to be tested
-    tolerance : float, optional
-        The tolerance, by default 1e-10
-
+    tolerance: float [default: 1e-10]
+        The tolerance, by
+    
     Returns
     -------
     bool
@@ -527,38 +702,39 @@ def test_adjoint_derivative(op, tolerance=1e-10):
 
     
 def test_operator(
-        op, sample_N=5, tolerance=1e-10, steps=None,
-        adjoint_derivative=False, x_s=None,
-        test_inplace=True, test_inplace_aliasing=True):
-    """Numerically tests if operator is computed correctly.
-
-    Checks if operator is linear and if adjoint is correct for linear operators. Checks if derivative is correct by computing
-    sequence of difference quotients and checking if they are decreasing. Checks if derivative is linear with correct adjoint.
-    Optionally checks correctness of adjoint derivative.
-
+        op: Operator, sample_N: int=5, tolerance: float=1e-10, steps: Iterable[float] | None=None,
+        adjoint_derivative: bool=False, x_s: Iterable[ReadOnlyVector] | None=None,
+        test_inplace: bool=True, test_inplace_aliasing: bool=True) -> None:
+    r"""Numerically tests if operator is computed correctly.
+    
+    Checks if an operator is linear and if its adjoint is correct for linear
+    operators. For operators marked as self-adjoint, it additionally checks
+    that domain and codomain coincide and that :attr:`Operator.adjoint`
+    returns the operator itself. For nonlinear operators, it checks the
+    derivative by computing a sequence of difference quotients, and verifies
+    that the derivative is linear with a correct adjoint. Optionally checks
+    correctness of the adjoint derivative.
+    
     Parameters
     ----------
-    op : regpy.operators.Operator
+    op: Operator
         The operator.
-    sample_N : int
+    sample_N: int [default: 5]
         Number of runs for each test.
-    tolerance : float, optional
-        The maximum allowed difference between the results. Defaults to 1e-10.
-    steps : list of float, optional
+    tolerance: float [default: 1e-10]
+        The maximum allowed difference between the results.
+    steps: Iterable[float] | None [default: None]
         Steps used for the computation for the difference quotients. Should be chosen according to the expected regularity of the operator.
-        Defaults to [1e-1,1e-2,1e-3,1e-4,1e-5,1e-6,1e-7].
-    adjoint_derivative : bool, optional
-        If true the adjoint_derivative is also checked. Defaults to False.
-    x_s : list or tuple
+    adjoint_derivative: bool [default: False]
+        If true the adjoint_derivative is also checked.
+    x_s: Iterable[ReadOnlyVector] | None [default: None]
         List or tuple of sample_N elements of which to test the derivative.
-    test_inplace : bool, optional
+    test_inplace: bool [default: True]
         Compare allocating and ``out=`` variants of evaluation, linearization,
         derivative, adjoint, adjoint-data, and adjoint-evaluation methods.
-        Defaults to True.
-    test_inplace_aliasing : bool, optional
+    test_inplace_aliasing: bool [default: True]
         Also test ``out is input`` whenever domain and codomain are compatible.
-        Defaults to True.
-
+    
     Raises
     ------
     AssertionError
@@ -577,6 +753,10 @@ def test_operator(
                 )
             if not test_linearity(op,tolerance) or not test_adjoint(op,tolerance):
                 raise AssertionError('Linearity or adjoint test failed for linear operator.')
+            if op.self_adjoint and not test_self_adjoint(op, tolerance):
+                raise AssertionError(
+                    'Public self-adjointness contract failed for linear operator.'
+                )
             if not test_adjoint_eval(op,tolerance):
                 raise AssertionError(f'Applying the adjoint and eval deviates more than {tolerance} from the implementation of adjoint_eval with respect to the vector space l2 norm.')
     elif test_affine_linearity(op,tolerance=tolerance):

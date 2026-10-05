@@ -1,3 +1,9 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.vecsps.base import VectorSpaceBase
+    from regpy.hilbert.base import HilbertSpace
 import logging
 
 from regpy.vecsps import *
@@ -5,10 +11,14 @@ from regpy import hilbert
 
 from .base import Functional,AbstractFunctional,SquaredNorm
 from .integral_functionals import *
-from .vector_integral_functionals import *
+from .vector_integral_functionals import VectorIntegralFunctional, LppL2, L1L2, TVUniformGridFcts
+
 from .matrix_functionals import *
 
-__all__ = ["Functional", "L1", "Lpp", "TV", "KL", "RE", "Hub", "QuadIntv", "QuadNonneg", "QuadBil", "QuadLow", "QuadPosSemi", "HilbertNorm", "VFunc"]
+__all__ = ["Functional", "L1", "Lpp", "TV", "KL", "RE", "Hub", "QuadIntv", "QuadNonneg", "QuadBil", "QuadLow", "QuadPosSemi", 
+           "HilbertNorm", "VFunc"]
+from .vector_integral_functionals import __all__ as __mod_all__
+__all__ += __mod_all__
 
 
 L1 = AbstractFunctional('L1')
@@ -25,14 +35,29 @@ QuadPosSemi = AbstractFunctional("QuadPosSemi")
 HilbertNorm = AbstractFunctional('HilbertNorm')
 VFunc = AbstractFunctional('Vector Integral Functional')
 
-def HilbertNormOnAbstractSpace(vecsp, h_space=hilbert.L2):
+def HilbertNormOnAbstractSpace(vecsp: VectorSpaceBase, h_space: Callable =hilbert.L2) -> HilbertNorm:
+    r"""Hilbert norm on abstract space.
+    
+    Parameters
+    ----------
+    vecsp: VectorSpaceBase
+        Underlying vector space.
+    h_space: Callable [default: hilbert.L2]
+        H space.
+    
+    
+    Returns
+    -------
+    HilbertNorm
+        Result described above.
+    """
     return HilbertNorm(h_space(vecsp))
 
-def _register_functionals():
+def _register_functionals() -> None:
     r"""Auxiliary method to register abstract functionals for various vector spaces. Using the decorator
     method described in `AbstractFunctional` does not work due to circular depenencies when
     loading modules.
-
+    
     This is called from the `regpy` top-level module once, and can be ignored otherwise.
     """
     HilbertNorm.register(hilbert.HilbertSpace, SquaredNorm)

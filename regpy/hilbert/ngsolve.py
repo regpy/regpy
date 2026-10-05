@@ -1,3 +1,9 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.vecsps.base import VectorSpaceBase
+    from regpy.operators.base import Operator
 import ngsolve as ngs
 
 from regpy.vecsps.ngsolve import NgsVectorSpace, NgsVectorSpaceWithInnerProduct
@@ -6,15 +12,29 @@ from regpy.operators.ngsolve import NgsMatrixMultiplication
 from regpy.util import memoized_property, Errors
 
 class L2FESpace(HilbertSpace):
-    r"""The implementation of `regpy.hilbert.L2` on an `NgsVectorSpace`."""
-    def __init__(self, vecsp):
+    r"""The implementation of `regpy.hilbert.L2` on an `NgsVectorSpace`.
+    
+    Parameters
+    ----------
+    vecsp: VectorSpaceBase
+        Underlying vector space.
+    """
+    def __init__(self, vecsp: VectorSpaceBase) -> None:
         if not isinstance(vecsp, NgsVectorSpace):
             raise TypeError(Errors.not_instance(vecsp,NgsVectorSpace, f"The Implementation of a ngsolve L2 space requires an NgsVectorSpace was given {vecsp}"))
         super().__init__(vecsp=vecsp)
         self._no_pickle = {*self._no_pickle,"__memoized_L2FESpace.gram","__memoized_HilbertSpace.norm_functional"}
 
     @memoized_property
-    def gram(self):
+    def gram(self) -> Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if isinstance(self.vecsp, NgsVectorSpaceWithInnerProduct):
             return self.vecsp.identity
         elif isinstance(self.vecsp, NgsVectorSpace):
@@ -26,8 +46,14 @@ class L2FESpace(HilbertSpace):
             raise NotImplementedError(Errors.generic_message(f"L2FESSpace not implemented for vector spaces of {type(self.vecsp)}"))
 
 class SobolevFESpace(HilbertSpace):
-    r"""The implementation of `regpy.hilbert.Sobolev` on an `NgsVectorSpace`."""
-    def __init__(self, vecsp):
+    r"""The implementation of `regpy.hilbert.Sobolev` on an `NgsVectorSpace`.
+    
+    Parameters
+    ----------
+    vecsp: VectorSpaceBase
+        Underlying vector space.
+    """
+    def __init__(self, vecsp: VectorSpaceBase) -> None:
         if isinstance(vecsp, NgsVectorSpaceWithInnerProduct):
             raise TypeError(Errors.type_error(f"The default implementation of a ngsolve Sobolev boundary space needs an NgsVectorSpace without a specified InnerProduct was given a NgsVectorSpaceWithInnerProduct"))
         elif not isinstance(vecsp, NgsVectorSpace):
@@ -36,7 +62,15 @@ class SobolevFESpace(HilbertSpace):
         self._no_pickle = {*self._no_pickle,"__memoized_SobolevFESpace.gram","__memoized_HilbertSpace.norm_functional"}
     
     @memoized_property
-    def gram(self):
+    def gram(self) -> Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         u, v = self.vecsp.fes.TnT()
         grad_u, grad_v = ngs.Grad(u), ngs.Grad(v)
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
@@ -50,8 +84,14 @@ class SobolevFESpace(HilbertSpace):
 
 
 class H10FESpace(HilbertSpace):
-    r"""The implementation of `regpy.hilbert.Hm0` on an `NgsVectorSpace`."""
-    def __init__(self, vecsp):
+    r"""The implementation of `regpy.hilbert.Hm0` on an `NgsVectorSpace`.
+    
+    Parameters
+    ----------
+    vecsp: VectorSpaceBase
+        Underlying vector space.
+    """
+    def __init__(self, vecsp: VectorSpaceBase) -> None:
         if isinstance(vecsp, NgsVectorSpaceWithInnerProduct):
             raise TypeError(Errors.type_error(f"The default implementation of a ngsolve Sobolev boundary space needs an NgsVectorSpace without a specified InnerProduct was given a NgsVectorSpaceWithInnerProduct"))
         elif not isinstance(vecsp, NgsVectorSpace):
@@ -60,7 +100,15 @@ class H10FESpace(HilbertSpace):
         self._no_pickle = {*self._no_pickle,"__memoized_H10FESpace.gram","__memoized_HilbertSpace.norm_functional"}
     
     @memoized_property
-    def gram(self):
+    def gram(self) -> Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         u, v = self.vecsp.fes.TnT()
         grad_u, grad_v = ngs.grad(u), ngs.grad(v)
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
@@ -74,8 +122,16 @@ class H10FESpace(HilbertSpace):
 
 
 class L2BoundaryFESpace(HilbertSpace):
-    r"""The implementation of `regpy.hilbert.L2Boundary` on an `NgsVectorSpace`."""
-    def __init__(self, vecsp, bdr = None):
+    r"""The implementation of `regpy.hilbert.L2Boundary` on an `NgsVectorSpace`.
+    
+    Parameters
+    ----------
+    vecsp: VectorSpaceBase
+        Underlying vector space.
+    bdr: str | None [default: None]
+        Bdr.
+    """
+    def __init__(self, vecsp: VectorSpaceBase, bdr: str | None = None) -> None:
         if isinstance(vecsp, NgsVectorSpaceWithInnerProduct):
             raise TypeError(Errors.type_error(f"The default implementation of a ngsolve Sobolev boundary space needs an NgsVectorSpace without a specified InnerProduct was given a NgsVectorSpaceWithInnerProduct"))
         elif not isinstance(vecsp, NgsVectorSpace):
@@ -99,7 +155,15 @@ class L2BoundaryFESpace(HilbertSpace):
         }
 
     @memoized_property
-    def gram(self):
+    def gram(self) -> Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         u, v = self.vecsp.fes.TnT()
         trace_u, trace_v = u.Trace(), v.Trace()
         form = ngs.BilinearForm(self.vecsp.fes, symmetric=True)
@@ -114,8 +178,16 @@ class L2BoundaryFESpace(HilbertSpace):
 
 
 class SobolevBoundaryFESpace(HilbertSpace):
-    r"""The implementation of `regpy.hilbert.SobolevBoundary` on an `NgsVectorSpace`."""
-    def __init__(self, vecsp, bdr = None):
+    r"""The implementation of `regpy.hilbert.SobolevBoundary` on an `NgsVectorSpace`.
+    
+    Parameters
+    ----------
+    vecsp: VectorSpaceBase
+        Underlying vector space.
+    bdr: str | None [default: None]
+        Bdr.
+    """
+    def __init__(self, vecsp: VectorSpaceBase, bdr: str | None = None) -> None:
         if isinstance(vecsp, NgsVectorSpaceWithInnerProduct):
             raise TypeError(Errors.type_error(f"The default implementation of a ngsolve Sobolev boundary space needs an NgsVectorSpace without a specified InnerProduct was given a NgsVectorSpaceWithInnerProduct"))
         elif not isinstance(vecsp, NgsVectorSpace):
@@ -139,7 +211,15 @@ class SobolevBoundaryFESpace(HilbertSpace):
         }
 
     @memoized_property
-    def gram(self):
+    def gram(self) -> Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         u, v = self.vecsp.fes.TnT()
         trace_u, trace_v = u.Trace(), v.Trace()
         deriv_u, deriv_v = trace_u.Deriv(), trace_v.Deriv()

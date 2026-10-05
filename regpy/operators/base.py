@@ -10,9 +10,22 @@ The base class is `Operator`.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Literal
+    from typing_extensions import Self
+    from regpy.vecsps.base import ReadOnlyVector, VectorSpaceBase
+    from regpy.hilbert.base import HilbertSpace
+    from regpy._typing import Mask
+import warnings
+
+from typing import TypeVar
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
 from copy import deepcopy
+from numbers import Real, Integral
+from functools import wraps
+from types import MethodType
 from typing import Any, TYPE_CHECKING
 
 from math import sqrt,inf
@@ -26,20 +39,68 @@ from regpy.vecsps.base import Vector, Scalar
 
 if TYPE_CHECKING:
     from regpy.functionals import Functional
-    from regpy.hilbert import HilbertSpace
 
-__all__ = ["Operator", "Pow", "Identity", "CoordinateProjection", "CoordinateMask", "PtwMultiplication", "OuterShift", "InnerShift", "DirectSum", "VectorOfOperators", "MatrixOfOperators", "Sum","Product", "RealPart", "ImaginaryPart", "SplitRealImag","SquaredModulus", "Zero", "ApproximateHessian", "SciPyLinearOperator"]
+__all__ = ["ObsDataT",
+           "Operator", 
+           "Pow", 
+           "Identity", 
+           "CoordinateProjection", 
+           "CoordinateMask", 
+           "PtwMultiplication", 
+           "Composition",
+           "OuterShift", 
+           "InnerShift", 
+           "DirectSum", 
+           "VectorOfOperators", 
+           "MatrixOfOperators", 
+           "Sum",
+           "Product", 
+           "RealPart", 
+           "ImaginaryPart", 
+           "SplitRealImag",
+           "SquaredModulus", 
+           "Zero", 
+           "SciPyLinearOperator"
+           ]
 
 
 class _Revocable:
+    r"""_Revocable interface.
+    
+    Parameters
+    ----------
+    val: Operator
+        Val.
+    """
     def __init__(self, val: Operator) -> None:
         self.__val = val
 
     @classmethod
     def take(cls, other: _Revocable) -> _Revocable:
+        r"""Take.
+        
+        Parameters
+        ----------
+        other: _Revocable
+            Other.
+        
+        
+        Returns
+        -------
+        _Revocable
+            Result described above.
+        """
         return cls(other.revoke())
 
     def get(self) -> Operator:
+        r"""Get.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         try:
             return self.__val
         except AttributeError:
@@ -47,52 +108,150 @@ class _Revocable:
                 'Attempted to use revoked reference')) from None
 
     def revoke(self) -> Operator:
+        r"""Revoke.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         val = self.get()
         del self.__val
         return val
 
     @property
     def valid(self) -> bool:
+        r"""Valid.
+        
+        
+        Returns
+        -------
+        bool
+        """
         try:
             self.__val
             return True
         except AttributeError:
             return False
 
+ObsDataT = TypeVar("ObsDataT")
+"""
+ObsDataT is a placeholder for a data type. 
+In many cases, data are a :class:`Vector` in the codomain of an Operator. 
+However, data may be anything that is accepted by :meth:`Operator.adjoint_data` 
+and :meth:`regpy.functionals.Functional.as_data_func`.
+"""
+
+_EVAL_METHOD_KEYS = {
+    '_eval': 'eval', '_ieval': 'eval',
+    '_derivative': 'deriv', '_iderivative': 'deriv',
+    '_adjoint': 'adjoint', '_iadjoint': 'adjoint',
+    '_adjoint_eval': 'adjoint_eval', '_iadjoint_eval': 'adjoint_eval',
+    '_adjoint_derivative': 'adjoint_deriv', '_iadjoint_derivative': 'adjoint_deriv',
+    '_adjoint_data': 'adjoint_data', '_iadjoint_data': 'adjoint_data',
+    'adjoint_data': 'adjoint_data',
+}
+
+
+def _count_evaluation(key: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    r"""Count an outer operation once, including in-place fallback dispatch.
+    
+    Parameters
+    ----------
+    key: Any
+        Key.
+    
+    
+    Returns
+    -------
+    Callable[[Callable[..., Any]], Callable[..., Any]]
+        Result described above.
+    """
+    def decorate(method: str) -> Callable[..., Any]:
+        r"""Decorate.
+        
+        Parameters
+        ----------
+        method: str
+            Method.
+        
+        
+        Returns
+        -------
+        Callable[..., Any]
+            Result described above.
+        """
+        if getattr(method, '_counts_evaluation', False):
+            return method
+        @wraps(method)
+        def counted(self, *args: Any, **kwargs: Any) -> Any:
+            r"""Counted.
+            
+            Parameters
+            ----------
+            *args: Any
+                Positional arguments forwarded to the underlying implementation.
+            **kwargs: Any
+                Additional keyword arguments forwarded to the underlying implementation.
+            
+            
+            Returns
+            -------
+            Any
+                Result described above.
+            """
+            depth = getattr(self, '_eval_count_depth', 0)
+            if depth == 0:
+                self._eval_counts[key] += 1
+            self._eval_count_depth = depth + 1
+            try:
+                return method(self, *args, **kwargs)
+            finally:
+                self._eval_count_depth = depth
+        counted._counts_evaluation = True
+        return counted
+    return decorate
+
 
 class Operator:
     r"""Base class for linear and nonlinear forward operators.
-
+    
     Operator instances are callable; calling one with a vector evaluates it.
     Domain and codomain vectors are duck typed according to their respective
     :class:`regpy.vecsps.VectorSpaceBase` instances. 
-
-    Subclasses implementing nonlinear operators should implement the following methods:
-
+    
+    Subclasses implementing nonlinear operators should normally implement the
+    following methods:
+    
         _eval(self, x, differentiate=False)
         _derivative(self, x)
         _adjoint(self, y)
-
+    
+    The ``_adjoint`` implementation may be omitted when the nonlinear operator
+    is constructed with ``self_adjoint=True``, which declares its derivatives
+    to be self-adjoint.
+    
     These methods are not intended for external use, but should be invoked indirectly via calling
     the operator or using the `Operator.linearize` method. They must not modify their argument, and
     should return vectors that can be freely modified by the caller, i.e. should not share data
     with anything. Usually, this means they should allocate a new vector for the return value.
-
+    
     Implementations can assume the arguments to be part of the specified vector spaces, and return
     values will be checked for consistency.
-
+    
     In some cases a solver only requires the application of the composition of the adjoint with the 
     derivative. When this should be used i.e. in cases when setting up elements in the codomain is 
     not feasible one can implement the `_adjoint_derivative` method and when linearizing can set the
     flag `return_adjoint_eval = True`.
-
+    
     The mechanism for derivatives and their adjoints is this: whenever a derivative is to be
     computed, `_eval` will be called first with `differentiate=True` or `return_adjoint_eval=True`, 
     and should produce the operator's value and perform any precomputation needed for evaluating 
     the derivative. Any subsequent invocation of `_derivative`, `_adjoint` and `_adjoint_derivative`
     should evaluate the  derivative, its adjoint or their composition at the same point `_eval` was 
     called. The reasoning is this
-
+    
      * In most cases, the derivative alone is not useful. Rather, one needs a linearization of the
        operator around some point, so the value is almost always needed.
      * Many expensive computations, e.g. assembly and factorization of finite element matrices, need to be carried
@@ -103,69 +262,192 @@ class Operator:
     reliably called after the operator has been evaluated somewhere else, since shared data may
     have been overwritten. The `Operator`, `Derivative` and `Adjoint` classes ensure that an
     exception is raised when an invalidated derivative is called.
-
+    
     If derivatives at multiple points are needed, a copy of the operator should be performed using
     `copy.deepcopy`. For efficiency, subclasses can add the names of attributes that are considered
     as constants and should not be deep-copied to `self._consts` (a `set`). By default, `domain` and
     `codomain` will not be copied, since `regpy.vecsps.VectorSpaceBase` instances should never
     change in-place.
-
+    
     If no derivative at some point is needed, `_eval` will be called with `differentiate=False`,
     allowing it to save on precomputations. It does not need to ensure that data shared with some
     derivative remains intact; all derivative instances will be invalidated regardless.
-
+    
     For each operation family, subclasses normally need to implement only one of the
     allocating and in-place variants: ``_eval`` or ``_ieval``, ``_derivative`` or
     ``_iderivative``, and ``_adjoint`` or ``_iadjoint``. The base class derives the missing
     variant from the implemented one. The same applies to ``_adjoint_data``,
     ``_adjoint_eval`` and ``_adjoint_derivative`` and their corresponding ``_i*`` methods.
     Implementing both variants is useful only when their optimal algorithms differ.
-
+    
     In general, subclasses should prefer implementing the in-place ``_i*`` variant: it can
     write directly into caller-provided storage and the base class can still construct the
     allocating result by creating an output vector once. Implementations must completely
     overwrite the requested output and return that exact output object. They should also be
     safe when input and output are identical whenever domain and codomain are compatible.
-
+    
     Linear operators should therefore normally implement
-
+    
         _ieval(self, x, out)
         _iadjoint(self, y, out)
-
+    
     or, when a genuinely better allocating algorithm exists, the corresponding ``_eval``
-    and ``_adjoint`` methods.
-
+    and ``_adjoint`` methods. If ``self_adjoint=True`` is passed to the
+    constructor, implementing ``_adjoint`` or ``_iadjoint`` is unnecessary:
+    adjoint evaluations use ``_eval`` or ``_ieval``, respectively.
+    
+    A nonlinear operator itself is never self-adjoint. For such an operator,
+    the constructor argument ``self_adjoint=True`` instead declares that its
+    derivative is self-adjoint at every linearization point. Consequently,
+    :attr:`self_adjoint` remains false on the nonlinear operator, while the
+    :class:`Derivative` returned by :meth:`linearize` has
+    ``self_adjoint=True`` and uses ``_derivative`` for its adjoint evaluation.
+    A self-adjoint operator or derivative must map a vector space to itself;
+    therefore, the constructor requires identical domain and codomain whenever
+    ``self_adjoint=True`` is requested.
+    
+    A linear operator that was not recognized as self-adjoint during its
+    construction can be marked afterwards with
+    :meth:`declare_as_self_adjoint`. This is useful for operators assembled
+    from other operators in ways not covered by RegPy's operator algebra.
+    
     Here the logic is simpler, and no sharing of precomputations is needed (unless it applies to the
     operator as a whole, in which case it should be performed in `__init__`).
-
+    
     Note that the adjoint should be computed with respect to the standard real inner product on the
     domain / codomain, given as
-
+    
         real(domain.vdot(x, y)) or real(codomain.vdot(x, y))
-
+    
     Other inner products on vector spaces are independent of both vector spaces and operators,
     and are implemented in the `regpy.hilbert` module.
-
+    
     Basic operator algebra is supported:
-
+    
         a * op1 + b * op2    # linear combination
         op1 * op2            # composition
         op * vector          # composition with pointwise multiplication in domain
         op + arr             # operator shifted in codomain
         op + scalar          # dto.
-
+    
     Parameters
     ----------
-    domain, codomain : regpy.vecsps.VectorSpaceBase or None
-        The vector space on which the operator's arguments / values are defined. Using `None`
-        suppresses some consistency checks and is intended for ease of development, but should 
-        not be used except as a temporary measure. Some constructions like direct sums will fail
-        if the vector spaces are unknown.
-    linear : bool, optional
-        Whether the operator is linear. Default: `False`.
+    domain: vecsps.VectorSpaceBase | None [default: None]
+        The vector space on which the operator's arguments / values are defined.
+    codomain: vecsps.VectorSpaceBase | None [default: None]
+        The vector space on which the operator's arguments / values are defined.
+    linear: bool [default: False]
+        Whether the operator is linear.
+    inverse: Operator | None [default: None]
+        If an explicit expression for the inverse exists, it can be provided in the constructor 
+        and will be available under op.inverse.
+    self_adjoint: bool [default: False]
+        For a linear operator, whether the operator equals its adjoint. For a
+        nonlinear operator, whether all its derivatives are self-adjoint; the
+        nonlinear operator's public :attr:`self_adjoint` property nevertheless
+        remains false.
     """
 
     log = util.ClassLogger()
+
+    @property
+    def eval_count_enabled(self) -> bool:
+        r"""Whether counting is enabled on this instance (never recursively). 
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return '_eval_count_originals' in self.__dict__
+
+    def enable_eval_count(self, reset: bool = True) -> None:
+        r"""Instrument this operator only; components remain unchanged.
+        
+        Disabled operators use their original methods without a counting
+        wrapper or counter dictionary. Derivative/adjoint wrappers dispatch
+        back to the instrumented methods of this operator. Enabling twice
+        does not stack wrappers. Counts are reset by default.
+        
+        Compositions built while counting is enabled retain this operator as
+        a component instead of flattening it. Enable counting before building
+        a containing composition; already flattened compositions cannot be
+        retroactively instrumented through the original object.
+        
+        Parameters
+        ----------
+        reset: bool [default: True]
+            Reset.
+        """
+        if not isinstance(reset, bool):
+            raise TypeError("reset must be a bool.")
+        if not self.eval_count_enabled:
+            originals = {}
+            for name, key in _EVAL_METHOD_KEYS.items():
+                method = getattr(self, name)
+                if not isinstance(method, MethodType):
+                    raise TypeError(f"Cannot instrument non-bound method {name}.")
+                originals[name] = self.__dict__.get(name)
+            self._eval_count_originals = originals
+            self._eval_counts = dict.fromkeys(set(_EVAL_METHOD_KEYS.values()), 0)
+            for name, key in _EVAL_METHOD_KEYS.items():
+                method = getattr(self, name)
+                setattr(self, name, MethodType(_count_evaluation(key)(method.__func__), self))
+        if reset:
+            self.reset_eval_counts()
+
+    def disable_eval_count(self) -> None:
+        r"""Restore uninstrumented methods and discard counters on this instance.
+        """
+        for name, original in self.__dict__.pop('_eval_count_originals', {}).items():
+            if original is None:
+                self.__dict__.pop(name, None)
+            else:
+                setattr(self, name, original)
+        self.__dict__.pop('_eval_counts', None)
+        self.__dict__.pop('_eval_count_depth', None)
+
+    @property
+    def eval_counts(self) -> dict[str, int]:
+        r"""Snapshot of this operator's logical operation counts.
+        
+        Counting is opt-in via enable_eval_count(). Reading this property
+        while disabled returns zeros without allocating persistent counters.
+        Components are not enabled automatically. Counts include attempts
+        through derivative/adjoint wrappers, but nested fallback calls on the
+        same instance count only once. Self-adjoint aliases count as eval.
+        Modifying the snapshot does not alter counters. Serial use only.
+        
+        
+        Returns
+        -------
+        dict[str, int]
+            Result described above.
+        """
+        if not self.eval_count_enabled:
+            return dict.fromkeys(('eval', 'deriv', 'adjoint', 'adjoint_eval',
+                                  'adjoint_deriv', 'adjoint_data'), 0)
+        return dict(self._eval_counts)
+
+    def reset_eval_counts(self) -> None:
+        r"""Zero enabled counters without enabling counting or touching children.
+        """
+        if self.eval_count_enabled:
+            self._eval_counts = dict.fromkeys(
+                ('eval', 'deriv', 'adjoint', 'adjoint_eval', 'adjoint_deriv', 'adjoint_data'), 0
+            )
+
+    def total_eval_count(self) -> int:
+        r"""Return counts weighted by two for adjoint_eval and adjoint_deriv.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
+        counts = self.eval_counts
+        return sum(counts.values()) + counts['adjoint_eval'] + counts['adjoint_deriv']
 
     def __init__(
         self,
@@ -173,11 +455,29 @@ class Operator:
         codomain: vecsps.VectorSpaceBase | None = None,
         linear: bool = False,
         inverse: Operator | None = None,
+        self_adjoint: bool = False,
     ) -> None:
-        if not isinstance(domain,vecsps.VectorSpaceBase):
+        if not isinstance(domain,vecsps.VectorSpace):
             raise ValueError(util.Errors.not_a_vecsp(domain,vecsps.VectorSpaceBase,"The domain of an operator has to be some derivative of vector spaces."))
-        if not isinstance(codomain,vecsps.VectorSpaceBase):
+        if not isinstance(codomain,vecsps.VectorSpace):
             raise ValueError(util.Errors.not_a_vecsp(codomain,vecsps.VectorSpaceBase,"The codomain of an operator has to be some derivative of vector spaces."))
+        if not isinstance(self_adjoint, bool):
+            raise TypeError(util.Errors.type_error(
+                "self_adjoint must be a boolean.", self_adjoint
+            ))
+        if self_adjoint and domain != codomain:
+            raise ValueError(util.Errors.value_error(
+                "self_adjoint=True requires identical domain and codomain."
+            ))
+        if domain is not None and codomain is not None:
+            if domain.as_real_space != codomain.as_real_space:
+                warnings.warn(
+                    "Operator domain and codomain use different scalar fields; "
+                    "interpreting both over R. Configure spaces explicitly before construction.",
+                    RuntimeWarning, stacklevel=2)
+                domain.as_real_space = True
+                codomain.as_real_space = True
+
         self.domain = domain
         r"""The vector space on which the operator is defined. Either a
         subclass of `regpy.vecsps.VectorSpaceBase` or `None`."""
@@ -186,6 +486,9 @@ class Operator:
         a subclass of `regpy.vecsps.VectorSpaceBase` or `None`."""
         self.linear = linear
         r"""Boolean indicating whether the operator is linear."""
+        self._self_adjoint = bool(linear and self_adjoint)
+        self._derivative_self_adjoint = self_adjoint
+        self._gram_factor = 1.
         self._constants = {}
         """A dictionary containing constants set to inputs by the `set_constant`"""        
         self._consts = {'domain', 'codomain','lu'}
@@ -196,11 +499,127 @@ class Operator:
 
         self.reset_detect_loop()
 
+    @property
+    def self_adjoint(self) -> bool:
+        r"""Whether this operator is linear and equal to its adjoint.
+        
+        This property is always false for nonlinear operators. If
+        ``self_adjoint=True`` was passed when constructing a nonlinear
+        operator, the flag applies to the derivatives returned by
+        :meth:`linearize` instead.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return self._self_adjoint
+
+    def declare_as_self_adjoint(self, check: bool = True) -> None:
+        r"""Declare an existing linear operator to be self-adjoint.
+        
+        This method is intended for operators assembled from other operators
+        in ways for which the operator algebra cannot infer
+        self-adjointness. After a successful declaration,
+        :attr:`self_adjoint` is true and :attr:`adjoint` returns this operator
+        itself. Any separately implemented adjoint methods are consequently
+        ignored by future access through the public :attr:`adjoint` property.
+        
+        If ``check`` is true, the declaration is made only if evaluation and
+        adjoint evaluation agree, up to a dtype-dependent rounding tolerance,
+        on one random test vector. This is a useful safeguard but not a proof
+        of self-adjointness. 
+        
+        Parameters
+        ----------
+        check: bool [default: True]
+            Whether to compare evaluation and adjoint evaluation on a random
+            vector before changing the flag.
+        
+        Raises
+        ------
+        TypeError
+            If ``check`` is not boolean.
+        ValueError
+            If the operator is nonlinear, domain and codomain differ, or the
+            numerical check fails.
+        NotImplementedError
+            If ``check`` is true but adjoint evaluation is unavailable.
+        """
+        if not isinstance(check, bool):
+            raise TypeError(util.Errors.type_error(
+                "check must be a boolean.", check
+            ))
+        if not self.linear:
+            raise ValueError(util.Errors.value_error(
+                "Only a linear operator can be declared self-adjoint.",
+                self,
+                "declare_as_self_adjoint",
+            ))
+        if self.domain != self.codomain:
+            raise ValueError(util.Errors.value_error(
+                "A self-adjoint operator must have identical domain and "
+                "codomain.",
+                self,
+                "declare_as_self_adjoint",
+            ))
+
+        if check:
+            # Keep the old adjoint proxy: setting the flag first would make
+            # the check compare the operator with itself and hence vacuous.
+            old_adjoint = self.adjoint
+            test_vector = self.domain.randn()
+            value = self(test_vector)
+            try:
+                adjoint_value = old_adjoint(test_vector)
+            except NotImplementedError as exc:
+                raise NotImplementedError(util.Errors._compose_message(
+                    "ADJOINT NOT AVAILABLE",
+                    "The numerical self-adjointness check requires an "
+                    "implemented adjoint. Use check=False only if "
+                    "self-adjointness is known independently."
+                )) from exc
+
+            error = self.domain.norm(value - adjoint_value)
+            scale = max(
+                1.,
+                self.domain.norm(value),
+                self.domain.norm(adjoint_value),
+            )
+            try:
+                dtype = np.empty(
+                    (), dtype=getattr(self.domain, "dtype", float)
+                ).real.dtype
+                eps = np.finfo(dtype).eps
+            except (TypeError, ValueError):
+                eps = np.finfo(float).eps
+            tolerance = 1000 * eps * scale
+
+            if not np.isfinite(error) or error > tolerance:
+                raise ValueError(util.Errors.value_error(
+                    "The numerical self-adjointness check failed: "
+                    f"||A x - A* x|| = {error}, allowed tolerance = "
+                    f"{tolerance}.",
+                    self,
+                    "declare_as_self_adjoint",
+                ))
+
+        self._self_adjoint = True
+        self._derivative_self_adjoint = True
+        # ``adjoint`` is memoized. It was necessarily accessed by the check
+        # and may also have been accessed earlier by user code. Deleting the
+        # cached value makes the next access observe the new flag and return
+        # ``self``.
+        del self.adjoint
+
     def __deepcopy__(self, memo: dict[int, Any]) -> Operator:
         cls = type(self)
         result = cls.__new__(cls)
         memo[id(self)] = result
         for k, v in self.__dict__.items():
+            if k.startswith("__memoized_"):
+                continue            
             if k in self._consts:
                 setattr(result, k, v)
             else:
@@ -210,17 +629,160 @@ class Operator:
     @property
     def attrs(self) -> set[str]:
         r"""The set of all instance attributes. Useful for updating the `_consts` attribute via
-
+        
             self._consts.update(self.attrs)
-
+        
         to declare every current attribute as constant for deep copies.
+        
+        
+        Returns
+        -------
+        set[str]
+            Result described above.
         """
         return set(self.__dict__)
 
+    @property
+    def gram_factor(self) -> float:
+        r"""Scalar factor representing the codomain Gram operator.
+        
+        Codomain-free evaluations use this factor in place of an explicitly
+        applied codomain Gram operator. The default is ``1.``.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        return self._gram_factor
+
+    @gram_factor.setter
+    def gram_factor(self, value: float) -> None:
+        r"""Gram factor describing the codomain Gram matrix if it is a multiple of the identity.
+        Used in adjoint_eval, etc. 
+        
+        Parameters
+        ----------
+        value: float
+            Value.
+        """
+        if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
+            raise TypeError(util.Errors.type_error(
+                f"gram_factor must be a real scalar. Got {value!r}."
+            ))
+        if value < 0:
+            raise ValueError(util.Errors.value_error(
+                f"gram_factor must be non-negative. Got {value!r}."
+            ))
+        self._gram_factor = float(value)
+
+    def set_gram_factor(self, gram: Operator | HilbertSpace) -> None:
+        r"""Set :attr:`gram_factor` from a scalar Gram operator.
+        
+        Parameters
+        ----------
+        gram: Operator | HilbertSpace
+            A Hilbert space, or its Gram operator. Supported Gram operators
+            are :class:`Identity`, a :class:`LinearCombination` consisting of
+            one multiple of an identity, and :class:`PtwMultiplication` with a
+            constant multiplier.
+        
+        Raises
+        ------
+        TypeError
+            If ``gram`` is neither an operator nor a Hilbert space, or if the
+            extracted factor is not real.
+        ValueError
+            If the Gram operator does not act on this operator's codomain, is
+            not one of the supported forms, or yields a negative factor.
+        """
+        # Importing HilbertSpace at module level would cause a circular import:
+        # regpy.hilbert imports the operator classes used for Gram operators.
+        from regpy.hilbert import HilbertSpace
+
+        if isinstance(gram, HilbertSpace):
+            gram = gram.gram
+        if not isinstance(gram, Operator):
+            raise TypeError(util.Errors.type_error(
+                "gram must be a HilbertSpace or an Operator. "
+                f"Got {type(gram).__name__}."
+            ))
+        if gram.domain != self.codomain or gram.codomain != self.codomain:
+            raise ValueError(util.Errors.value_error(
+                "The Gram operator's domain and codomain must both equal "
+                f"the operator codomain {self.codomain}. Got domain "
+                f"{gram.domain} and codomain {gram.codomain}."
+            ))
+
+        if isinstance(gram, Identity):
+            factor = 1.
+        elif isinstance(gram, LinearCombination):
+            if len(gram.ops) != 1 or not isinstance(gram.ops[0], Identity):
+                raise ValueError(util.Errors.value_error(
+                    "A LinearCombination used as a Gram operator must contain "
+                    "exactly one Identity operator."
+                ))
+            factor = gram.coeffs[0]
+        elif isinstance(gram, PtwMultiplication):
+            ones = gram.domain.ones()
+            normalizer = gram.domain.vdot(ones, ones)
+            if normalizer == 0:
+                raise ValueError(util.Errors.value_error(
+                    "A PtwMultiplication used as a Gram operator must have a "
+                    "constant multiplier."
+                ))
+            factor = gram.domain.vdot(gram.factor, ones) / normalizer
+            residual = gram.factor - factor * ones
+            residual_norm_sq = gram.domain.vdot(residual, residual).real
+            factor_norm_sq = gram.domain.vdot(
+                gram.factor, gram.factor
+            ).real
+            tolerance = (
+                100 * np.finfo(float).eps * max(1., abs(factor_norm_sq))
+            )
+            if residual_norm_sq > tolerance:
+                raise ValueError(util.Errors.value_error(
+                    "A PtwMultiplication used as a Gram operator must have a "
+                    "constant multiplier."
+                ))
+        else:
+            raise ValueError(util.Errors.value_error(
+                "Unsupported Gram operator. Expected Identity, a "
+                "LinearCombination containing one Identity, or "
+                "PtwMultiplication with a constant multiplier. Got "
+                f"{type(gram).__name__}."
+            ))
+
+        factor = np.real_if_close(factor)
+        if np.ndim(factor) == 0:
+            factor = factor.item()
+        self.gram_factor = factor
+
+    def _apply_gram_factor(self, vector: Vector) -> Vector:
+        r"""Scale a codomain-free result by :attr:`gram_factor`.
+        
+        Parameters
+        ----------
+        vector: Vector
+            Writable vector used by this operation.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
+        if self.gram_factor != 1.:
+            vector *= self.gram_factor
+        return vector
+
     def reset_detect_loop(self) -> None:
+        r"""Reset detect loop.
+        """
         self._detect_loop = [False]*6  
 
-    def __call__(self, x: Vector, out: Vector | None = None, **kwargs) -> Vector:
+    def __call__(self, x: ReadOnlyVector, out: Vector | None = None, **kwargs: Any) -> Vector:
         if x not in self.domain and (not hasattr(self, "full_domain") or x not in self.full_domain):
             raise ValueError(util.Errors.not_in_vecsp(
                 x,
@@ -259,25 +821,28 @@ class Operator:
 
     def linearize(
         self,
-        x: Vector,
+        x: ReadOnlyVector,
         out: Vector | list[Vector | Operator | None] | None = None,
         return_adjoint_eval: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> tuple[Vector, Operator]:
         r"""Linearize the operator around some point.
-
+        
         Parameters
         ----------
-        x : Vector
+        x: ReadOnlyVector
             The point around which to linearize.
-
-        return_adjoint_eval : boolean (Default: False)
+        out: Vector | list[Vector | Operator | None] | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        return_adjoint_eval: bool [default: False]
             Flag to determine if the adjoint of the evaluation should be returned. That is the 
             first output will be :math:`F'[x]^\ast F(x)` rather then F(x). In particular, if the image 
             space of the operator is too large to store vectors in this space the operator can have 
             an :meth:`_adjoint_eval` that has an efficient implementation for that and 
             additionally a :meth:`_adjoint_derivative` that efficiently implements :math:`F'[x]^\ast F'[x]` .
-
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
         Returns
         -------
         if return_adjoint_eval==False: 
@@ -315,7 +880,10 @@ class Operator:
                     self.reset_detect_loop()
                     return y, deriv
                 else:
-                    Fstar_y = self._adjoint_eval(self._insert_constants(x),**kwargs)
+                    Fstar_y = self._adjoint_eval(
+                        self._insert_constants(x), **kwargs
+                    )
+                    self._apply_gram_factor(Fstar_y)
                     if Fstar_y not in self.domain: 
                         raise RuntimeError(util.Errors.not_in_vecsp(
                             Fstar_y,
@@ -350,6 +918,7 @@ class Operator:
                     out[1] = Derivative(self.__get_handle())
                 else:
                     self._iadjoint_eval(self._insert_constants(x), out = out[0],**kwargs)
+                    self._apply_gram_factor(out[0])
                     out[1] = Derivative(self.__get_handle()) 
             self.reset_detect_loop()
             return out[0],out[1]
@@ -357,18 +926,24 @@ class Operator:
     @util.memoized_property
     def adjoint(self) -> Operator:
         r"""For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
-        instance. Will only be computed on demand and saved for subsequent invocations.
-
+        instance. For a self-adjoint operator, this property returns the
+        operator itself, so calling ``op.adjoint(x)`` is identical to calling
+        ``op(x)``. Otherwise, an :class:`Adjoint` proxy is computed on demand
+        and saved for subsequent invocations.
+        
         Returns
         -------
-        Adjoint
-            The adjoint as an `Operator` instance.
+        Operator
+            The operator itself if :attr:`self_adjoint` is true; otherwise an
+            :class:`Adjoint` instance.
         """
         if not self.linear:
             raise RuntimeError(util.Errors.not_linear_op(
                 self,
                 "To construct an adjoint the Operator has to be linear!"
                 ))
+        if self.self_adjoint:
+            return self
         return Adjoint(self)
     
     @util.memoized_property
@@ -376,10 +951,10 @@ class Operator:
         r"""This is only available for linear operators, it is the composition of adjoint and 
         eval as a `regpy.operators.AdjointEval` instance. Will only be computed on
         demand and saved for subsequent invocations.
-
+        
         Returns
         -------
-        AdjointEval
+        Operator
             The combination of the adjoint with the forward model T*T as an `Operator` instance.
         """
         if not self.linear:
@@ -402,7 +977,7 @@ class Operator:
             self.__handle = _Revocable(self)
             return self.__handle
 
-    def _eval(self, x: Vector, **kwargs) -> Vector:
+    def _eval(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         self.log.debug(f"eval: {self._detect_loop}")
         if self._detect_loop[0]:
             raise NotImplementedError(util.Errors._compose_message(
@@ -413,18 +988,29 @@ class Operator:
         out = self.codomain.zeros()
         return self._ieval(x, out, **kwargs)
     
-    def _ieval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _ieval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         r"""In place/ out evaluation. A method that ideally provides an in place evaluation into the specified out
         value. The default implementation uses _eval. Note: If eval is not defined either, then it will raise an error.
-
+        
         Parameters
         ----------
-        x : Vector
+        x: ReadOnlyVector
             The point at which to evaluate in the domain.
-        out : Vector
+        out: Vector
             The output vector in which to write the result.
-        differentiate : bool, optional
-            Determines if precomputation for derivate is needed, by default False
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        Other Parameters
+        ----------------
+        differentiate: bool
+            Determines if precomputation for derivate is needed, by
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
         """
         self.log.debug(f"eval: {self._detect_loop}")
         if self._detect_loop[0]:
@@ -441,7 +1027,7 @@ class Operator:
         return out
 
 
-    def _derivative(self, x: Vector, **kwargs) -> Vector:
+    def _derivative(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         if self._detect_loop[1]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
@@ -452,19 +1038,30 @@ class Operator:
         out = self.codomain.zeros()
         return self._iderivative(x, out, **kwargs)
     
-    def _iderivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iderivative(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         r"""In place/ out evaluation of derivative. A method that ideally provides an in place evaluation into the 
         specified out value of the derivative. The default implementation uses _derivative. Note: If _derivative is 
         not defined either, then it will raise an error.
-
+        
         Parameters
         ----------
-        x : Vector
+        x: ReadOnlyVector
             The point at which to evaluate in the domain.
-        out : Vector
+        out: Vector
             The output vector in which to write the result.
-        differentiate : bool, optional
-            Determines if precomputation for derivate is needed, by default False
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        Other Parameters
+        ----------------
+        differentiate: bool
+            Determines if precomputation for derivate is needed, by
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
         """
         if self._detect_loop[1]:
             raise NotImplementedError(util.Errors._compose_message(
@@ -479,7 +1076,10 @@ class Operator:
         self.codomain.copyto(out, self._derivative(x, **kwargs))
         return out
 
-    def _adjoint(self, y: Vector, **kwargs) -> Vector:
+    def _adjoint(self, y: ReadOnlyVector, **kwargs: Any) -> Vector:
+        if self.self_adjoint:
+            self.reset_detect_loop()
+            return self._eval(y, **kwargs)
         if self._detect_loop[2]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
@@ -489,7 +1089,10 @@ class Operator:
         out = self.domain.zeros()
         return self._iadjoint(y, out, **kwargs)
     
-    def _iadjoint(self, y: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
+        if self.self_adjoint:
+            self.reset_detect_loop()
+            return self._ieval(y, out, **kwargs)
         if self._detect_loop[2]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
@@ -503,7 +1106,7 @@ class Operator:
         self.domain.copyto(out, self._adjoint(y, **kwargs))
         return out
 
-    def _adjoint_data(self, data: Vector, **kwargs) -> Vector:
+    def _adjoint_data(self, data: ObsDataT, **kwargs: Any) -> Vector:
         if self._detect_loop[3]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
@@ -514,7 +1117,7 @@ class Operator:
         out = self.domain.zeros()
         return self._iadjoint_data(data, out, **kwargs)
     
-    def _iadjoint_data(self, data: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_data(self, data: ObsDataT, out: Vector, **kwargs: Any) -> Vector:
         if self._detect_loop[3]:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
@@ -530,29 +1133,47 @@ class Operator:
         return out
         
     def adjoint_data(
-        self, data: Vector, out: Vector | None = None, **kwargs
+        self, data: ObsDataT, out: Vector | None = None, **kwargs: Any
     ) -> Vector:
-            self.reset_detect_loop()
-            try:
-                if out is None:
-                    try:
-                        return self._adjoint_data(data, **kwargs)
-                    except NotImplementedError:
-                        self.reset_detect_loop()
-                        return self._adjoint(data, **kwargs)
-
+        r"""Adjoint data.
+        
+        Parameters
+        ----------
+        data: ObsDataT
+            Observed data.
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
+        self.reset_detect_loop()
+        try:
+            if out is None:
+                try:
+                    result = self._adjoint_data(data, **kwargs)
+                except NotImplementedError:
+                    self.reset_detect_loop()
+                    result = self._adjoint(data, **kwargs)
+            else:
                 if out not in self.domain:
                     raise ValueError(...)
 
                 try:
-                    return self._iadjoint_data(data, out, **kwargs)
+                    result = self._iadjoint_data(data, out, **kwargs)
                 except NotImplementedError:
                     self.reset_detect_loop()
-                    return self._iadjoint(data, out, **kwargs)
-            finally:
-                self.reset_detect_loop()
+                    result = self._iadjoint(data, out, **kwargs)
+            return self._apply_gram_factor(result)
+        finally:
+            self.reset_detect_loop()
     
-    def _adjoint_eval(self, x: Vector, **kwargs) -> Vector:
+    def _adjoint_eval(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         if self._detect_loop[4]:
             if not hasattr(self, '_warning_adjoint_eval_issued') or self._warning_adjoint_eval_issued == False:
                 self.log.warning("The default implementation of  _adjoint_eval is not optimized to exclude constructing elements in the codomain!")
@@ -569,7 +1190,7 @@ class Operator:
             out = self.domain.zeros()
             return self._iadjoint_eval(x, out, **kwargs)
     
-    def _iadjoint_eval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_eval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if self._detect_loop[4]:
             if not hasattr(self, '_warning_adjoint_eval_issued') or self._warning_adjoint_eval_issued == False:
                 self.log.warning("The default implementation of _iadjoint_eval is not optimized to exclude constructing elements in the codomain!")
@@ -591,7 +1212,7 @@ class Operator:
             return out
             
 
-    def _adjoint_derivative(self, x: Vector, **kwargs) -> Vector:
+    def _adjoint_derivative(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         if self._detect_loop[5]:
             if not hasattr(self, '_warning_adjoint_derivative_issued') or self._warning_adjoint_derivative_issued == False:
                 self.log.warning(f"The default implementation of _adjoint_derivative is not optimised to exclude constructing elements in the codomain!")
@@ -600,6 +1221,10 @@ class Operator:
                 self.log.warning(f"In the default implementation of _adjoint_derivative it is unclear where to put keyword arguments.Maybe implement your own _adjoint_derivative and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
             if self.linear:
                 return self._adjoint(self._eval(x))
+            elif self._derivative_self_adjoint:
+                y = self._derivative(x)
+                self.reset_detect_loop()
+                return self._derivative(y)
             else:
                 return self._adjoint(self._derivative(x))
         else:
@@ -607,15 +1232,19 @@ class Operator:
             out = self.domain.zeros()
             return self._iadjoint_derivative(x, out, **kwargs)
         
-    def _iadjoint_derivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_derivative(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if self._detect_loop[5]:
             if not hasattr(self, '_warning_adjoint_derivative_issued') or self._warning_adjoint_derivative_issued == False:
                 self.log.warning(f"The default implementation of _iadjoint_derivative is not optimised to exclude constructing elements in the codomain!")
                 self._warning_adjoint_derivative_issued = True
             if len(kwargs) != 0:
-                self.log.warning(f"In the default implementation of _iadjoint_derivative it is unclear where to put keyword arguments.Maybe implement your own _iadjoint_derivative and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
+                self.log.warning(f"In the default implementation of _iadjoint_derivative it is unclear where to put keyword arguments. Maybe implement your own _iadjoint_derivative and process the kwargs Thus ignoring yours: kwargs= {kwargs}")
             if self.linear:
                 return self._iadjoint(self._eval(x), out)
+            elif self._derivative_self_adjoint:
+                y = self._derivative(x)
+                self.reset_detect_loop()
+                return self._iderivative(y, out)
             else:
                 return self._iadjoint(self._derivative(x), out)
         else:
@@ -632,7 +1261,14 @@ class Operator:
         r"""A property containing the  inverse as an `Operator` instance. In most cases this will
         just raise a `NotImplementedError`, but subclasses may override this if possible and useful.
         To avoid recomputing the inverse on every access, `regpy.util.memoized_property` may be
-        useful."""
+        useful.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if self._inverse is None:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT EXISTENT INVERSE",
@@ -641,6 +1277,13 @@ class Operator:
     
     @inverse.setter
     def inverse(self, inv: Operator) -> None:
+        r"""Inverse.
+        
+        Parameters
+        ----------
+        inv: Operator
+            Inv.
+        """
         if inv is None:
             self._inverse = None
             self.log.info("Setting the inverse of the operator {} to None".format(self))
@@ -655,20 +1298,28 @@ class Operator:
 
     @property
     def invertible(self) -> bool:
+        r"""Invertible.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self._inverse is not None
 
     def as_linear_operator(self) -> SciPyLinearOperator:
         r"""Creating a `scipy.linalg.LinearOperator` from the defined linear operator.  
-
+        
         Returns
         -------
-        scipy.linalg.LinearOperator 
+        SciPyLinearOperator
             The linear operator as a scipy linear operator.
-
+        
         Raises
         ------
         RuntimeError
-            If operator flag `linear` is False. 
+            If operator flag `linear` is False.
         """
         if self.linear:
             return SciPyLinearOperator(self)
@@ -683,32 +1334,71 @@ class Operator:
         h_domain: HilbertSpace | None = None,
         h_codomain: HilbertSpace | None = None,
         method: str | None = None,
-        without_codomain_vectors: bool = False,
+        codomain_free: bool = False,
+        reltol: float = 1e-3,
+        max_op_eval: int | None = None,
     ) -> float:
-        r"""Approximate the operator norm of  a linear operator with respect to the vector norms of h_domain and h_codomain. 
-        By default this is achieved by computing the largest eigenvalue of \(T^*T\) using eigsh from scipy. 
- 
+        r"""Approximate the norm of a linear operator between Hilbert spaces.
+        
+        This method always interprets the operator as a map from
+        ``h_domain`` to ``h_codomain``. Its norm is computed from the largest
+        eigenvalue of :math:`G_X^{-1}T^*G_YT`, followed by a square root. This also
+        applies when the operator is labelled self-adjoint and the two Hilbert
+        spaces are identical.
+        
+        If ``codomain_free`` is true, the same norm is computed without
+        constructing codomain vectors: the self-adjoint normal operator
+        :attr:`adjoint_eval` is passed to :meth:`norm_sa`, and the square root
+        of the resulting value is returned.
+        
         Parameters
         ----------
-        h_domain: Hilbert space on the domain. Defaults to L2 if None.
-        h_codomain: Hilbert space on the codomain. Defaults to L2 if None.
-        method: string [default: None]
+        h_domain: HilbertSpace | None [default: None]
+            Hilbert geometry on the domain.
+        h_codomain: HilbertSpace | None [default: None]
+            Not used if ``codomain_free`` is true.
+        method: str | None [default: None]
+            'lanczos' uses the capped, fully reorthogonalized implementation;
+            'eigs' uses SciPy/ARPACK with the existing breakdown fallback.
             Method by which an approximation of the operator norm is computed. If None uses self.default_norm_method or 'lanczos'
-              if this is not set. Alternative: "power" for power method
-        without_codomain_vectors: bool [default: False]
+              if this is not set. Alternatives: "power" for power iteration; "eigs" for the SciPy implementation.
+        codomain_free: bool [default: False]
             If true, the method avoids any use of vectors in the image space of the operator by using 
-            adjoint_derivative. (Useful if the latter method in more efficient than the composition of
-            adjoint and derivative or if vectors in the image space are too large to be stored.)
+            :attr:`adjoint_eval` and :meth:`norm_sa`.
+        reltol: float [default: 0.001]
+            Positive, finite relative residual tolerance.
+            The custom Lanczos method stops when its selected Ritz residual
+            is small relative to its Ritz value. At the evaluation cap it
+            returns its best current estimate even if this criterion fails.
+            SciPy uses its eigenvalue tolerance; power uses a relative
+            residual. None of these is a certified norm error bound.
+        max_op_eval: int | None [default: None]
+            Budget of forward/adjoint-equivalent evaluations. A normal
+            application costs two; an ordinary self-adjoint application one.
+            Gram operations are excluded. Unused odd budget units are ignored
+            for normal operators.
+            Must allow at least one application. An explicit budget is not
+            supported by method='eigs' and raises ValueError.
+        
         Returns
         -------
-        scalar
-            Approximation of the norm of T^*T. 
-
+        float
+            Approximation of the norm from ``h_domain`` to ``h_codomain``.
+        
         Raises
         ------
         NotImplementedError
             If the operator is nonlinear or the method is not implemented.
         """
+
+        if isinstance(reltol, (bool, np.bool_)) or not np.isscalar(reltol) or not np.isrealobj(reltol):
+            raise ValueError("reltol must be a positive, finite real scalar.")
+        try:
+            reltol = float(reltol)
+        except (TypeError, ValueError) as error:
+            raise ValueError("reltol must be a positive, finite real scalar.") from error
+        if not np.isfinite(reltol) or reltol <= 0:
+            raise ValueError("reltol must be a positive, finite real scalar.")
 
         if(not self.linear):
             raise NotImplementedError(util.Errors.not_linear_op(
@@ -723,83 +1413,494 @@ class Operator:
                 h_domain.vecsp,
                 self.domain,
                 add_info=f"Trying to compute the norm of the operator {self} \n with a given Hilbert space {h_domain} on domain."))
+        method=getattr(self,'default_norm_method','lanczos') if method is None else method
+        self._validate_norm_budget(method, max_op_eval)
+        if codomain_free:
+            return sqrt(self.adjoint_eval.norm_sa(
+                h_domain=h_domain,
+                method=method,
+                reltol=reltol,
+                **({} if max_op_eval is None else {"max_op_eval": max_op_eval}),
+            ))
         if(h_codomain is None):
             h_codomain=L2(self.codomain)
-        elif not without_codomain_vectors and h_codomain.vecsp != self.codomain:
+        elif h_codomain.vecsp != self.codomain:
             raise ValueError(util.Errors.not_equal(
-                h_domain.vecsp,
-                self.domain,
-                add_info=f"Trying to compute the norm of the operator {self} with a given Hilbert space {h_domain} on codomain."))
-        method=getattr(self,'default_norm_method','lanczos') if method is None else method
+                h_codomain.vecsp,
+                self.codomain,
+                add_info=f"Trying to compute the norm of the operator {self} with a given Hilbert space {h_codomain} on codomain."))
         if method == "power":
-            return self._power_method(h_domain,h_codomain,without_codomain_vectors=without_codomain_vectors)
-        elif method == "lanczos":
-            from scipy.sparse.linalg import eigsh
-            if without_codomain_vectors:
-                op = self.adjoint_eval
+            return self._power_method(h_domain, h_codomain, stopping_rule=reltol,
+                                      max_iter=self._norm_budget_steps(max_op_eval, 2))
+        elif method in ("lanczos", "eigs"):
+            op = self.adjoint * h_codomain.gram * self
+            if method == "lanczos":
+                eigenvalue = op._capped_lanczos(
+                    h_domain, reltol, self._norm_budget_steps(max_op_eval, 2), 'LA'
+                )
             else:
-                op = self.adjoint * h_codomain.gram * self
-            # eigsh fails if the operator has a null spaces. That's why we compute the largest eigenvalue op+h_domain_gram
-            return sqrt(eigsh(SciPyLinearOperator(op+h_domain.gram), 1, M=SciPyLinearOperator(h_domain.gram),
-                              Minv=SciPyLinearOperator(h_domain.gram_inv),
-                              tol=0.01)[0][0]-1.)
+                eigenvalue = op._unshifted_norm_eigenvalue(h_domain, reltol, 'LA')
+            return sqrt(max(0., eigenvalue))
         else:
             raise NotImplementedError(util.Errors._compose_message(
                 "NOT DEFINED METHOD",
                 f"The method {method} is unknown to compute the norm of an Operator {self}!"
             ))
 
+    def norm_sa(
+        self,
+        h_domain: HilbertSpace | None = None,
+        method: str | None = None,
+        reltol: float = 1e-3,
+        max_op_eval: int | None = None,
+    ) -> float:
+        r"""Approximate the norm of a self-adjoint map into a dual space.
+        
+        The operator must be linear and explicitly labelled self-adjoint. It
+        is interpreted as a map :math:`A:X\to X^*`, where ``h_domain`` is the
+        Hilbert space :math:`X`. The method computes the largest absolute
+        generalized eigenvalue of
+        
+        .. math::
+            A x = \lambda G_X x,
+        
+        and hence the norm of :math:`G_X^{-1}A:X\to X`.
+        
+        This interpretation differs from :meth:`norm`, even if that method is
+        called for a self-adjoint operator with identical domain and codomain
+        Hilbert spaces. In that case :meth:`norm` treats the operator as a map
+        :math:`X\to X`, whereas this method treats its values as elements of
+        :math:`X^*`.
+        
+        Parameters
+        ----------
+        h_domain: HilbertSpace | None [default: None]
+            Hilbert geometry on the domain.
+        method: str | None [default: None]
+            'lanczos' uses the capped, fully reorthogonalized implementation;
+            'eigs' uses SciPy/ARPACK with the existing breakdown fallback.
+            Method by which an approximation of the operator norm is
+            computed. If None, uses ``self.default_norm_method`` or
+            ``'lanczos'`` if this is not set. Alternative: ``'power'`` for
+            power iteration; ``'eigs'`` retains the SciPy implementation.
+        reltol: float [default: 0.001]
+            Positive, finite relative residual tolerance.
+            The custom Lanczos method stops when its selected Ritz residual
+            is small relative to its Ritz value. At the evaluation cap it
+            returns its best current estimate even if this criterion fails.
+            SciPy uses its eigenvalue tolerance; power uses a relative
+            residual. None of these is a certified norm error bound.
+        max_op_eval: int | None [default: None]
+            Budget of forward/adjoint-equivalent evaluations. A normal
+            application costs two; an ordinary self-adjoint application one.
+            Gram operations are excluded. Unused odd budget units are ignored
+            for normal operators.
+            Must allow at least one application. An explicit budget is not
+            supported by method='eigs' and raises ValueError.
+        
+        Returns
+        -------
+        float
+            Approximation of the norm of :math:`G_X^{-1}A`.
+        
+        Raises
+        ------
+        NotImplementedError
+            If the operator is nonlinear or the method is not implemented.
+        ValueError
+            If the operator is not labelled self-adjoint or ``h_domain`` does
+            not belong to its domain.
+        """
+        if isinstance(reltol, (bool, np.bool_)) or not np.isscalar(reltol) or not np.isrealobj(reltol):
+            raise ValueError("reltol must be a positive, finite real scalar.")
+        try:
+            reltol = float(reltol)
+        except (TypeError, ValueError) as error:
+            raise ValueError("reltol must be a positive, finite real scalar.") from error
+        if not np.isfinite(reltol) or reltol <= 0:
+            raise ValueError("reltol must be a positive, finite real scalar.")
+
+        if not self.linear:
+            raise NotImplementedError(util.Errors.not_linear_op(
+                self,
+                f"To compute the norm of the Operator {self} it has to be linear!"
+            ))
+        if not self.self_adjoint:
+            raise ValueError(util.Errors.value_error(
+                "norm_sa requires an operator labelled as self-adjoint.",
+                self,
+                "norm_sa",
+            ))
+
+        from regpy.hilbert import L2
+        if h_domain is None:
+            h_domain = L2(self.domain)
+        elif h_domain.vecsp != self.domain:
+            raise ValueError(util.Errors.not_equal(
+                h_domain.vecsp,
+                self.domain,
+                add_info=f"Trying to compute the self-adjoint norm of the operator {self} \n with a given Hilbert space {h_domain} on domain."
+            ))
+
+        method = getattr(self, 'default_norm_method', 'lanczos') if method is None else method
+        self._validate_norm_budget(method, max_op_eval)
+        if method == "power":
+            return self._power_method_sa(h_domain, stopping_rule=reltol,
+                                         max_iter=self._norm_budget_steps(max_op_eval,
+                                             2 if isinstance(self, AdjointEval) else 1))
+        elif method == "lanczos":
+            cost = 2 if isinstance(self, AdjointEval) else 1
+            return abs(self._capped_lanczos(
+                h_domain, reltol, self._norm_budget_steps(max_op_eval, cost), 'LM'
+            ))
+        elif method == "eigs":
+            return abs(self._unshifted_norm_eigenvalue(h_domain, reltol, 'LM'))
+        else:
+            raise NotImplementedError(util.Errors._compose_message(
+                "NOT DEFINED METHOD",
+                f"The method {method} is unknown to compute the self-adjoint norm of an Operator {self}!"
+            ))
+
+    @staticmethod
+    def _validate_norm_budget(method: str, max_op_eval: int) -> int | None:
+        if max_op_eval is not None:
+            if isinstance(max_op_eval, (bool, np.bool_)) or not isinstance(max_op_eval, Integral):
+                raise TypeError("max_op_eval must be a positive integer or None.")
+            if max_op_eval <= 0:
+                raise ValueError("max_op_eval must be positive.")
+            if method == 'eigs':
+                raise ValueError("method='eigs' does not support max_op_eval.")
+
+    @staticmethod
+    def _norm_budget_steps(max_op_eval: int, cost: int) -> int:
+        budget = 100 if max_op_eval is None else int(max_op_eval)
+        if budget < cost:
+            raise ValueError(f"max_op_eval must be at least {cost} for this norm.")
+        return budget // cost
+
+    def _capped_lanczos(self, h_domain: HilbertSpace, reltol: float, max_steps: int, which: Literal['LM', 'SM', 'LA', 'SA']) -> float:
+        r"""Unshifted Hilbert-space Lanczos with full reorthogonalization.
+        
+        Each loop performs exactly one application of self. A null initial
+        direction is retried within the same budget. Invariant-subspace
+        breakdown terminates normally. As with other Krylov estimators, a
+        starting vector can miss a dominant eigenspace; estimates are not
+        certified upper bounds. Memory use grows with the Krylov dimension.
+        
+        Parameters
+        ----------
+        h_domain: HilbertSpace
+            Hilbert geometry on the domain.
+        reltol: float
+            Relative tolerance.
+        max_steps: int
+            Max steps.
+        which: Literal['LM', 'SM', 'LA', 'SA']
+            Which.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        op = SciPyLinearOperator(self)
+        gram = SciPyLinearOperator(h_domain.gram)
+        gram_inv = SciPyLinearOperator(h_domain.gram_inv)
+        n = op.shape[0]
+        if n == 0:
+            return 0.
+        def inner(x: ReadOnlyVector, y: ReadOnlyVector) -> Scalar:
+            r"""Inner.
+            
+            Parameters
+            ----------
+            x: ReadOnlyVector
+                Input vector; its coefficients are only read.
+            y: ReadOnlyVector
+                Input vector; its coefficients are only read.
+            
+            
+            Returns
+            -------
+            Scalar
+                Computed scalar value.
+            """
+            return np.vdot(x, gram @ y)
+        def norm(x: ReadOnlyVector) -> float:
+            r"""Norm.
+            
+            Parameters
+            ----------
+            x: ReadOnlyVector
+                Input vector; its coefficients are only read.
+            
+            
+            Returns
+            -------
+            float
+                Computed scalar value.
+            """
+            return sqrt(max(0., float(inner(x, x).real)))
+        def random_unit() -> Vector:
+            r"""Random unit.
+            
+            
+            Returns
+            -------
+            Vector
+                Writable result vector.
+            """
+            x = self.domain.flatten(self.domain.randn()).copy()
+            length = norm(x)
+            if not np.isfinite(length) or length == 0:
+                raise ValueError("Lanczos requires a finite nonzero starting vector.")
+            return x / length
+        q = random_unit()
+        basis, diagonal, offdiagonal = [], [], []
+        previous = None
+        beta_old = 0.
+        estimate = 0.
+        eps = np.finfo(q.real.dtype).eps
+        for step in range(max_steps):
+            z = gram_inv @ (op @ q)
+            if not np.all(np.isfinite(z)):
+                raise ValueError("Lanczos produced a nonfinite operator image.")
+            image_norm = norm(z)
+            if image_norm == 0 and not basis:
+                if step + 1 < min(2, max_steps):
+                    q = random_unit()
+                    continue
+                return 0.
+            alpha = float(inner(q, z).real)
+            basis.append(q.copy())
+            diagonal.append(alpha)
+            z = z - alpha * q
+            if previous is not None:
+                z -= beta_old * previous
+            # Two passes suppress loss of orthogonality and spurious Ritz values.
+            for _ in range(2):
+                for v in basis:
+                    z -= inner(v, z) * v
+            beta = norm(z)
+            matrix = np.diag(diagonal)
+            if offdiagonal:
+                matrix += np.diag(offdiagonal, 1) + np.diag(offdiagonal, -1)
+            values, vectors = np.linalg.eigh(matrix)
+            index = len(values) - 1 if which == 'LA' else int(np.argmax(abs(values)))
+            estimate = float(values[index])
+            residual = beta * abs(vectors[-1, index])
+            if (beta <= 100 * eps * image_norm or len(basis) == n
+                    or (estimate != 0 and residual <= reltol * abs(estimate))):
+                return estimate
+            offdiagonal.append(beta)
+            previous, q = q, z / beta
+            beta_old = beta
+        return estimate
+
+    def _unshifted_norm_eigenvalue(self, h_domain: HilbertSpace, reltol: float, which: Literal['LM', 'SM', 'LA', 'SA']) -> float:
+        r"""Estimate an extremal generalized eigenvalue without a shift.
+        
+        Two zero probe images are treated as a zero operator. No absolute
+        threshold is used, so small nonzero operators are not deliberately
+        rounded to zero. ARPACK factorization breakdown (-9999), which can
+        also occur for nonzero singular operators, falls back to power
+        iteration on the squared Hilbert-space operator. Other failures
+        propagate. Here 'LA' is used only for positive semidefinite operators;
+        for 'LM' only the absolute value of the result is used by the caller.
+        
+        Parameters
+        ----------
+        h_domain: HilbertSpace
+            Hilbert geometry on the domain.
+        reltol: float
+            Relative tolerance.
+        which: Literal['LM', 'SM', 'LA', 'SA']
+            Which.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        from scipy.sparse.linalg import eigsh, ArpackError
+
+        op = SciPyLinearOperator(self)
+        gram = SciPyLinearOperator(h_domain.gram)
+        # ARPACK requires k < n (and complex eigsh requires k < n - 1).
+        if op.shape[0] <= 2:
+            from scipy.linalg import eigvalsh
+            basis = np.eye(op.shape[0], dtype=op.dtype)
+            matrix = np.column_stack([op @ e for e in basis.T])
+            metric = np.column_stack([gram @ e for e in basis.T])
+            values = eigvalsh(matrix, metric)
+            return float(values[-1] if which == 'LA'
+                         else values[np.argmax(np.abs(values))])
+
+        for _ in range(2):
+            v = self.domain.randn()
+            v_norm = h_domain.norm(v)
+            if v_norm == 0:
+                raise ValueError("Norm estimation requires a nonzero random probe.")
+            v = v / v_norm
+            v0 = self.domain.flatten(v)
+            image = op @ v0
+            if not np.all(np.isfinite(image)):
+                raise ValueError("Norm estimation produced a nonfinite probe image.")
+            if np.any(image != 0):
+                break
+        else:
+            return 0.
+
+        try:
+            return float(eigsh(
+                op, k=1, M=gram,
+                Minv=SciPyLinearOperator(h_domain.gram_inv),
+                which=which, v0=v0, tol=reltol,
+                return_eigenvectors=False,
+            )[0])
+        except ArpackError as error:
+            if not str(error).startswith("ARPACK error -9999:"):
+                raise
+            # A nonzero image does not prevent breakdown when the Krylov
+            # space is exhausted, e.g. for projections. Do not classify
+            # this as a zero operator or introduce a spectral shift.
+            for _ in range(1000):
+                y = h_domain.gram_inv(self(v))
+                estimate = h_domain.norm(y)
+                if not np.isfinite(estimate) or estimate == 0:
+                    raise RuntimeError(
+                        "Norm fallback encountered a zero or nonfinite image."
+                    ) from error
+                # Apply B twice, normalizing between applications to avoid
+                # explicitly squaring its scale. Squaring also handles
+                # eigenvalues +lambda and -lambda of equal magnitude.
+                z = h_domain.gram_inv(self(y / estimate))
+                residual = h_domain.norm(z - estimate * v) / estimate
+                if np.isfinite(residual) and residual <= reltol:
+                    return float(estimate)
+                z_norm = h_domain.norm(z)
+                if not np.isfinite(z_norm) or z_norm == 0:
+                    raise RuntimeError(
+                        "Norm fallback encountered a zero or nonfinite iterate."
+                    ) from error
+                v = z / z_norm
+            raise RuntimeError(
+                "Norm fallback did not converge within 1000 iterations."
+            ) from error
+
     def _power_method(
         self,
         h_domain: HilbertSpace,
         h_codomain: HilbertSpace,
         max_iter: int = int(1e2),
-        stopping_rule: float = 1e-12,
-        without_codomain_vectors: bool = False,
+        stopping_rule: float = 1e-3,
     ) -> float:
-        r"""Approximation of operator norm by the power method. Should not be used directly and only be called via norm.
-
+        r"""Approximate the operator norm by power iteration.
+        
+        The operator's normal operator is used and the final square root is
+        taken. This method should be called through :meth:`norm`.
+        
         Parameters
         ----------
-        h_domain: Hilbert space on the domain.
-        h_codomain: Hilbert space on the codomain.
-        max_iter: int maximum number of iterations
-        stopping_rule: float Iteration is stopped if relative residual is smaller than this value.
-        without_codomain_vectors: bool [default: False]
-            see method norm        
+        h_domain: HilbertSpace
+            Hilbert geometry on the domain.
+        h_codomain: HilbertSpace
+            Hilbert geometry on the codomain.
+        max_iter: int [default: int(100.0)]
+            Max iter.
+        stopping_rule: float [default: 0.001]
+            Stopping rule.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
         """
         x = self.domain.rand()
+        x_norm = h_domain.norm(x)
+        if x_norm == 0:
+            raise ValueError("Power iteration requires a nonzero initial vector.")
+        x = x / x_norm
         relative_residual = inf
-        if without_codomain_vectors:
-            op = self.adjoint_eval
-        else:
-            op = self.adjoint * h_codomain.gram * self
+        op = self.adjoint * h_codomain.gram * self
         for _ in range(max_iter):
             if relative_residual < stopping_rule:
                 break
             ystar = op(x)
             y = h_domain.gram_inv(ystar)
             lmb = sqrt(self.domain.vdot(y, ystar).real)
-            relative_residual = h_domain.norm(y - lmb * x)
+            if lmb == 0:
+                return 0.
+            relative_residual = h_domain.norm(y - lmb * x) / lmb
             x = y/lmb
         return sqrt(lmb)
-    
-    def set_constant(self, c: Vector | Scalar, index: int) -> None:
-        """Assuming the operator you defined has a domain that is composed of multiple
-        inputs and thus a direct sum, this method allows you to fix one of that inputs
-        as a constant. 
 
-        This method changes the domain to either a direct sum of the remaining
-        components or just the remaining component.
-
-        Moreover, it validates if the remaining operator is linear using the utility method
-        and changes the linearity flag.
-
+    def _power_method_sa(
+        self,
+        h_domain: HilbertSpace,
+        max_iter: int = int(1e2),
+        stopping_rule: float = 1e-3,
+    ) -> float:
+        r"""Approximate the self-adjoint norm by power iteration.
+        
+        The operator is applied directly and yields the norm of
+        :math:`G_X^{-1}A`. This method should be called through
+        :meth:`norm_sa`.
+        
         Parameters
         ----------
-        c : Vector or Scalar
+        h_domain: HilbertSpace
+            Hilbert geometry on the domain.
+        max_iter: int [default: int(100.0)]
+            Max iter.
+        stopping_rule: float [default: 0.001]
+            Stopping rule.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        x = self.domain.rand()
+        x_norm = h_domain.norm(x)
+        if x_norm == 0:
+            raise ValueError("Power iteration requires a nonzero initial vector.")
+        x = x / x_norm
+        relative_residual = inf
+        for _ in range(max_iter):
+            if relative_residual < stopping_rule:
+                break
+            ystar = self(x)
+            y = h_domain.gram_inv(ystar)
+            lmb = sqrt(self.domain.vdot(y, ystar).real)
+            if lmb == 0:
+                return 0.
+            rayleigh = self.domain.vdot(x, ystar).real
+            signed_lmb = -lmb if rayleigh < 0 else lmb
+            relative_residual = h_domain.norm(y - signed_lmb * x) / lmb
+            x = y/lmb
+        return lmb
+    
+    def set_constant(self, c: Vector | Scalar, index: int) -> None:
+        r"""Assuming the operator you defined has a domain that is composed of multiple
+        inputs and thus a direct sum, this method allows you to fix one of that inputs
+        as a constant. 
+        
+        This method changes the domain to either a direct sum of the remaining
+        components or just the remaining component.
+        
+        Moreover, it validates if the remaining operator is linear using the utility method
+        and changes the linearity flag.
+        
+        Parameters
+        ----------
+        c: Vector | Scalar
             The constant vector or scalar to be set.
-        index : int
+        index: int
             The index to be set as a constant. The index is with respect to the full domain.
         """
         self.__revoke()
@@ -855,7 +1956,7 @@ class Operator:
             self.linear = util.operator_tests.test_linearity(self)
     
     def reset_constants(self) -> None:
-        """Resets the constants set by `set_constant` to an empty dictionary. This will
+        r"""Resets the constants set by `set_constant` to an empty dictionary. This will
         also reset the domain to the full domain.
         """
         if hasattr(self, "full_domain"):
@@ -876,29 +1977,29 @@ class Operator:
             self.log.warning("Resetting constants while non are specified might not be necessary!")
 
     def get_constants(self) -> dict[int, Vector | Scalar]:
-        """Returns the constants set by `set_constant` as a dictionary. The keys are the indices
+        r"""Returns the constants set by `set_constant` as a dictionary. The keys are the indices
         of the full domain and the values are the constants set.
         
         Returns
         -------
-        dict
+        dict[int, Vector | Scalar]
             The dictionary with the constants set by `set_constant`.
         """
         return self._constants
 
     def _insert_constants(self, x: Vector) -> Vector:
-        """Inserts the constants into the vector.
-
+        r"""Inserts the constants into the vector.
+        
         Parameters
         ----------
-        x : Vector
+        x: Vector
             The vector in the reduced domain that to be completed with constants.
-
+        
         Returns
         -------
         Vector
             The vector in the full domain with the constants put into the places 
-            to be kept constant. If no constants are set return x. 
+            to be kept constant. If no constants are set return x.
         """
         if hasattr(self, "full_domain") and len(self._constants)>0:
             if x in self.domain:
@@ -922,20 +2023,20 @@ class Operator:
         else:
             return x
      
-    def _reduce_to_domain(self, y: Vector) -> Vector:
-        """Remove the constant coefficients in the vector where one has specified 
+    def _reduce_to_domain(self, y: ReadOnlyVector) -> Vector:
+        r"""Remove the constant coefficients in the vector where one has specified 
         constants in the original operator.
-
+        
         Parameters
         ----------
-        y : Vector
+        y: ReadOnlyVector
             The vector in the full codomain that to be reduced to the new domain.
-
+        
         Returns
         -------
         Vector
             The vector in the reduced domain with the the places 
-            to be kept constant removed. If no constants are set return x. 
+            to be kept constant removed. If no constants are set return x.
         """
         if hasattr(self, "full_domain") and len(self._constants)>0:
             if y in self.full_domain:
@@ -1021,13 +2122,13 @@ class Operator:
 
 
 class Adjoint(Operator):
-    r"""An proxy class wrapping a linear operator. Calling it will evaluate the operator's
+    r"""A proxy class wrapping a linear operator. Calling it will evaluate the operator's
     adjoint. This class should not be instantiated directly, but rather through the
     `Operator.adjoint` property of a linear operator.
-
+    
     Parameters
     ----------
-    op : Operator
+    op: Operator
         The base operator giving rise to this adjoint.
     """
 
@@ -1044,35 +2145,93 @@ class Adjoint(Operator):
                 "An adjoint operator can only be constructed from a linear operator. Please use linearize to get the derivative and use its adjoint!"))
         self.op = op
         r"""The underlying operator."""
-        super().__init__(op.codomain, op.domain, linear=True)
+        super().__init__(
+            op.codomain,
+            op.domain,
+            linear=True,
+            self_adjoint=op.self_adjoint,
+        )
         if hasattr(self.op,"full_domain"):
             self._constants = {}
             """The constant inputs of the op need to be set in adjoint evaluation
             """
             self.full_domain = op.codomain
 
-    def _eval(self, x: Vector, **kwargs) -> Vector:
+    def _eval(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         self.op.reset_detect_loop()
         return self.op._reduce_to_domain(self.op._adjoint(x, **kwargs))
         
-    def _ieval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _ieval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         self.op.reset_detect_loop()
         return self.op._reduce_to_domain(self.op._iadjoint(x, out, **kwargs))
 
-    def _adjoint(self, x: Vector, **kwargs) -> Vector:
+    def _adjoint(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         self.op.reset_detect_loop()
         return self.op._eval(self._insert_constants(x), **kwargs)
 
-    def _iadjoint(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         self.op.reset_detect_loop()
         return self.op._ieval(self._insert_constants(x), out, **kwargs)
 
+    def _adjoint_eval(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
+        r"""Evaluate ``self.adjoint(self(x))``.
+        
+        An operator may provide ``_eval_adjoint`` to implement its opposite
+        normal operator, ``op(op.adjoint(x))``, without materializing the
+        intermediate vector. This hook is used, for example, by Fourier
+        transforms. Operators without such a hook retain the generic
+        implementation.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
+        eval_adjoint = getattr(self.op, '_eval_adjoint', None)
+        if eval_adjoint is None:
+            return super()._adjoint_eval(x, **kwargs)
+        self.op.reset_detect_loop()
+        return eval_adjoint(x, **kwargs)
+
+    def _iadjoint_eval(
+        self, x: ReadOnlyVector, out: Vector, **kwargs: Any
+    ) -> Vector:
+        ieval_adjoint = getattr(self.op, '_ieval_adjoint', None)
+        if ieval_adjoint is None:
+            return super()._iadjoint_eval(x, out, **kwargs)
+        self.op.reset_detect_loop()
+        return ieval_adjoint(x, out, **kwargs)
+
     @util.memoized_property
     def adjoint(self) -> Operator:
+        r"""Adjoint.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         return self.op
 
     @Operator.inverse.getter
     def inverse(self) -> Operator:
+        r"""Inverse.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if self._inverse is not None:
             return self._inverse
         try:
@@ -1087,13 +2246,20 @@ class Adjoint(Operator):
 
 
 class Derivative(Operator):
-    r"""An proxy class wrapping a nonlinear operator. Calling it will evaluate the operator's
+    r"""A proxy class wrapping a nonlinear operator. Calling it will evaluate the operator's
     derivative. This class should not be instantiated directly, but rather through the
     `Operator.linearize` method of a nonlinear operator.
-
+    
+    If the wrapped nonlinear operator was constructed with
+    ``self_adjoint=True``, this derivative exposes :attr:`self_adjoint` as true
+    and its adjoint evaluation delegates to the wrapped operator's
+    ``_derivative`` or ``_iderivative`` implementation. The nonlinear operator
+    therefore does not need to implement ``_adjoint`` or ``_iadjoint`` in this
+    case.
+    
     Parameters
     ----------
-    op : Operator
+    op: Operator | _Revocable
         The base operator giving rise to this derivative.
     """
 
@@ -1106,39 +2272,68 @@ class Derivative(Operator):
         r"""The underlying operator."""
         _op = op.get()
         """The underlying operator."""
-        super().__init__(_op.domain, _op.codomain, linear=True)
+        super().__init__(
+            _op.domain,
+            _op.codomain,
+            linear=True,
+            self_adjoint=_op._derivative_self_adjoint,
+        )
+        self.gram_factor = _op.gram_factor
         # Setting the corresponding constants of op to zero
         if hasattr(_op,"full_domain"):
             self.full_domain = _op.full_domain
             self._constants = {index : self.full_domain[index].zeros() for index in _op._constants}
 
-    def _eval(self, x:Vector, **kwargs) -> Vector:
+    def _eval(self, x:ReadOnlyVector, **kwargs: Any) -> Vector:
         self.op.get().reset_detect_loop()
         return self.op.get()._derivative(x, **kwargs)
 
-    def _ieval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _ieval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         self.op.get().reset_detect_loop()
         return self.op.get()._iderivative(x, out, **kwargs)
 
-    def _adjoint(self, x: Vector, **kwargs) -> Vector:
+    def _adjoint(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         self.op.get().reset_detect_loop()
+        if self.self_adjoint:
+            return self.op.get()._derivative(x, **kwargs)
         return self._reduce_to_domain(self.op.get()._adjoint(x, **kwargs))
 
-    def _iadjoint(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         self.op.get().reset_detect_loop()
+        if self.self_adjoint:
+            return self.op.get()._iderivative(x, out, **kwargs)
         return self._reduce_to_domain(self.op.get()._iadjoint(x, out, **kwargs))
     
-    def adjoint_data(self, x: Vector, out: Vector | None  = None, **kwargs) -> Vector:
+    def adjoint_data(self, x: ReadOnlyVector, out: Vector | None  = None, **kwargs: Any) -> Vector:
+        r"""Adjoint data.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
+        if self.self_adjoint:
+            return self._apply_gram_factor(self(x, out=out, **kwargs))
         if out is None:
             return self._reduce_to_domain(self.op.get().adjoint_data(x, **kwargs))
         else:
             return self._reduce_to_domain(self.op.get().adjoint_data(x, out = out, **kwargs))
     
-    def _adjoint_eval(self, x: Vector, **kwargs) -> Vector:
+    def _adjoint_eval(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         self.op.get().reset_detect_loop()
         return self._reduce_to_domain(self.op.get()._adjoint_derivative(x, **kwargs))
 
-    def _iadjoint_eval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_eval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         self.op.get().reset_detect_loop()
         return self._reduce_to_domain(self.op.get()._iadjoint_derivative(x, out, **kwargs))
 
@@ -1152,11 +2347,12 @@ class AdjointEval(Operator):
      class should not be instantiated directly, but rather through the `Operator.
      adjoint_eval` method of a linear operator.
     The `_eval` and `_adjoint` require the implementation of `_adjoint_eval` note that only 
-    one implementation is needed as it is a selfadjoint operator.
-
+    one implementation is needed as it is a self-adjoint operator. Its
+    :attr:`self_adjoint` property is therefore always true.
+    
     Parameters
     ----------
-    op : Operator
+    op: Operator
         The base operator giving rise to this combination of adjoint and derivative.
     """
 
@@ -1173,28 +2369,56 @@ class AdjointEval(Operator):
                 add_info='Operator is not linear cannot create AdjointEval.'
             ))
         self.op = op
-        super().__init__(op.domain, op.domain, linear=True)
+        super().__init__(
+            op.domain,
+            op.domain,
+            linear=True,
+            self_adjoint=True,
+        )
         # Setting the corresponding constants of op to zero
         if hasattr(self.op,"full_domain"):
             self.full_domain = self.op.full_domain
             self._constants = {index : self.full_domain[index].zeros() for index in self.op._constants}
 
-    def _eval(self, x: Vector, **kwargs) -> Vector:
+    def _eval(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         self.op.reset_detect_loop()
-        return self._reduce_to_domain(self.op._adjoint_eval(x, **kwargs))
+        result = self._reduce_to_domain(
+            self.op._adjoint_eval(x, **kwargs)
+        )
+        return self.op._apply_gram_factor(result)
 
-    def _ieval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _ieval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         self.op.reset_detect_loop()
-        return self._reduce_to_domain(self.op._iadjoint_eval(x, out, **kwargs))
+        result = self._reduce_to_domain(
+            self.op._iadjoint_eval(x, out, **kwargs)
+        )
+        return self.op._apply_gram_factor(result)
 
-    def _adjoint(self, x: Vector, **kwargs) -> Vector:
+    def _adjoint(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         return self._eval(x, **kwargs)
 
-    def _iadjoint(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         return self._ieval(x, out, **kwargs)
 
 
-    def adjoint_data(self, x: Vector, out: Vector | None = None, **kwargs) -> Vector:
+    def adjoint_data(self, x: ReadOnlyVector, out: Vector | None = None, **kwargs: Any) -> Vector:
+        r"""Adjoint data.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         if out is None:
             return self._reduce_to_domain(self.op.adjoint_data(x, **kwargs))
         else:
@@ -1209,12 +2433,12 @@ class LinearCombination(Operator):
     but rather through adding and multiplying `Operator` instances and scalars.
     
     .. code-block::python
-
+    
         op_composed = a_1 * op_1 + a_2 * op_2 + ... + a_n * op_n
-
+    
     Parameters
     ----------
-    *args : tuple
+    *args: Operator | tuple[Scalar, Operator]
         Variable number of scalar and operators to be put in a linear combination. Each can be either:
         - A tuple `(scalar, Operator)` representing a scalar and an operator to be combined linearly.
         - An `Operator` to be included directly in the linear combination.
@@ -1283,10 +2507,19 @@ class LinearCombination(Operator):
                 add_info="The Operators to be taken into a LinearCombination do not have\n matching domains:\n\t"
                                                 +"\n\t".join([f"{op} with domain {op.codomain}," for op in self.ops])))
 
-        super().__init__(domain, codomain, linear=all(op.linear for op in self.ops))
+        self_adjoint = (
+            all(op.self_adjoint for op in self.ops)
+            and all(bool(np.isreal(coeff)) for coeff in self.coeffs)
+        )
+        super().__init__(
+            domain,
+            codomain,
+            linear=all(op.linear for op in self.ops),
+            self_adjoint=self_adjoint,
+        )
 
     def _eval(
-        self, x: Vector, differentiate: bool = False, **kwargs
+        self, x: ReadOnlyVector, differentiate: bool = False, **kwargs: Any
     ) -> Vector:
         if differentiate:
             self._derivs = []
@@ -1303,7 +2536,7 @@ class LinearCombination(Operator):
         return out
     
     def _ieval(
-        self, x: Vector, out: Vector, differentiate: bool = False, **kwargs
+        self, x: ReadOnlyVector, out: Vector, differentiate: bool = False, **kwargs: Any
     ) -> Vector:
         if len(self.ops) == 1:
             coeff = self.coeffs[0]
@@ -1317,7 +2550,7 @@ class LinearCombination(Operator):
             return out
         return super()._ieval(x, out, differentiate=differentiate, **kwargs)
 
-    def _iadjoint_eval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_eval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if len(self.ops) == 1:
             if self.linear:
                 out = self.ops[0].adjoint_eval(x, out = out, **kwargs)
@@ -1329,7 +2562,7 @@ class LinearCombination(Operator):
         self.log.warning("A default fast implementation for an adjoint evaluation of a linear combination is only available for a single scalar multiplication! Consider defining your own operator with a faster method!")
         return super()._iadjoint_eval(x, out, **kwargs)
     
-    def _iadjoint_derivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_derivative(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if len(self.ops) == 1:
             out = self._derivs[0].adjoint_eval(x, out = out, **kwargs)
             out *= np.abs(self.coeffs[0])**2
@@ -1337,12 +2570,13 @@ class LinearCombination(Operator):
         self.log.warning("A default fast implementation for an adjoint derivative of a linear combination is only available for a single scalar multiplication! Consider defining your own operator with a faster method!")
         return super()._iadjoint_derivative(x, out,**kwargs)
 
-    def _iderivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iderivative(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
+        self.codomain.fill(0.)
         for coeff, deriv in zip(self.coeffs, self._derivs):
             out += coeff * deriv(x,**kwargs)
         return out
 
-    def _iadjoint(self, y: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if y is out:
             source = self.codomain.empty()
             self.codomain.copyto(source, y)
@@ -1351,21 +2585,31 @@ class LinearCombination(Operator):
             ops = self.ops
         else:
             ops = self._derivs
+        self.domain.fill(out,0)
         for coeff, op in zip(self.coeffs, ops):
-            out += coeff.conjugate() * op.adjoint(y,**kwargs)
+            out += np.conjugate(coeff) * op.adjoint(y,**kwargs)
         return out
        
-    def _iadjoint_data(self, x: Vector, out: Vector, **kwargs) -> Vector:
-        if x is out:
+    def _iadjoint_data(self, y: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
+        if y is out:
             source = self.codomain.empty()
-            self.codomain.copyto(source, x)
-            x = source
+            self.codomain.copyto(source, y)
+            y = source
+        self.domain.fill(out,0.)
         for coeff, op in zip(self.coeffs, self.ops):
-            out += coeff.conj() * op.adjoint_data(x,**kwargs)
+            out +=  op.adjoint_data(np.conjugate(coeff) * y, **kwargs)
         return out
 
     @Operator.inverse.getter
     def inverse(self) -> Operator:
+        r"""Inverse.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if self._inverse is not None:
             return self._inverse
         if len(self.ops) > 1:
@@ -1391,28 +2635,37 @@ class LinearCombination(Operator):
 class Composition(Operator):
     r"""A composition of operators. This class should normally not be instantiated directly,
     but rather through multiplying :class:`Operator` instances.
-
+    
     .. code-block:: python
-
+    
         op_composed = op_n * ... * op_2 * op_1
-
+    
     If desired, you can then activate the use of buffers by
-
+    
         op_composed.use_buffers = True
-
+    
     Then intermediate values will be written into reusable
     buffers.  There is at most one buffer for every interface between two
     operators.  Adjacent interfaces share a buffer whenever the operator between
     them has compatible domain and codomain, because that operator can then be
     evaluated in place.
-
+    
     Parameters
     ----------
-    *ops : tuple[Operator, ...]
+    use_buffers: bool [default: True]
+        Use buffers.
+    inverse: Operator | None [default: None]
+        Explicit inverse of the composition.
+    *ops: Operator
         Operators to be composed. The domain of each operator must be compatible
         with the codomain of the following operator.
-    inverse : Operator, optional
-        Explicit inverse of the composition.
+    
+    Notes
+    -----
+    A linear composition that explicitly represents a singular-value
+    decomposition can be marked with :meth:`label_as_svd`. The public
+    properties :attr:`is_svd` and :attr:`svd_data` then expose the verified
+    decomposition to spectral algorithms.
     """
 
     def __init__(
@@ -1446,7 +2699,10 @@ class Composition(Operator):
         self.d_eq_cd = []
         """Whether each operator has compatible domain and codomain."""
         for op in ops:
-            if isinstance(op, Composition):
+            # A counted composition is an observable evaluation boundary.
+            # Flattening it would bypass its instrumented methods (e.g. the
+            # blur inside an SSNewton inactive-set operator T * projection).
+            if isinstance(op, Composition) and not op.eval_count_enabled:
                 self.ops.extend(op.ops)
                 self.d_eq_cd.extend(op.d_eq_cd)
             else:
@@ -1466,16 +2722,325 @@ class Composition(Operator):
             linear=all(op.linear for op in self.ops),
             inverse=inverse,
         )
+        self._is_svd = False
+        self._svd_data = {}
         if use_buffers:
             self.use_buffers = True
 
     @property
+    def is_svd(self) -> bool:
+        r"""Whether this composition has been verified and labelled as an SVD.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return self._is_svd
+
+    @property
+    def svd_data(self) -> dict[str, Any]:
+        r"""Verified singular-value-decomposition data.
+        
+        The dictionary is empty until :meth:`label_as_svd` succeeds. It then
+        contains ``l``, ``U``, ``V``, ``M``, ``G_X``, ``G_Y`` and
+        ``is_eig``. The index ``l`` follows the one-based mathematical
+        convention used in the method documentation.
+        
+        
+        Returns
+        -------
+        dict[str, Any]
+            Result described above.
+        """
+        return self._svd_data
+
+    @staticmethod
+    def _svd_gram_operator(
+        gram: Operator | Real,
+        space: vecsps.VectorSpaceBase,
+        name: str,
+    ) -> Operator:
+        r"""Normalize a Gram argument to a self-adjoint operator.
+        
+        Parameters
+        ----------
+        gram: Operator | Real
+            Gram.
+        space: vecsps.VectorSpaceBase
+            Space.
+        name: str
+            Name.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
+        if isinstance(gram, (bool, np.bool_)):
+            raise TypeError(util.Errors.type_error(
+                f"{name} must be a positive real number or an Operator."
+            ))
+        if isinstance(gram, Real):
+            if gram <= 0:
+                raise ValueError(util.Errors.value_error(
+                    f"{name} must be positive. Got {gram!r}."
+                ))
+            if gram == 1:
+                return space.identity
+            return PtwMultiplication(space, float(gram))
+        if not isinstance(gram, Operator):
+            raise TypeError(util.Errors.type_error(
+                f"{name} must be a positive real number or an Operator. "
+                f"Got {type(gram).__name__}."
+            ))
+        if gram.domain != space or gram.codomain != space:
+            raise ValueError(util.Errors.value_error(
+                f"{name} must map {space} to itself. Got domain "
+                f"{gram.domain} and codomain {gram.codomain}."
+            ))
+        if not gram.self_adjoint:
+            raise ValueError(util.Errors.value_error(
+                f"{name} must be self-adjoint."
+            ))
+        return gram
+
+    @staticmethod
+    def _svd_operator_error(
+        first: Operator,
+        second: Operator,
+        test_vector: ReadOnlyVector,
+    ) -> tuple[float, float]:
+        first_value = first(test_vector)
+        second_value = second(test_vector)
+        space = first.codomain
+        error = space.norm(first_value - second_value)
+        scale = max(
+            1., space.norm(first_value), space.norm(second_value)
+        )
+        return error, scale
+
+    @staticmethod
+    def _svd_tolerance(space: vecsps.VectorSpaceBase, scale: float) -> float:
+        try:
+            dtype = np.empty(
+                (), dtype=getattr(space, "dtype", float)
+            ).real.dtype
+            eps = np.finfo(dtype).eps
+        except (TypeError, ValueError):
+            eps = np.finfo(float).eps
+        return 5000 * eps * max(1., scale)
+
+    def label_as_svd(
+        self,
+        l: int,
+        G_X: Operator | Real = 1.,
+        G_Y: Operator | Real = 1.,
+        is_eig: bool = False,
+    ) -> None:
+        r"""Verify and label this composition as a singular-value decomposition.
+        
+        If ``self`` represents
+        
+        .. math::
+            T=A_1A_2\cdots A_k,
+        
+        ``l`` identifies the positive pointwise multiplication
+        :math:`M=A_l`. The remaining factors define
+        
+        .. math::
+            V=A_1\cdots A_{l-1},\qquad
+            U=A_k^*\cdots A_{l+1}^*,
+        
+        so that :math:`T=VMU^*`. On one random reduced-space vector the
+        method verifies
+        
+        .. math::
+            V^*G_YV=I,\qquad U^*G_XU=I.
+        
+        This randomized test detects inconsistent declarations but is not a
+        proof of the identities.
+        
+        Parameters
+        ----------
+        l: int
+            One-based position of the singular-value multiplier. It must lie
+            in ``{2, ..., len(self.ops) - 1}``.
+        G_X: Operator | Real [default: 1.0]
+            Domain and codomain Gram operators. A scalar is interpreted as
+            that multiple of the corresponding identity operator.
+        G_Y: Operator | Real [default: 1.0]
+            Domain and codomain Gram operators. A scalar is interpreted as
+            that multiple of the corresponding identity operator.
+        is_eig: bool [default: False]
+            Whether the decomposition is also an eigenvalue decomposition.
+            In this case ``U == V`` and ``G_X == G_Y`` are checked as well.
+        
+        Raises
+        ------
+        TypeError
+            If an argument has an invalid type.
+        ValueError
+            If the factorization does not satisfy the structural or numerical
+            SVD conditions.
+        """
+        if isinstance(l, (bool, np.bool_)) or not isinstance(
+                l, (int, np.integer)):
+            raise TypeError(util.Errors.type_error(
+                "l must be an integer."
+            ))
+        l = int(l)
+        if not 2 <= l <= len(self.ops) - 1:
+            raise ValueError(util.Errors.value_error(
+                "l must satisfy 2 <= l <= len(self.ops) - 1. "
+                f"Got l={l} for {len(self.ops)} factors."
+            ))
+        if not isinstance(is_eig, (bool, np.bool_)):
+            raise TypeError(util.Errors.type_error(
+                "is_eig must be boolean."
+            ))
+        is_eig = bool(is_eig)
+        if not all(op.linear for op in self.ops):
+            raise ValueError(util.Errors.value_error(
+                "Every factor of an SVD composition must be linear."
+            ))
+
+        middle_index = l - 1
+        M = self.ops[middle_index]
+        if not isinstance(M, PtwMultiplication):
+            raise ValueError(util.Errors.value_error(
+                f"The factor at position l={l} must be a "
+                "PtwMultiplication operator."
+            ))
+        multiplier = np.asarray(M.factor)
+        if not np.all(np.isreal(multiplier)) or not np.all(
+                multiplier.real > 0):
+            raise ValueError(util.Errors.value_error(
+                "The singular-value multiplier must contain only positive "
+                "real entries."
+            ))
+
+        all_spaces = [self.domain]
+        all_spaces.extend(op.codomain for op in self.ops[::-1])
+        # Storage may differ (e.g. complex arrays with real coordinates).
+        # The scalar field, rather than storage dtype, must agree throughout.
+        if any(space.as_real_space != self.domain.as_real_space
+               for space in all_spaces):
+            raise ValueError(util.Errors.value_error(
+                "An SVD composition must use the same scalar field throughout "
+                "(as_real_space), including the singular-coordinate space."
+            ))
+
+        left_factors = self.ops[:middle_index]
+        V = (
+            left_factors[0]
+            if len(left_factors) == 1
+            else Composition(*left_factors)
+        )
+        right_adjoint_factors = [
+            op.adjoint for op in self.ops[middle_index + 1:][::-1]
+        ]
+        U = (
+            right_adjoint_factors[0]
+            if len(right_adjoint_factors) == 1
+            else Composition(*right_adjoint_factors)
+        )
+        if M.domain != M.codomain:
+            raise ValueError(util.Errors.value_error(
+                "The singular-value multiplier must map the reduced vector "
+                "space to itself."
+            ))
+        if V.domain != M.codomain or U.domain != M.domain:
+            raise ValueError(util.Errors.value_error(
+                "The U, M, and V factors use incompatible reduced spaces."
+            ))
+
+        G_X = self._svd_gram_operator(G_X, self.domain, "G_X")
+        G_Y = self._svd_gram_operator(G_Y, self.codomain, "G_Y")
+        reduced_space = M.domain
+        test_vector = reduced_space.randn()
+        identity = reduced_space.identity
+
+        V_gram_V = Composition(V.adjoint, G_Y, V)
+        error, scale = self._svd_operator_error(
+            V_gram_V, identity, test_vector
+        )
+        tolerance = self._svd_tolerance(reduced_space, scale)
+        if not np.isfinite(error) or error > tolerance:
+            raise ValueError(util.Errors.value_error(
+                "V is not isometric with respect to G_Y: "
+                f"||V* G_Y V z - z||={error}, tolerance={tolerance}."
+            ))
+
+        U_gram_U = Composition(U.adjoint, G_X, U)
+        error, scale = self._svd_operator_error(
+            U_gram_U, identity, test_vector
+        )
+        tolerance = self._svd_tolerance(reduced_space, scale)
+        if not np.isfinite(error) or error > tolerance:
+            raise ValueError(util.Errors.value_error(
+                "U is not isometric with respect to G_X: "
+                f"||U* G_X U z - z||={error}, tolerance={tolerance}."
+            ))
+
+        if is_eig:
+            if self.domain != self.codomain:
+                raise ValueError(util.Errors.value_error(
+                    "An eigenvalue decomposition requires identical domain "
+                    "and codomain."
+                ))
+            error, scale = self._svd_operator_error(U, V, test_vector)
+            tolerance = self._svd_tolerance(self.domain, scale)
+            if not np.isfinite(error) or error > tolerance:
+                raise ValueError(util.Errors.value_error(
+                    "is_eig=True requires U and V to agree. "
+                    f"||U z - V z||={error}, tolerance={tolerance}."
+                ))
+            gram_test_vector = self.domain.randn()
+            error, scale = self._svd_operator_error(
+                G_X, G_Y, gram_test_vector
+            )
+            tolerance = self._svd_tolerance(self.domain, scale)
+            if not np.isfinite(error) or error > tolerance:
+                raise ValueError(util.Errors.value_error(
+                    "is_eig=True requires G_X and G_Y to agree. "
+                    f"||G_X z - G_Y z||={error}, tolerance={tolerance}."
+                ))
+
+        self._svd_data = {
+            'l': l,
+            'U': U,
+            'V': V,
+            'M': M,
+            'G_X': G_X,
+            'G_Y': G_Y,
+            'is_eig': is_eig,
+        }
+        self._is_svd = True
+
+    @property
     def use_buffers(self) -> bool:
-        """Whether reusable intermediate buffers are enabled."""
+        r"""Whether reusable intermediate buffers are enabled.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self._use_buffers
 
     @use_buffers.setter
     def use_buffers(self, value: bool) -> None:
+        r"""Use buffers.
+        
+        Parameters
+        ----------
+        value: bool
+            Value.
+        """
         if not isinstance(value, (bool, np.bool_)):
             raise TypeError(util.Errors.type_error(
                 'use_buffers must be boolean.', value
@@ -1496,15 +3061,30 @@ class Composition(Operator):
 
     @property
     def use_buffer(self) -> bool:
-        """Backward-compatible singular alias for :attr:`use_buffers`."""
+        r"""Backward-compatible singular alias for :attr:`use_buffers`.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.use_buffers
 
     @use_buffer.setter
     def use_buffer(self, value: bool) -> None:
+        r"""Use buffer.
+        
+        Parameters
+        ----------
+        value: bool
+            Value.
+        """
         self.use_buffers = value
 
     def _initialize_buffers(self) -> None:
-        """Allocate and map reusable buffers to composition interfaces."""
+        r"""Allocate and map reusable buffers to composition interfaces.
+        """
         self._interface_buffers = []
         self._buffer_status = {}
         if len(self.ops) < 2:
@@ -1544,7 +3124,7 @@ class Composition(Operator):
             self._buffer_status[key] = False
 
     def _ieval(
-        self, x: Vector, out: Vector, differentiate: bool = False, **kwargs
+        self, x: ReadOnlyVector, out: Vector, differentiate: bool = False, **kwargs: Any
     ) -> Vector:
         if not self._use_buffers or len(self.ops) < 2:
             return self._ieval_without_buffers(x, out, differentiate=differentiate, **kwargs)
@@ -1574,7 +3154,7 @@ class Composition(Operator):
             self._release_buffers()
 
     def _ieval_without_buffers(
-        self, x: Vector, out: Vector, differentiate: bool = False, **kwargs
+        self, x: Vector, out: Vector, differentiate: bool = False, **kwargs: Any
     ) -> Vector:
         if differentiate:
             self._derivs = []
@@ -1598,7 +3178,7 @@ class Composition(Operator):
                 x = op(x, **kwargs)
         return self.ops[0](x, out=out, **kwargs)
 
-    def _iderivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iderivative(self, x: Vector, out: Vector, **kwargs: Any) -> Vector:
         if not self._use_buffers or len(self._derivs) < 2:
             x = self._derivs[-1](x, **kwargs)
             for d_eq_cd, deriv in zip(
@@ -1620,7 +3200,7 @@ class Composition(Operator):
         finally:
             self._release_buffers()
 
-    def _iadjoint(self, y: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint(self, y: Vector, out: Vector, **kwargs: Any) -> Vector:
         ops = self.ops if self.linear else self._derivs
         if not self._use_buffers or len(ops) < 2:
             y = ops[0].adjoint(y, **kwargs)
@@ -1642,7 +3222,7 @@ class Composition(Operator):
         finally:
             self._release_buffers()
 
-    def _iadjoint_eval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_eval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if kwargs:
             self.log.warning(
                 "In the default implementation of _adjoint_eval it is unclear "
@@ -1726,14 +3306,11 @@ class Composition(Operator):
             else:
                 x = deriv.adjoint(x)
         return self._derivs[-1].adjoint(x, out=out)
-
-    def _iadjoint_data(self, data: Vector, out: Vector, **kwargs) -> Vector:
+    
+    def _iadjoint_data(self, data: ObsDataT, out: Vector, **kwargs: Any) -> Vector:
         ops = self.ops if self.linear else self._derivs
         if not self._use_buffers or len(ops) < 2:
-            if self.d_eq_cd[0]:
-                data = ops[0].adjoint_data(data, out=data, **kwargs)
-            else:
-                data = ops[0].adjoint_data(data, **kwargs)
+            data = ops[0].adjoint_data(data, **kwargs)
             for d_eq_cd, op in zip(self.d_eq_cd[1:-1], ops[1:-1]):
                 if d_eq_cd:
                     data = op.adjoint(data, out=data, **kwargs)
@@ -1754,7 +3331,7 @@ class Composition(Operator):
         finally:
             self._release_buffers()
 
-    def _iadjoint_derivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_derivative(self, x: Vector, out: Vector, **kwargs: Any) -> Vector:
         if kwargs:
             self.log.warning(
                 "In the default implementation of _adjoint_derivative it is "
@@ -1797,6 +3374,14 @@ class Composition(Operator):
 
     @Operator.inverse.getter
     def inverse(self) -> Operator:
+        r"""Inverse.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if self._inverse is not None:
             return self._inverse
         try:
@@ -1815,19 +3400,19 @@ class Composition(Operator):
 
 class PartOfOperator(Operator):
     r"""Slcing the output of an operator. Given an operator
-
+    
     .. math::
         F\colon X \to (Y_1,\dots,Y_n)
-
+    
     One can slice the operator to a subset of the direct sum of :math:`(Y_1,\dots,Y_n)` 
     by defining an index set :math:`I\subset (1,\dots,n)`.
         
     Parameters
     ----------
-    Operator : Operator
-        The operator to be sliced. 
-    index : int, slice, tuple(int)
-        The subset of indices. 
+    base_op: Operator
+        Base op.
+    index: int | slice | Sequence[int]
+        The subset of indices.
     """
     def __init__(
         self,
@@ -1890,7 +3475,7 @@ class PartOfOperator(Operator):
             codomain=vecsps.DirectSum(*[base_op.codomain.summands[i] for i in self.index])
         super().__init__(self.base_op.domain,codomain,linear=self.base_op.linear)
 
-    def _get_codomain_part(self, y: Vector) -> Vector:
+    def _get_codomain_part(self, y: ReadOnlyVector) -> Vector:
         if(isinstance(self.index,int)):
             return y[self.index]
         else:
@@ -1903,7 +3488,7 @@ class PartOfOperator(Operator):
             return self.base_op.codomain.join(*[cd.zeros() if i not in self.index else out[self.index.index(i)] for i,cd in enumerate(self.base_op.codomain)])
 
     def _ieval(
-        self, x: Vector, out: Vector, differentiate: bool = False, **kwargs
+        self, x: ReadOnlyVector, out: Vector, differentiate: bool = False, **kwargs: Any
     ) -> Vector:
         full_out = self._extend_to_full(out)
         if self.base_op.linear:
@@ -1917,13 +3502,13 @@ class PartOfOperator(Operator):
         return out
 
 
-    def _iderivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iderivative(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         self.base_op._iderivative(
             x, self._extend_to_full(out), **kwargs
         )
         return out
 
-    def _iadjoint(self, y: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         out = self.base_op._iadjoint(self._extend_to_full(y), out, **kwargs)
         return out
     
@@ -1945,12 +3530,12 @@ class PartOfOperator(Operator):
 class Pow(Operator):
     r"""Power of a linear operator `A`, mapping a domain into itself, i.e. 
     `A * A * ... * A`
-
+    
     Parameters
     ----------
-    op : Operator
+    op: Operator
         The Operoter raised to the power of `exponent`
-    exponent :  int
+    exponent: int
         The power. Is required to be a positive interger.
     """
     def __init__(self, op: Operator, exponent: int) -> None:
@@ -1975,13 +3560,13 @@ class Pow(Operator):
         self.op = op
         self.exponent = exponent
     
-    def _eval(self, x: Vector, **kwargs) -> Vector:
+    def _eval(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         res = x
         for _ in range(self.exponent):
             res = self.op(res, **kwargs)
         return res
 
-    def _ieval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _ieval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if out is x:
             for _ in range(self.exponent):
                 out = self.op(out, out = out, **kwargs)
@@ -1992,14 +3577,14 @@ class Pow(Operator):
                 out = self.op(out, out = out, **kwargs)
             return out
 
-    def _adjoint(self, x: Vector, **kwargs) -> Vector:
+    def _adjoint(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         res = x
         for j in range(self.exponent):
             res = self.op.adjoint(res)
         return res
 
     def _iadjoint(
-        self, x: Vector, out: Vector | None = None, **kwargs
+        self, x: ReadOnlyVector, out: Vector | None = None, **kwargs: Any
     ) -> Vector:
         if out is x:
             for _ in range(self.exponent):
@@ -2013,6 +3598,14 @@ class Pow(Operator):
     
     @Operator.inverse.getter
     def inverse(self) -> Operator:
+        r"""Inverse.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if self._inverse is not None:
             return self._inverse
         try:
@@ -2026,193 +3619,157 @@ class Pow(Operator):
 
 class Identity(Operator):
     r"""The identity operator on a vector space.
-
+    
     The allocating methods return an independent vector. In-place calls copy into the
     supplied output vector. A configurable no-copy mode is intentionally not provided,
     because allocating operator results must be freely modifiable by the caller.
-
+    The identity operator is always self-adjoint.
+    
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpaceBase
+    domain: vecsps.VectorSpaceBase
         The underlying vector space.
     """
 
     def __init__(self, domain: vecsps.VectorSpaceBase) -> None:
-        super().__init__(domain, domain, linear=True)
+        super().__init__(
+            domain,
+            domain,
+            linear=True,
+            self_adjoint=True,
+        )
 
-    def _ieval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _ieval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if out is not x:
             self.domain.copyto(out, x)
         return out
 
-    def _iadjoint(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         return self._ieval(x, out, **kwargs)
 
-    def _iadjoint_eval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_eval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         return self._ieval(x, out, **kwargs)
 
     @Operator.inverse.getter
     def inverse(self) -> Operator:
+        r"""Inverse.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         return self
 
     def __repr__(self) -> str:
         return util.make_repr(self, self.domain)
 
 class CoordinateProjection(Operator):
-    r"""A projection operator onto a subset of the domain. The codomain is a one-dimensional
-    `regpy.vecsps.VectorSpaceBase` of the same dtype as the domain.
-
+    r"""Restriction to selected coordinates of a MaskableVectorSpace.
+    
+    The codomain is the corresponding MaskedVectorSpace. The adjoint is
+    extension by zero in algebraic dual coordinates. Masks must match the
+    domain's mask protocol and are copied at construction.
+    
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpaceBase
-        The underlying vector space
-    mask : ArrayLike
-        Boolean mask of the subset onto which to project.
+    domain: vecsps.VectorSpaceBase
+        Domain vector space.
+    mask: Mask
+        Coordinate-selection mask in the format used by the vector space.
     """
-    def __init__(
-        self, domain: vecsps.VectorSpaceBase, mask: ArrayLike
-    ) -> None:
-        if isinstance(domain,vecsps.NumPyVectorSpace):
-            try:
-                mask = np.broadcast_to(mask, domain.shape)
-            except:
-                raise ValueError(util.Errors._compose_message(
-                    "BROADCAST ERROR",
-                    f"The mask for a CoordinateProjection for NumPyVectorSpace instances has to be broadcastable to the shape of the domain {domain.shape}. "+"\n\t"+ f"mask = {mask}"
-                ))
-            if mask.dtype != bool:
-                raise TypeError(util.Errors.not_instance(
-                    mask,
-                    bool,
-                    f"To construct a CoordinateProjection for a NumPyVectorSpace the given mask has to be of boolean type. "
-                ))
-        else:
-            try:
-                x = domain.rand()
-                _ = x[mask]
-                x[mask] = domain.ones()[mask]
-            except:
-                raise ValueError(util.Errors._compose_message(
-                    "MASKING ERROR",
-                    f"The mask for a CoordinateProjection for {domain} has to be able to get and set items. "+"\n\t "+f"mask = {mask}"
-                ))
-        self.mask = mask
-        super().__init__(
-            domain=domain,
-            codomain=domain.masked_space(mask),
-            linear=True
-        )
 
-    def _eval(self, x: Vector) -> Vector:
-        return x[self.mask]
+    def __init__(self, domain: vecsps.VectorSpaceBase, mask: Mask) -> None:
+        from regpy.vecsps.maskable import MaskableVectorSpace
+        if not isinstance(domain, MaskableVectorSpace):
+            raise TypeError("CoordinateProjection requires a MaskableVectorSpace.")
+        restricted = domain.get_masked_space(mask)
+        self.mask = restricted.mask
+        super().__init__(domain=domain, codomain=restricted, linear=True)
 
-    def _adjoint(self, x: Vector) -> Vector:
-        y = self.domain.zeros()
-        y[self.mask] = x
-        return y
-    
-    def _adjoint_eval(self, x: Vector) -> Vector:
-        y = self.domain.empty()
-        self.domain.copyto(y, x)
-        y[~self.mask] = 0
-        return y
+    def _eval(self, x: ReadOnlyVector) -> Vector:
+        return self.codomain.restrict(x)
 
-    def _iadjoint_eval(self, x: Vector, out: Vector) -> Vector:
-        if x is out:
-            out[~self.mask] = 0
-            return out
-        else:
-            self.domain.fill(out, 0)
-            out[self.mask] = x[self.mask]
-            return out
+    def _adjoint(self, x: ReadOnlyVector) -> Vector:
+        return self.codomain.extend(x)
+
+    def _adjoint_eval(self, x: ReadOnlyVector) -> Vector:
+        result = self.domain.zeros()
+        self.domain.copyto(result, x, where=self.mask)
+        return result
+
+    def _iadjoint_eval(self, x: ReadOnlyVector, out: Vector) -> Vector:
+        # Copy first to preserve overlapping views and shared tuple components.
+        value = self._adjoint_eval(x)
+        self.domain.copyto(out, value)
+        return out
 
     def __repr__(self) -> str:
         return util.make_repr(self, self.domain, self.mask)
 
-class CoordinateMask(Operator):
-    """A projection operator onto a subset of the domain. The remaining vector entries are set to zero.
 
+class CoordinateMask(Operator):
+    r"""Full-space coordinate projection using the maskable-space protocol.
+    
+    Selected coefficients are preserved; all others are zeroed. Supports
+    NumPy, NGSolve and maskable direct sums without indexing vector objects.
+    
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpace
-        The underlying vector space
-    mask : ArrayLike
-        Boolean mask of the subset onto which to project.
+    domain: vecsps.VectorSpaceBase
+        Domain vector space.
+    mask: Mask
+        Coordinate-selection mask in the format used by the vector space.
     """
-    def __init__(
-        self, domain: vecsps.VectorSpaceBase, mask: ArrayLike
-    ) -> None:
-        if isinstance(domain,vecsps.NumPyVectorSpace):
-            try:
-                mask = np.broadcast_to(mask, domain.shape)
-            except:
-                raise ValueError(util.Errors._compose_message(
-                    "BROADCAST ERROR",
-                    f"The mask for a CoordinateProjection for NumPyVectorSpace instances has to be broadcastable to the shape of the domain {domain.shape}. "+"\n\t "+f"mask = {mask}"
-                ))
-            if mask.dtype != bool:
-                raise TypeError(util.Errors.not_instance(
-                    mask,
-                    bool,
-                    f"To construct a CoordinateProjection for a NumPyVectorSpace the given mask has to be of boolean type. "
-                ))
-        else:
-            try:
-                x = domain.rand()
-                _ = x[mask]
-                x[mask] = domain.ones()[mask]
-            except:
-                raise ValueError(util.Errors._compose_message(
-                    "MASKING ERROR",
-                    f"The mask for a CoordinateProjection for {domain} has to be able to get and set items. "+"\n\t "+f"mask = {mask}"
-                ))
-        self.mask = mask
-        super().__init__(
-            domain=domain,
-            codomain=domain,
-            linear=True
-        )
 
-    def _eval(self, x: Vector) -> Vector:
-        res = self.domain.zeros()
-        res[self.mask] = x[self.mask]
-        return res
+    def __init__(self, domain: vecsps.VectorSpaceBase, mask: Mask) -> None:
+        from regpy.vecsps.maskable import MaskableVectorSpace
+        if not isinstance(domain, MaskableVectorSpace):
+            raise TypeError("CoordinateMask requires a MaskableVectorSpace.")
+        self.mask = domain.get_masked_space(mask).mask
+        super().__init__(domain=domain, codomain=domain, linear=True)
 
-    def _ieval(self, x: Vector, out: Vector) -> Vector:
+    def _eval(self, x: ReadOnlyVector) -> Vector:
+        result = self.domain.zeros()
+        self.domain.copyto(result, x, where=self.mask)
+        return result
+
+    def _ieval(self, x: ReadOnlyVector, out: Vector) -> Vector:
         if x is out:
-            out[~self.mask] = 0
-            return out
+            self.domain.fill(out, 0, where=self.domain.logical_not(self.mask))
         else:
-            self.codomain.fill(out, 0)
-            out[self.mask] = x[self.mask]
-            return out
+            # A distinct object can still share storage with x.
+            value = self._eval(x)
+            self.domain.copyto(out, value)
+        return out
 
-    def _adjoint(self, x: Vector) -> Vector:
-        return self._eval(x)
-    
-    def _adjoint_eval(self, x: Vector) -> Vector:
+    def _adjoint(self, x: ReadOnlyVector) -> Vector:
         return self._eval(x)
 
-    def _iadjoint(self, x: Vector, out: Vector) -> Vector:
+    def _adjoint_eval(self, x: ReadOnlyVector) -> Vector:
+        return self._eval(x)
+
+    def _iadjoint(self, x: ReadOnlyVector, out: Vector) -> Vector:
         return self._ieval(x, out)
-    
-    def _iadjoint_eval(self, x: Vector, out: Vector) -> Vector:
+
+    def _iadjoint_eval(self, x: ReadOnlyVector, out: Vector) -> Vector:
         return self._ieval(x, out)
 
     def __repr__(self) -> str:
-        return util.make_repr(self, self.domain)
+        return util.make_repr(self, self.domain, self.mask)
 
 
 class PtwMultiplication(Operator):
     r"""A multiplication operator by a constant factor where each vector entry is multiplied 
     by the vector entry of `factor`. This works analogous to the pointwise multiplication in numpy. Note that the pointwise multiplication of the coefficients
     might not represent a pointwise multiplication of the underlying functions depending on the vector space.
-
+    
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpaceBase
+    domain: vecsps.VectorSpaceBase
         The underlying vector space
-    factor : Vector or ArrayLike
+    factor: Vector | ArrayLike
         The factor by which to multiply. In case of domain being NumPyVectorSpace it can be anything that can be broadcast to `domain.shape`.
     """
     def __init__(
@@ -2248,59 +3805,181 @@ class PtwMultiplication(Operator):
             ))
         self.factor = domain.empty()
         domain.copyto(self.factor, factor)
-        super().__init__(domain, domain, linear=True)
-
-    def _eval(self, x: Vector) -> Vector:
-        return self.factor * x
-
-    def _ieval(self, x: Vector, out: Vector) -> Vector:
-        if out is not x:
-            self.codomain.copyto(out, x)
-        out *= self.factor
-        return out
-
-    def _adjoint(self, x: Vector) -> Vector:
-        if self.domain.is_complex:
-            return x * self.factor.conj()
+        if not domain.is_complex:
+            factor_is_real = True
         else:
-            return x * self.factor
+            try:
+                factor_is_real = domain.norm(self.factor.imag) == 0
+            except (AttributeError, TypeError, NotImplementedError):
+                factor_is_real = all(
+                    np.isreal(coefficient)
+                    for coefficient in domain._iter_native_coefficients(self.factor)
+                )
+        super().__init__(
+            domain,
+            domain,
+            linear=True,
+            self_adjoint=factor_is_real,
+        )
 
-    def _iadjoint(self, x: Vector, out: Vector) -> Vector:
-        if out is not x:
-            self.domain.copyto(out, x)
-        if self.domain.is_complex:
-            out *= self.factor.conj()
-        else:
+    def _eval(self, x: ReadOnlyVector) -> Vector:
+        try:
+            return self.factor * x
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            out = self.codomain.empty()
+            return self._icoefficientwise(x, out)
+
+    def _ieval(self, x: ReadOnlyVector, out: Vector) -> Vector:
+        try:
+            if out is not x:
+                self.codomain.copyto(out, x)
             out *= self.factor
-        return out
+            return out
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            return self._icoefficientwise(x, out)
 
-    def _adjoint_eval(self, x: Vector) -> Vector:
-        if self.domain.is_complex:
-            return x * self.factor.conj()*self.factor
-        else:
+    def _adjoint(self, x: ReadOnlyVector) -> Vector:
+        try:
+            if self.domain.is_complex:
+                return x * np.conjugate(self.factor)
+            return x * self.factor
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            out = self.domain.empty()
+            return self._icoefficientwise(
+                x, out, conjugate_factor=self.domain.is_complex
+            )
+
+    def _iadjoint(self, x: ReadOnlyVector, out: Vector) -> Vector:
+        try:
+            if out is not x:
+                self.domain.copyto(out, x)
+            if self.domain.is_complex:
+                out *= np.conjugate(self.factor)
+            else:
+                out *= self.factor
+            return out
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            return self._icoefficientwise(
+                x, out, conjugate_factor=self.domain.is_complex
+            )
+
+    def _adjoint_eval(self, x: ReadOnlyVector) -> Vector:
+        try:
+            if self.domain.is_complex:
+                return x * self.factor.conj()*self.factor
             return x * self.factor**2
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            out = self.domain.empty()
+            return self._icoefficientwise(x, out, squared_modulus=True)
 
-    def _iadjoint_eval(self, x: Vector, out: Vector) -> Vector:
-        if out is not x:
-            self.domain.copyto(out, x)
-        if self.domain.is_complex:
-            out *= self.factor.conj()*self.factor
+    def _iadjoint_eval(self, x: ReadOnlyVector, out: Vector) -> Vector:
+        try:
+            if out is not x:
+                self.domain.copyto(out, x)
+            if self.domain.is_complex:
+                out *= np.conjugate(self.factor)*self.factor
+            else:
+                out *= self.factor**2
+            return out
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            return self._icoefficientwise(x, out, squared_modulus=True)
+
+    def _icoefficientwise(
+        self,
+        x: ReadOnlyVector,
+        out: Vector,
+        *,
+        conjugate_factor: bool = False,
+        squared_modulus: bool = False,
+    ) -> Vector:
+        r"""Protocol-conforming coefficientwise fallback implementation.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector
+            Writable output buffer. If None, allocate a new result.
+        conjugate_factor: bool [default: False]
+            Conjugate factor.
+        squared_modulus: bool [default: False]
+            Squared modulus.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
+        x_coefficients = self.domain._iter_native_coefficients(x)
+        factor_coefficients = self.domain._iter_native_coefficients(self.factor)
+        if squared_modulus:
+            result = (
+                x_coefficient
+                * np.conjugate(factor_coefficient)
+                * factor_coefficient
+                for x_coefficient, factor_coefficient in zip(
+                    x_coefficients, factor_coefficients
+                )
+            )
+        elif conjugate_factor:
+            result = (
+                x_coefficient * np.conjugate(factor_coefficient)
+                for x_coefficient, factor_coefficient in zip(
+                    x_coefficients, factor_coefficients
+                )
+            )
         else:
-            out *= self.factor**2
+            result = (
+                x_coefficient * factor_coefficient
+                for x_coefficient, factor_coefficient in zip(
+                    x_coefficients, factor_coefficients
+                )
+            )
+        self.domain._set_native_coefficients(out, result)
         return out
 
     @property
     def invertible(self) -> bool:
         # TODO: check if multiplier has zeros!
+        r"""Invertible.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return True
 
     @Operator.inverse.getter
     def inverse(self) -> Operator:
+        r"""Inverse.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if self._inverse is not None:
             return self._inverse
         sav = np.seterr(divide='raise')
         try:
-            return PtwMultiplication(self.domain, 1 / self.factor)
+            try:
+                inverse_factor = 1 / self.factor
+            except (AttributeError, TypeError, ValueError, NotImplementedError):
+                inverse_factor = self.domain.empty()
+                self.domain._set_native_coefficients(
+                    inverse_factor,
+                    (
+                        1 / coefficient
+                        for coefficient in self.domain._iter_native_coefficients(
+                            self.factor
+                        )
+                    ),
+                )
+            return PtwMultiplication(self.domain, inverse_factor)
         finally:
             np.seterr(**sav)
 
@@ -2310,13 +3989,13 @@ class PtwMultiplication(Operator):
 
 class OuterShift(Operator):
     r"""Shift an operator by a constant offset in the codomain.
-
+    
     Parameters
     ----------
-    op : Operator
+    op: Operator
         The underlying operator.
-    offset : op.codomain
-        The offset by which to shift. 
+    offset: Vector | Scalar
+        The offset by which to shift.
     """
     def __init__(self, op: Operator, offset: Vector | Scalar) -> None:
         if not isinstance(op,Operator):
@@ -2345,7 +4024,7 @@ class OuterShift(Operator):
         op.codomain.copyto(self.offset, offset)
 
     def _ieval(
-        self, x: Vector, out: Vector, differentiate: bool = False, **kwargs
+        self, x: ReadOnlyVector, out: Vector, differentiate: bool = False, **kwargs: Any
     ) -> Vector:
         if differentiate:
             out, self._deriv = self.op.linearize(x, out = out, **kwargs)
@@ -2356,30 +4035,30 @@ class OuterShift(Operator):
             out += self.offset
             return out
 
-    def _iadjoint_eval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_eval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         out, self._deriv = self.op.linearize(x, out = out, return_adjoint_eval= True, **kwargs)
         out += self._adjoint(self.offset)
         return out
 
-    def _iderivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iderivative(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         return self._deriv(x, out = out, **kwargs)
 
-    def _iadjoint(self, y: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         return self._deriv.adjoint(y, out = out, **kwargs)
     
-    def _iadjoint_derivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_derivative(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         return self._deriv.adjoint_eval(x, out = out, **kwargs)
 
 
 class InnerShift(Operator):
     r"""Shift an operator by a constant offset in the domain.
-
+    
     Parameters
     ----------
-    op : Operator
+    op: Operator
         The underlying operator.
-    offset : op.domain
-        The offset by which to shift. 
+    offset: Vector | Scalar
+        The offset by which to shift.
     """
     def __init__(self, op: Operator, offset: Vector | Scalar) -> None:
         if not isinstance(op,Operator):
@@ -2408,7 +4087,7 @@ class InnerShift(Operator):
         op.domain.copyto(self.offset, offset)
 
     def _ieval(
-        self, x: Vector, out: Vector, differentiate: bool = False, **kwargs
+        self, x: ReadOnlyVector, out: Vector, differentiate: bool = False, **kwargs: Any
     ) -> Vector:
         if differentiate:
             out, self._deriv = self.op.linearize(x-self.offset, out = out, **kwargs)
@@ -2416,45 +4095,48 @@ class InnerShift(Operator):
         else:
             return self.op(x - self.offset, out = out, **kwargs)
         
-    def _iadjoint_eval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_eval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         out, self._deriv = self.op.linearize(x-self.offset, out = out, return_adjoint_eval=True, **kwargs)
         return out 
     
-    def _iderivative(self, h: Vector, out: Vector, **kwargs) -> Vector:
+    def _iderivative(self, h: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         return self._deriv(h, out = out, **kwargs)
 
-    def _iadjoint(self, y: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         return self._deriv.adjoint(y, out = out, **kwargs)
     
-    def _iadjoint_derivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_derivative(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         return self._deriv.adjoint_eval(x, out = out, **kwargs)
 
 class DirectSum(Operator):
     r"""The direct sum of operators. For
-
+    
     .. math::
         T_i \colon X_i \to Y_i 
-
+    
     the direct sum
-
+    
     .. math::
         T := DirectSum(T_i) \colon DirectSum(X_i) \to DirectSum(Y_i) 
-
+    
     is given by :math:`T(x)_i := T_i(x_i)`. As a matrix, this is the block-diagonal
     with blocks :math:`(T_i)`.
-
+    
     Parameters
     ----------
-    *ops : tuple[Operator, ...]
-        Variable number of Operator instances to be composed to a direct sum.
-    flatten : bool, optional
+    flatten: bool [default: False]
         If True, summands that are themselves direct sums will be merged with
-        this one. Default: False.
-    domain, codomain : vecsps.VectorSpaceBase or callable, optional
+        this one.
+    domain: vecsps.DirectSum | Callable[..., vecsps.DirectSum] | None [default: None]
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
-        The resulting vector space should be iterable, yielding the individual summands.
-        Default: vecsps.DirectSum.
+        The resulting vector space should be iterable, yielding the individual summands.DirectSum.
+    codomain: vecsps.DirectSum | Callable[..., vecsps.DirectSum] | None [default: None]
+        Either the underlying vector space or a factory function that will be called with all
+        summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
+        The resulting vector space should be iterable, yielding the individual summands.DirectSum.
+    *ops: Operator
+        Variable number of Operator instances to be composed to a direct sum.
     """
 
     def __init__(
@@ -2540,10 +4222,18 @@ class DirectSum(Operator):
                 vecsps.DirectSum,
                 add_info='codomain={} is neither a VectorSpaceBase nor callable'.format(codomain)
                 ))
-        super().__init__(domain=domain, codomain=codomain, linear=all(op.linear for op in self.ops))
+        super().__init__(
+            domain=domain,
+            codomain=codomain,
+            linear=all(op.linear for op in self.ops),
+            self_adjoint=(
+                domain == codomain
+                and all(op.self_adjoint for op in self.ops)
+            ),
+        )
 
     def _ieval(
-        self, x: Vector, out: Vector, differentiate: bool = False, **kwargs
+        self, x: ReadOnlyVector, out: Vector, differentiate: bool = False, **kwargs: Any
     ) -> Vector:
         if differentiate:
             linearizations = [op.linearize(x_i,out = out_i) for op, x_i, out_i in zip(self.ops,x, out)]
@@ -2554,7 +4244,7 @@ class DirectSum(Operator):
                 out_i = op(x_i, out = out_i)
             return out
 
-    def _iadjoint_eval(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_eval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if hasattr(self,"full_domain") and out not in self.full_domain:
             out = self._insert_constants(out)
         if self.linear:
@@ -2567,12 +4257,12 @@ class DirectSum(Operator):
                 self._derivs.append(deriv)
         return out
 
-    def _iderivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iderivative(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         for deriv, x_i, out_i in zip(self._derivs, x, out):
             out_i = deriv(x_i, out = out_i)
         return out
 
-    def _iadjoint(self, y: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if hasattr(self,"full_domain") and out not in self.full_domain:
             out = self._insert_constants(out)
         if self.linear:
@@ -2583,7 +4273,7 @@ class DirectSum(Operator):
             out_i = op.adjoint(y_i, out = out_i)
         return out
     
-    def _iadjoint_derivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint_derivative(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if hasattr(self,"full_domain") and out not in self.full_domain:
             out = self._insert_constants(out)
         for deriv, y_i, out_i in zip(self._derivs, x, out):
@@ -2592,7 +4282,14 @@ class DirectSum(Operator):
 
     @Operator.inverse.getter
     def inverse(self) -> Operator:
-        """The component-wise inverse as a `DirectSum`, if all of them exist."""
+        r"""The component-wise inverse as a `DirectSum`, if all of them exist.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if self._inverse is not None:
             return self._inverse
         try:
@@ -2621,27 +4318,28 @@ class DirectSum(Operator):
 
 class VectorOfOperators(Operator):
     r"""Vector of operators. For
-
+    
     .. math::
         T_i \colon X \to Y_i
-
+    
     we define
-
+    
     .. math::
         T := VectorOfOperators(T_i) \colon X \to DirectSum(Y_i)
-
+    
     by :math:`T(x)_i := T_i(x)`. 
     
     Parameters
     ----------
-    ops : Sequence[Operator]
+    ops: Sequence[Operator]
         Operator instances to be put together into a vector. Each operator
         is required to have the same domain.
-    codomain : vecsps.VectorSpaceBase or callable, optional
+    domain: vecsps.VectorSpaceBase | None [default: None]
+        Domain vector space.
+    codomain: vecsps.DirectSum | Callable[..., vecsps.DirectSum] | None [default: None]
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
-        The resulting vector space should be iterable, yielding the individual summands.
-        Default: vecsps.DirectSum.
+        The resulting vector space should be iterable, yielding the individual summands.DirectSum.
     """
 
     def __init__(
@@ -2704,12 +4402,25 @@ class VectorOfOperators(Operator):
         super().__init__(domain=self.domain, codomain=codomain, linear=all(op.linear for op in ops))
 
     @staticmethod
-    def _shares_memory(x: Vector, y: Vector) -> bool:
-        """Whether two vectors can be modified through the same storage.
-
+    def _shares_memory(x: ReadOnlyVector, y: ReadOnlyVector) -> bool:
+        r"""Whether two vectors can be modified through the same storage.
+        
         Object identity covers generic vector types. NumPy arrays additionally
         need a memory-overlap check because direct-sum components may be views.
         TupleVectors are handled recursively for nested direct sums.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
         """
         if x is y:
             return True
@@ -2721,11 +4432,24 @@ class VectorOfOperators(Operator):
             return any(VectorOfOperators._shares_memory(x, y_i) for y_i in y)
         return False
 
-    def _preserve_input_if_needed(self, x: Vector, out: Vector) -> Vector:
-        """Copy ``x`` only if an early output component aliases it.
-
+    def _preserve_input_if_needed(self, x: ReadOnlyVector, out: Vector) -> Vector:
+        r"""Copy ``x`` only if an early output component aliases it.
+        
         The final output component may alias ``x`` safely: after it is written,
         no later component evaluation needs the original input anymore.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
         """
         for i, out_i in enumerate(out):
             if i == len(self.ops) - 1:
@@ -2737,7 +4461,7 @@ class VectorOfOperators(Operator):
         return x
 
     def _ieval(
-        self, x: Vector, out: Vector, differentiate: bool = False, **kwargs
+        self, x: ReadOnlyVector, out: Vector, differentiate: bool = False, **kwargs: Any
     ) -> Vector:
         x = self._preserve_input_if_needed(x, out)
         if differentiate:
@@ -2751,7 +4475,7 @@ class VectorOfOperators(Operator):
                 out_i = op(x, out = out_i,**kwargs)
             return out
     
-    def _adjoint_eval(self, x: Vector, **kwargs) -> Vector:
+    def _adjoint_eval(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         out = self.domain.zeros()
         if self.linear:
             out += sum(op.adjoint_eval(x,**kwargs) for op in self.ops)
@@ -2763,13 +4487,13 @@ class VectorOfOperators(Operator):
                 self._derivs.append(deriv)
         return out
 
-    def _iderivative(self, x: Vector, out: Vector, **kwargs) -> Vector:
+    def _iderivative(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         x = self._preserve_input_if_needed(x, out)
         for deriv, out_i in zip(self._derivs, out):
             deriv(x, out=out_i, **kwargs)
         return out
 
-    def _iadjoint(self, y: Vector, out: Vector, **kwargs) -> Vector:
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         ops = self.ops if self.linear else self._derivs
 
         # Writing to ``out`` may destroy a component of ``y`` that is still
@@ -2789,7 +4513,7 @@ class VectorOfOperators(Operator):
 
         return out
 
-    def _adjoint(self, y: Vector, **kwargs) -> Vector:
+    def _adjoint(self, y: ReadOnlyVector, **kwargs: Any) -> Vector:
         if self.linear:
             ops = self.ops
         else:
@@ -2799,7 +4523,7 @@ class VectorOfOperators(Operator):
             out += op.adjoint(y_i, **kwargs)
         return out
     
-    def _adjoint_derivative(self, x: Vector, **kwargs) -> Vector:
+    def _adjoint_derivative(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         out = self.domain.zeros() 
         for deriv in self._derivs:
             out += deriv.adjoint_eval(x,**kwargs)
@@ -2818,27 +4542,30 @@ class VectorOfOperators(Operator):
 
 class MatrixOfOperators(Operator):
     r"""Matrix of operators. For
-
+    
     .. math::
         T_ij \colon X_j \to Y_i
-
+    
     we define
-
+    
     .. math::
         T := MatrixOfOperators(T_ij) \colon DirectSum(X_j) \to DirectSum(Y_i)
-
+    
     by :math:`T(x)_i := \sum_j T_ij(x_j)`. 
     
     Parameters
     ----------
-    ops : Sequence[Sequence[Operator | None]]
+    ops: Sequence[Sequence[Operator | None]]
         Rows or columns of operator instances used to build the matrix. Each inner
         sequence has to have the same length; zero operators are represented by None.
-    domain, codomain : vecsps.VectorSpaceBase or callable, optional
+    domain: vecsps.DirectSum | Callable[..., vecsps.DirectSum] | None [default: None]
         Either the underlying vector space or a factory function that will be called with all
         summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
-        The resulting vector space should be iterable, yielding the individual summands.
-        Default: vecsps.DirectSum.
+        The resulting vector space should be iterable, yielding the individual summands.DirectSum.
+    codomain: vecsps.DirectSum | Callable[..., vecsps.DirectSum] | None [default: None]
+        Either the underlying vector space or a factory function that will be called with all
+        summands' vector spaces passed as arguments and should return a vecsps.DirectSum instance.
+        The resulting vector space should be iterable, yielding the individual summands.DirectSum.
     """
 
     def __init__(
@@ -2942,7 +4669,7 @@ class MatrixOfOperators(Operator):
         super().__init__(domain=domain, codomain=codomain, linear=all(op==None or op.linear for op in ops_flat))
 
     def _eval(
-        self, x: Vector, differentiate: bool = False, **kwargs
+        self, x: ReadOnlyVector, differentiate: bool = False, **kwargs: Any
     ) -> Vector:
         out = self.codomain.zeros()
         self._derivs = []
@@ -2962,7 +4689,7 @@ class MatrixOfOperators(Operator):
                         out_i += T_ij(x_j)
         return out
 
-    def _derivative(self, x: Vector, **kwargs) -> Vector:
+    def _derivative(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
         out = self.codomain.zeros()
         for Tprime_j, x_j in zip(self._derivs,x):
             for Tprime_ij,out_i in zip(Tprime_j,out):
@@ -2970,7 +4697,7 @@ class MatrixOfOperators(Operator):
                     out_i += Tprime_ij(x_j)
         return out
 
-    def _adjoint(self, y: Vector, **kwargs) -> Vector:
+    def _adjoint(self, y: ReadOnlyVector, **kwargs: Any) -> Vector:
         if self.linear:
             ops = self.ops
         else:
@@ -2996,14 +4723,14 @@ class MatrixOfOperators(Operator):
 
 class Sum(Operator):
     r"""Maps element in direct sum of vector spaces to their sum.
-
+    
     Parameters
     ----------
-    domain : vecsps.DirectSum
+    domain: vecsps.DirectSum
         The domain of the operator. Summands have to have the same shape.
-    codomain : vecsps.VectorSpace or None, optional
+    codomain: vecsps.VectorSpaceBase | None [default: None]
         The codomain of the operator. Has to have same shape as a summand of the domain.
-        If set to None the first summand of the domain is chosen instead. Defaults to None.
+        If set to None the first summand of the domain is chosen instead.
     """
 
     def __init__(
@@ -3038,14 +4765,14 @@ class Sum(Operator):
                 add_info="The codomain has to be identical to the summands of the domain."
             ))
 
-    def _ieval(self, x: Vector, out: Vector) -> Vector:
+    def _ieval(self, x: ReadOnlyVector, out: Vector) -> Vector:
         components = iter(x)
         self.codomain.copyto(out, next(components))
         for component in components:
             out += component
         return out
 
-    def _iadjoint(self, y: Vector, out: Vector) -> Vector:
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector) -> Vector:
         for i, summand in enumerate(self.domain):
             out[i] = y.real if not summand.is_complex else y
         return out
@@ -3053,14 +4780,14 @@ class Sum(Operator):
 
 class Product(Operator):
     r"""Maps element in direct sum of vector spaces to their product.
-
+    
     Parameters
     ----------
-    domain : vecsps.DirectSum
+    domain: vecsps.DirectSum
         The domain of the operator. Summands have to have the same shape.
-    codomain : vecsps.VectorSpace or None, optional
+    codomain: vecsps.VectorSpaceBase | None [default: None]
         The codomain of the operator. Has to have same shape as a summand of the domain.
-        If set to None the first summand of the domain is chosen instead. Defaults to None.
+        If set to None the first summand of the domain is chosen instead.
     """
 
     def __init__(
@@ -3096,7 +4823,7 @@ class Product(Operator):
             ))
 
     def _ieval(
-        self, x: Vector, out: Vector, differentiate: bool = False
+        self, x: ReadOnlyVector, out: Vector, differentiate: bool = False
     ) -> Vector:
         components = list(x)
         self.codomain.copyto(out, components[0])
@@ -3110,82 +4837,188 @@ class Product(Operator):
                         self.deriv_data[i] *= x_j
         return out
 
-    def _iderivative(self, x: Vector, out: Vector) -> Vector:
+    def _iderivative(self, x: ReadOnlyVector, out: Vector) -> Vector:
         self.codomain.copyto(out, self.deriv_data[0])
         out *= x[0]
         for factor, x_i in zip(self.deriv_data[1:], x[1:]):
             out += factor * x_i
         return out
 
-    def _iadjoint(self, y: Vector, out: Vector) -> Vector:
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector) -> Vector:
         for i, summand in enumerate(self.domain.summands):
-            out[i] = (y*self.deriv_data[i].conj()).real if not summand.is_complex else y*self.deriv_data[i].conj()
+            out[i] = (y*np.conjugate(self.deriv_data[i])).real if not summand.is_complex else y*np.conjugate(self.deriv_data[i])
         return out
 
 
 class RealPart(Operator):
     r"""The pointwise real part operator.
-
+    
+    The vectors' native ``real`` attribute is used when available. Otherwise
+    the real parts of its native coefficients are written through the vector
+    space's coefficient interface.
+    
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpaceBase
+    domain: VectorSpaceBase
         The underlying vector space. The codomain will be the corresponding
         `regpy.vecsps.VectorSpaceBase.real_space`.
     """
 
-    def __init__(self, domain: vecsps.VectorSpaceBase) -> None:
-        if not isinstance(domain,vecsps.VectorSpaceBase):
-            raise ValueError(util.Errors.not_a_vecsp(
-                domain,
-                vecsps.VectorSpaceBase
-            ))
-        codomain = domain.real_space()
-        super().__init__(domain, codomain, linear=True)
 
-    def _ieval(self, x: Vector, out: Vector) -> Vector:
-        self.codomain.copyto(out, x.real)
+    def __new__(cls, domain: VectorSpaceBase | None=None) -> Self:
+        # deepcopy/pickle allocate an empty instance before restoring state.
+        if domain is None:
+            return super().__new__(cls)
+        if not domain.is_complex or not callable(getattr(domain, "real_space", None)):
+            raise TypeError("RealPart requires complex storage and a real_space() method.")
+        if isinstance(domain, vecsps.DirectSum):
+            ops = [RealPart(component) for component in domain.summands]
+            return DirectSum(*ops, domain=domain)
+        return super().__new__(cls)
+
+    def __init__(self, domain: VectorSpaceBase) -> None:
+        # Real/imaginary extraction is R-linear, never C-linear.
+        super().__init__(domain, domain.real_space(), linear=True)
+
+
+    def _ieval(self, x: ReadOnlyVector, out: Vector) -> Vector:
+        r"""Use the optional backend .real attribute, otherwise real coordinates.
+        
+        This is a local optimization only: Vector does not require .real.
+        The fallback expects the domain's interleaved real/imag coordinate
+        ordering and the corresponding real_space coordinate ordering.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
+        try:
+            component = x.real
+        except (AttributeError, TypeError, NotImplementedError):
+            from itertools import islice
+            self.codomain.set_coefficients(
+                out, islice(self.domain.iter_coefficients(x), 0, None, 2))
+        else:
+            self.codomain.copyto(out, component)
         return out
 
-    def _iadjoint(self, y: Vector, out: Vector) -> Vector:
-        self.domain.copyto(out, y)
+
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector) -> Iterator[Any]:
+        # Populate pairs via the protocol; real and complex storage may use
+        # different vector representations, so copyto between them is unsafe.
+        def coordinates() -> Iterator[Any]:
+            r"""Coordinates.
+            
+            
+            Yields
+            ------
+            Any
+                Result described above.
+            """
+            for value in self.codomain.iter_coefficients(y):
+                yield value
+                yield 0.0
+        self.domain.set_coefficients(out, coordinates())
         return out
 
 
 class ImaginaryPart(Operator):
     r"""The pointwise imaginary part operator.
-
+    
+    The vector's native ``imag`` attribute is used when available. Otherwise
+    the imaginary parts of its native coefficients are written through the
+    vector space's coefficient interface.
+    
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpaceBase
+    domain: VectorSpaceBase
         The underlying vector space. The codomain will be the corresponding
         `regpy.vecsps.VectorSpaceBase.real_space`.
     """
 
-    def __init__(self, domain: vecsps.VectorSpaceBase) -> None:
-        if not isinstance(domain,vecsps.VectorSpaceBase) or not domain.is_complex:
-            raise ValueError(util.Errors.not_a_vecsp(
-                domain,
-                vecsps.VectorSpaceBase,
-                add_info="To consider a ImaginaryPart operator the domain is required to be complex!"
-            ))
-        codomain = domain.real_space()
-        super().__init__(domain, codomain, linear=True)
 
-    def _ieval(self, x: Vector, out: Vector) -> Vector:
-        self.codomain.copyto(out, x.imag)
+    def __new__(cls, domain: VectorSpaceBase | None=None) -> Self:
+        # deepcopy/pickle allocate an empty instance before restoring state.
+        if domain is None:
+            return super().__new__(cls)
+        if not domain.is_complex or not callable(getattr(domain, "real_space", None)):
+            raise TypeError("ImaginaryPart requires complex storage and a real_space() method.")
+        if isinstance(domain, vecsps.DirectSum):
+            ops = [ImaginaryPart(component) for component in domain.summands]
+            return DirectSum(*ops, domain=domain)
+        return super().__new__(cls)
+
+    def __init__(self, domain: VectorSpaceBase) -> None:
+        # Real/imaginary extraction is R-linear, never C-linear.
+        super().__init__(domain, domain.real_space(), linear=True)
+
+
+    def _ieval(self, x: ReadOnlyVector, out: Vector) -> Vector:
+        r"""Use the optional backend .imag attribute, otherwise real coordinates.
+        
+        This is a local optimization only: Vector does not require .imag.
+        The fallback expects the domain's interleaved real/imag coordinate
+        ordering and the corresponding real_space coordinate ordering.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
+        try:
+            component = x.imag
+        except (AttributeError, TypeError, NotImplementedError):
+            from itertools import islice
+            self.codomain.set_coefficients(
+                out, islice(self.domain.iter_coefficients(x), 1, None, 2))
+        else:
+            self.codomain.copyto(out, component)
         return out
 
-    def _iadjoint(self, y: Vector, out: Vector) -> Vector:
-        self.domain.copyto(out, 1j * y)
+
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector) -> Iterator[Any]:
+        # Populate pairs via the protocol; real and complex storage may use
+        # different vector representations, so copyto between them is unsafe.
+        def coordinates() -> Iterator[Any]:
+            r"""Coordinates.
+            
+            
+            Yields
+            ------
+            Any
+                Result described above.
+            """
+            for value in self.codomain.iter_coefficients(y):
+                yield 0.0
+                yield value
+        self.domain.set_coefficients(out, coordinates())
         return out
 
 class SplitRealImag(VectorOfOperators):
-    """Splits a complex vector into its real and imaginary part. 
+    r"""Splits a complex vector into its real and imaginary part. 
     Implemented as VectorOfOperators of RealPart and ImaginaryPart.
-
+    
     Parameters
     ----------
-    domain: regpy.vecsps.VectorSpaceBase
+    domain: vecsps.VectorSpaceBase
+        Domain vector space.
     """
     def __init__(self, domain: vecsps.VectorSpaceBase) -> None:
         if not isinstance(domain,vecsps.VectorSpaceBase) or not domain.is_complex:
@@ -3200,18 +5033,40 @@ class SplitRealImag(VectorOfOperators):
 
     @Operator.inverse.getter
     def inverse(self) -> Operator:
+        r"""Inverse.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         return self.adjoint
 
     @property
     def invertible(self) -> bool:
+        r"""Invertible.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return True
 
 class SquaredModulus(Operator):
     r"""The pointwise squared modulus operator.
-
+    
+    Native NumPy-style operations are used when the vector representation
+    provides them. Otherwise evaluation, derivative and adjoint derivative
+    fall back to the backend's native-coordinate hooks. Pointwise modulus
+    and the optional vector real/imag attributes are local capabilities, not
+    requirements of the generic Vector protocol.
+    
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpaceBase
+    domain: vecsps.VectorSpaceBase
         The underlying vector space. The codomain will be the corresponding
         `regpy.vecsps.VectorSpaceBase.real_space`.
     """
@@ -3226,34 +5081,69 @@ class SquaredModulus(Operator):
         super().__init__(domain, codomain)
 
     def _ieval(
-        self, x: Vector, out: Vector, differentiate: bool = False
+        self, x: ReadOnlyVector, out: Vector, differentiate: bool = False
     ) -> Vector:
         if differentiate:
             self._factor = 2 * x
-        np.square(x.real, out=out)
-        out += np.square(x.imag)
+        try:
+            np.square(x.real, out=out)
+            out += np.square(x.imag)
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            self.codomain._set_native_coefficients(
+                out,
+                (
+                    np.real(coefficient * np.conjugate(coefficient))
+                    for coefficient in self.domain._iter_native_coefficients(x)
+                ),
+            )
         return out
 
-    def _iderivative(self, h: Vector, out: Vector) -> Vector:
-        np.multiply(self._factor.real, h.real, out=out)
-        if self.domain.is_complex:
-            out += self._factor.imag * h.imag
+    def _iderivative(self, h: ReadOnlyVector, out: Vector) -> Vector:
+        try:
+            np.multiply(self._factor.real, h.real, out=out)
+            if self.domain.is_complex:
+                out += self._factor.imag * h.imag
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            self.codomain._set_native_coefficients(
+                out,
+                (
+                    np.real(
+                        np.conjugate(factor_coefficient) * h_coefficient
+                    )
+                    for factor_coefficient, h_coefficient in zip(
+                        self.domain._iter_native_coefficients(self._factor),
+                        self.domain._iter_native_coefficients(h),
+                    )
+                ),
+            )
         return out
 
-    def _iadjoint(self, y: Vector, out: Vector) -> Vector:
-        np.multiply(self._factor, y, out=out)
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector) -> Vector:
+        try:
+            np.multiply(self._factor, y, out=out)
+        except (AttributeError, TypeError, ValueError, NotImplementedError):
+            self.domain._set_native_coefficients(
+                out,
+                (
+                    factor_coefficient * y_coefficient
+                    for factor_coefficient, y_coefficient in zip(
+                        self.domain._iter_native_coefficients(self._factor),
+                        self.codomain._iter_native_coefficients(y),
+                    )
+                ),
+            )
         return out
 
 
 class Zero(Operator):
     r"""The constant zero operator.
-
+    
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpaceBase
+    domain: vecsps.VectorSpaceBase
         The underlying vector space.
-    codomain : regpy.vecsps.VectorSpaceBase, optional
-        The vector space of the codomain. Defaults to `domain`.
+    codomain: vecsps.VectorSpaceBase | None [default: None]
+        The vector space of the codomain.
     """
     def __init__(
         self,
@@ -3262,82 +5152,42 @@ class Zero(Operator):
     ) -> None:
         if codomain is None:
             codomain = domain
-        super().__init__(domain, codomain, linear=True)
+        super().__init__(
+            domain,
+            codomain,
+            linear=True,
+            self_adjoint=domain == codomain,
+        )
 
-    def _eval(self, x: Vector) -> Vector:
+    def _eval(self, x: ReadOnlyVector) -> Vector:
         return self.codomain.zeros()
 
-    def _ieval(self, x: Vector, out: Vector) -> Vector:
+    def _ieval(self, x: ReadOnlyVector, out: Vector) -> Vector:
         self.codomain.fill(out, 0)
         return out
 
-    def _adjoint(self, x: Vector) -> Vector:
+    def _adjoint(self, x: ReadOnlyVector) -> Vector:
         return self.domain.zeros()
 
-    def _iadjoint(self, x: Vector, out: Vector) -> Vector:
+    def _iadjoint(self, x: ReadOnlyVector, out: Vector) -> Vector:
         self.domain.fill(out, 0)
         return out
     
-    def _adjoint_eval(self, x: Vector) -> Vector:
+    def _adjoint_eval(self, x: ReadOnlyVector) -> Vector:
         return self.domain.zeros()
     
-    def _iadjoint_eval(self, x: Vector, out: Vector) -> Vector:
+    def _iadjoint_eval(self, x: ReadOnlyVector, out: Vector) -> Vector:
         self.domain.fill(out, 0)
         return out
-
-class ApproximateHessian(Operator):
-    r"""An approximation of the Hessian of a `regpy.functionals.Functional` at some point, computed
-    using finite differences of it `gradient` if it is implemented for that functional.
-
-    Parameters
-    ----------
-    func : regpy.functionals.Functional
-        The functional.
-    x : Vector
-        The point at which to evaluate the Hessian.
-    stepsize : float, optional
-        The stepsize for the finite difference approximation.
-    """
-    def __init__(
-        self, func: Functional, x: Vector, stepsize: float = 1e-8
-    ) -> None:
-        from regpy.functionals import Functional
-        if not isinstance(func,Functional):
-            raise ValueError(util.Errors.not_instance(
-                func,
-                Functional,
-            ))
-        if not hasattr(func,"gradient"):
-            raise ValueError(util.Errors._compose_message(
-                    "MISSING ATTRIBUTE",
-                f"The given functional {func} does not have a defined gradient. Making it impossible to approximate a Hessian operator."
-            ))
-        self.gradx = func.gradient(x)
-        """The gradient at `x`"""
-        self.func = func
-        self.x = func.domain.empty()
-        func.domain.copyto(self.x, x)
-        self.stepsize = stepsize
-        # linear=True is a necessary lie
-        super().__init__(func.domain, func.domain, linear=True)
-        self.log.info('Using approximate Hessian of functional {}'.format(self.func))
-
-    def _eval(self, h: Vector) -> Vector:
-        grad = self.func.subgradient(self.x + self.stepsize * h)
-        return grad - self.gradx
-
-    def _adjoint(self, x: Vector) -> Vector:
-        return self._eval(x)
-
 
 class SciPyLinearOperator(LinearOperator):
     r"""A class wrapping a linear operator \(F\) into a scipy.sparse.linalg.LinearOperator so that it can be used conveniently in scipy methods.
     The domain and codomain are flattened.
-
+    
     Parameters
     ----------
-    op2 : Operator
-        The operator to be put into a scipy.linalg.LinearOperator. 
+    op2: Operator
+        The operator to be put into a scipy.linalg.LinearOperator.
     """
     def __init__(self, op2: Operator) -> None:
         if not isinstance(op2,Operator):
@@ -3347,9 +5197,9 @@ class SciPyLinearOperator(LinearOperator):
             ))
         self.op2 = op2
         r"""the wrapped operator"""
-        domain_shape=op2.domain.realsize
-        codomain_shape=op2.codomain.realsize
-        super().__init__(np.float64, (codomain_shape,domain_shape))
+        domain_shape=op2.domain.dimension
+        codomain_shape=op2.codomain.dimension
+        super().__init__(np.float64 if op2.domain.as_real_space else np.complex128, (codomain_shape,domain_shape))
 
     
     def _matvec(self, x: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -3357,27 +5207,27 @@ class SciPyLinearOperator(LinearOperator):
         
         Parameters
         ----------
-        x : numpy.ndarray
+        x: NDArray[np.float64]
             Flattened element from domain of operator.
         
         Returns
         -------
-        numpy.ndarray
+        NDArray[np.float64]
         """
         op2 = self.op2
-        return op2.codomain.flatten(op2(op2.domain.fromflat(x)))
+        return op2.codomain.flatten(op2(op2.domain.fromflat(np.asarray(x).reshape(-1))))
     
     def _rmatvec(self, y: NDArray[np.float64]) -> NDArray[np.float64]:
         r"""Applies the adjoint operator.
         
         Parameters
         ----------
-        y : numpy.ndarray
+        y: NDArray[np.float64]
             Flattened element from codomain of operator.
         
         Returns
         -------
-        numpy.ndarray
+        NDArray[np.float64]
         """
         op2 = self.op2
-        return op2.domain.flatten(op2.adjoint(op2.codomain.fromflat(y)))
+        return op2.domain.flatten(op2.adjoint(op2.codomain.fromflat(np.asarray(y).reshape(-1))))

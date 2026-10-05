@@ -1,45 +1,52 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from regpy.vecsps.base import ReadOnlyVector, Vector
+    from regpy.operators.base import ObsDataT
 from regpy.operators import CoordinateMask
 from regpy.util import Errors
 
-from ..general import Setting, RegSolver
+from ..solver import RegSolver
+from ..setting import Setting
 from ..linear.tikhonov import TikhonovCG
 
 __all__ = ["IrgnmSemiSmooth"]
 
 class IrgnmSemiSmooth(RegSolver):
-    r"""
-    Semismooth Newton Method. In each iteration, solves
+    r"""Semismooth Newton Method. In each iteration, solves
     
     .. math::
         x_{n+1} \in \textrm{argmin}_{\psi_- < x_\ast < \psi_+}   ||T(x_n) + T'[x_n] (x_\ast-x_n) - g_\text{data}||^2 + \alpha_n  ||x_\ast - x_\text{init}||^2
-
+    
     where :math:`T` is a Fréchet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
     :math:`\alpha_n` is a decreasing geometric sequence of regularization parameters.
     
     Parameters
     ----------
-    setting : regpy.solvers.Setting
-        Setting for regularization. 
-    psi_minus : np.number
+    setting: Setting
+        Setting for regularization.
+    psi_minus: float | ReadOnlyVector
         lower constraint of the minimization. Must be larger then `psi_plus`
-    psi_plus : np.number
+    psi_plus: float | ReadOnlyVector
         upper constraint of the minimization. Must be smaller than `psi_minus`
-    data : array-like, default None
+    data: ReadOnlyVector | ObsDataT | None [default: None]
         The measured data. Must be in the operators codomain. If it is None it is taken from the setting.
-    regpar : float, default None
+    regpar: float | None [default: None]
         Initial regularization parameter :math:`\alpha`. Must be positive. If it is None it is taken from the setting.
-    regpar_step : np.number, optional
-        Must be between 0 and 1. Multiplied to regularization parameter to construct the decreasing geometric sequence. (Default: 2/3)
-    init : array-like, optional
-        An element of operator domain that is an initial guess. (Default: None)
-    inner_it_count : int, optional
-        Number of inner iterations for the `TikhonovCG` solver. (Default: 20)
-    inner_active_change : int, optional
-        NUmber of changes in active sets mask to continue the inner iterations. (Default: 3)
-    cg_pars : dict
-        Dictionary of parameter to be given to the inner `TikhonovCG` solver. (Default: None) 
+    regpar_step: float [default: 2 / 3]
+        Must be between 0 and 1. Multiplied to regularization parameter to construct the decreasing geometric sequence.
+    init: ReadOnlyVector | None [default: None]
+        An element of operator domain that is an initial guess.
+    inner_it_count: int [default: 20]
+        Number of inner iterations for the `TikhonovCG` solver.
+    inner_active_change: int [default: 3]
+        NUmber of changes in active sets mask to continue the inner iterations.
+    cg_pars: dict[str, Any] | None [default: None]
+        Dictionary of parameter to be given to the inner `TikhonovCG` solver.
     """
-    def __init__(self, setting, psi_minus, psi_plus,data=None, regpar=None, regpar_step=2 / 3, init=None, inner_it_count = 20, inner_active_change = 3, cg_pars=None):
+    def __init__(self, setting: Setting, psi_minus: float | ReadOnlyVector, psi_plus: float | ReadOnlyVector,data: ReadOnlyVector | ObsDataT | None=None, regpar: float | None=None, regpar_step: float=2 / 3, init: ReadOnlyVector | None=None, inner_it_count: int = 20, inner_active_change: int = 3, cg_pars: dict[str, Any] | None=None) -> None:
         super().__init__(setting)
         if (psi_minus >= psi_plus):
             raise ValueError(Errors.value_error("The upper constraint is less or equal the lower constraint in IrgnmSemiSmooth. Given: "+"\n\t "+f"psi_minus = {psi_minus} "+"\t\n "+f"psi_plus = {psi_plus}"))
@@ -96,7 +103,7 @@ class IrgnmSemiSmooth(RegSolver):
         """compute active and inactive sets, need to be computed in each step again"""
         self.inactive=self.op.domain.IfPos(self.op.domain.zeros())
         
-    def _next(self):
+    def _next(self) -> None:
         iter_count = 0
         while iter_count<self.inner_it_count and (iter_count==0 or sum(self.active_plus_old & self.active_plus)>self.inner_active_change or sum(self.active_minus_old & self.active_minus)>self.inner_active_change):
             self.log.info(f'Running inner iteration {iter_count+1} of {self.inner_it_count}.')
@@ -130,7 +137,9 @@ class IrgnmSemiSmooth(RegSolver):
         self.regpar *= self.regpar_step
         
         
-    def inner_update(self):
+    def inner_update(self) -> None:
+        r"""Inner update.
+        """
         self.inactive= ~(self.active_plus | self.active_minus)
         #On the active sets the solution takes the values of the constraints
         self.x[self.active_plus]=self.psi_plus[self.active_plus]
@@ -168,5 +177,5 @@ class IrgnmSemiSmooth(RegSolver):
         self.active_plus=self.op.domain.IfPos(self.lam_plus+self.regpar*(self.x-self.psi_plus))
         self.active_minus=self.op.domain.IfPos(self.lam_minus-self.regpar*(self.x-self.psi_minus))
         
-    def _A(self, u):
+    def _A(self, u: ReadOnlyVector) -> Vector:
         return self.regpar*u+self.h_domain.gram_inv(self.deriv.adjoint(self.h_codomain.gram(self.deriv(u))))

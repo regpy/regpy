@@ -1,3 +1,13 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from regpy.vecsps.base import ReadOnlyVector, Vector, VectorSpaceBase
+    from regpy.operators.base import Operator
+    from regpy.solvers.setting import Setting
+    from regpy.stoprules.general import StopRule
+    from regpy._typing import Mask
 import numpy as np
 from functools import partial
 
@@ -7,44 +17,62 @@ from regpy.hilbert import L2
 from regpy.util import Errors, memoized_property
 
 from .base import Functional, AbstractFunctional, Composed
-from .integral_functionals import LppPower, L1MeasureSpace
+from .integral_functionals import LppPower, L1MeasureSpace, Huber
 
 __all__ = ["VectorIntegralFunctional", "LppL2", "L1L2", "TVUniformGridFcts"]
 
 class VectorIntegralFunctional(Functional):
-    r"""
-    Implements a vector-valued integral functional :math:`v\mapsto \sum_i f_i(\|v(x)\|)dx` on some domain in `regpy.vecsps.MeasureSpaceFcts`
-    as a functional. Here, :math:`f_i` are scalar functions on the real line that are assumed to be even and convex, 
-    and :math:`\|\cdot\|` some norm on the vector values. 
+    r"""Implements a discrete version of vector-valued integral functionals 
 
+    .. math::
+        v\mapsto \int_D f(|v(x)|,x)d\mu(x)
+
+    defined on vector-valued functions :math:`f:D\to \mathbb{R}^n` given by 
+
+    .. math::
+        v\mapsto \sum_i w_if_i(\|v_i\|)
+    
+    for v in  `regpy.vecsps.MeasureSpaceFcts`. 
+    Here, :math:`f_i` are scalar functions on the real line that are assumed to be even and convex, 
+    and :math:`\|\cdot\|` some norm on the vector values. 
+    
     The norm on the vector values can be given as a method taking the vector-valued function and the vector axis 
     as tuple and returning the norm values. By default, the Euclidean norm is used.  
-
+    
     Parameters
     ----------
-    vdomain : `regpy.vecsps.MeasureSpaceFcts`
+    vdomain: VectorSpaceBase
         Domain of vector-valued functions on which it is defined. Needs some Measure therefore a `regpy.vecsps.MeasureSpaceFcts`
-    scalar_func : `AbstractFunctional` or `IntegralFunctionalBase`
+    scalar_func: Functional | None [default: None]
         Scalar separable functional to be used as (even!) functions :math:`f_i`.
         Either provides a specific separable Functional  
-        or an AbstractFunctional which results in a `regpy.functionals.IntegralFunctionalBase`. Defaults to 'Lpp' with `p=2`. 
-    scalar_func_args : dict, optional
+        or an AbstractFunctional which results in a `regpy.functionals.IntegralFunctionalBase`.
+    scalar_func_args: dict[str, Any] | None [default: None]
         Additional arguments for the scalar_func if needed (e.g. 'p' for `Lpp`).
-    vector_norm_p : int or float, optional
+    vector_norm_p: int | float [default: 2]
         This is the exponent in the norm of the vectors given by a :math:`p` norm :math:`(|x_1|^p+\dots+|x_n|^p)^{1/p}}`. 
         By default, the Euclidean norm is used with :math:`p=2`.
-    Lipschitz, convexity_param: float (default: np.inf and 0., respectively)
+    Lipschitz: float [default: np.inf]
         For the Euclidean norm as inner norm, :math:`Hess f_i(\|v\| )` has two eigenvalues: :math:`f_i''(\|v\|) `
         and :math:`f_i'(\|v\|)/\|v\|`. Using this fact, analytic expression may be computed for 
         Lipschitz = supremum of all possible EV and for convexity_param = infimum of all EV may be 
-        computed for specific :math:`f_i` and passed as arguments to accelerate optimization methods.  
+        computed for specific :math:`f_i` and passed as arguments to accelerate optimization methods.
+    convexity_param: float [default: 0.0]
+        For the Euclidean norm as inner norm, :math:`Hess f_i(\|v\| )` has two eigenvalues: :math:`f_i''(\|v\|) `
+        and :math:`f_i'(\|v\|)/\|v\|`. Using this fact, analytic expression may be computed for 
+        Lipschitz = supremum of all possible EV and for convexity_param = infimum of all EV may be 
+        computed for specific :math:`f_i` and passed as arguments to accelerate optimization methods.
+    methods: set[str] | None [default: None]
+        Names of the implemented functional operations.
+    conj_methods: set[str] | None [default: None]
+        Names of the implemented functional operations.
     """    
 
-    def __init__(self, vdomain, scalar_func = None, scalar_func_args=None, 
-                 vector_norm_p=2,
-                 Lipschitz =np.inf, convexity_param = 0.,
-                 methods = None, conj_methods = None
-                 ):
+    def __init__(self, vdomain: VectorSpaceBase, scalar_func: Functional | None = None, scalar_func_args: dict[str, Any] | None=None, 
+                 vector_norm_p: int | float=2,
+                 Lipschitz: float =np.inf, convexity_param: float = 0.,
+                 methods: set[str] | None = None, conj_methods: set[str] | None = None
+                 ) -> None:
         if not isinstance(vdomain,MeasureSpaceFcts) and vdomain.ndim_codomain>=1:
             raise ValueError(Errors.not_instance(vdomain,MeasureSpaceFcts,f"The vector domain needs to be an instance of MeasureSpaceFcts with ndim_codomain>1 since vector-valued functions need a measure and a vector domain."))
         self.vdomain = vdomain
@@ -74,33 +102,56 @@ class VectorIntegralFunctional(Functional):
             methods -= {'subgradient','hessian','proximal'}
             conj_methods =  {'subgradient','hessian','proximal'}
 
-        super().__init__(vdomain, L2(vecsp=vdomain), 
+        super().__init__(vdomain, 
+                         L2(vecsp=vdomain), 
                          convexity_param = convexity_param, 
                          Lipschitz = Lipschitz, 
-                         is_separable= False, is_linear= False,
-                         methods = methods, conj_methods = conj_methods)
+                         is_separable = False, 
+                         is_linear = self.scalar_func.is_linear,
+                         is_quadratic = self.scalar_func.is_quadratic,
+                         methods = methods, 
+                         conj_methods = conj_methods
+                         )
         self._sbuf = self.sdomain.zeros()
         self._vbuf = vdomain.zeros()
         self._vaxes = tuple(range(-self.vdomain.ndim+self.vdomain.ndim_domain,0))
 
     @property
-    def _sbuf_ext(self):
+    def _sbuf_ext(self) -> np.ndarray:
         return np.expand_dims(self._sbuf, axis=self._vaxes)
 
-    def _eval(self, vec):
+    def _eval(self, vec: ReadOnlyVector) -> float:
         self._sbuf = self.vector_norm(x = vec, axis=self._vaxes)
         return self.scalar_func(self._sbuf)
 
-    def _conj(self, vec_star):
+    def _conj(self, vec_star: ReadOnlyVector) -> float:
         self._sbuf = self.dual_vector_norm(x = vec_star, axis=self._vaxes)
         return self.scalar_func.conj(self._sbuf)
 
-    def _subgradient(self, vec, out=None, **subgradient_par):
-        r"""
-        returns
-
+    def _subgradient(self, 
+                     vec: ReadOnlyVector, 
+                     out: Vector | None=None, 
+                     **subgradient_par: Any
+                     ) -> Vector:
+        r"""returns
+        
         .. math::
             [f_i'(\|v_i\|)\frac{v_i}{\|v_i\|}]_i
+        
+        Parameters
+        ----------
+        vec: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        **subgradient_par: Any
+            Subgradient par.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
         """
         if self.p != 2:
             raise NotImplementedError('subgradient only implemented for L2 norm')
@@ -113,7 +164,11 @@ class VectorIntegralFunctional(Functional):
         np.multiply(result, self._sbuf_ext, out=result)
         return result
     
-    def _conj_subgradient(self, vec_star, out=None, **subgradient_par):
+    def _conj_subgradient(self, 
+                          vec_star: ReadOnlyVector, 
+                          out: Vector | None=None, 
+                          **subgradient_par: Any
+                          ) -> Vector:
         if self.p != 2:
             raise NotImplementedError('conjugate subgradient only implemented for L2 norm')
         result = np.empty_like(vec_star) if out is None else out
@@ -125,8 +180,34 @@ class VectorIntegralFunctional(Functional):
         np.multiply(result, self._sbuf_ext, out=result)
         return result
 
-    def _proximal(self, vec, tau, mask=None, out=None, **proximal_par):
-        r"""returns :math:`[prox_{\tau f_i}(\|v_i\|)\frac{v_i}{\|v_i\|}]_i`"""
+    def _proximal(self, 
+                  vec: ReadOnlyVector, 
+                  tau: float, 
+                  mask: Mask | None=None, 
+                  out: Vector | None=None, 
+                  **proximal_par: Any
+                  ) -> Vector:
+        r"""returns :math:`[prox_{\tau f_i}(\|v_i\|)\frac{v_i}{\|v_i\|}]_i`
+        
+        Parameters
+        ----------
+        vec: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        tau: float
+            Proximal or iteration step size.
+        mask: Mask | None [default: None]
+            Coordinate-selection mask in the format used by the vector space.
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        **proximal_par: Any
+            Proximal par.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         if self.p != 2:
             raise NotImplementedError('proximal only implemented for L2 norm')
         result = np.empty_like(vec) if out is None else out
@@ -140,7 +221,13 @@ class VectorIntegralFunctional(Functional):
         np.multiply(result, self._sbuf_ext, out=result)
         return result
 
-    def _conj_proximal(self, vec_star, tau, mask=None, out=None, **proximal_par):
+    def _conj_proximal(self, 
+                       vec_star: ReadOnlyVector, 
+                       tau: float, 
+                       mask: Mask | None=None, 
+                       out: Vector | None=None, 
+                       **proximal_par: Any
+                       ) -> Vector:
         if self.p != 2:
             raise NotImplementedError('conjugate proximal only implemented for L2 norm')
         result = np.empty_like(vec_star) if out is None else out
@@ -154,7 +241,9 @@ class VectorIntegralFunctional(Functional):
         np.multiply(result, self._sbuf_ext, out=result)
         return result
     
-    def _hessian(self, vec):
+    def _hessian(self, 
+                 vec: ReadOnlyVector
+                 ) -> Operator:
         if self.p != 2:
             raise NotImplementedError('proximal only implemented for L2 norm')
         self._sbuf = self.vector_norm(vec, axis=self._vaxes)
@@ -179,7 +268,9 @@ class VectorIntegralFunctional(Functional):
 
         return scal_mult + proj.adjoint * ptw_mult * proj                                             
         
-    def _conj_hessian(self, vec):
+    def _conj_hessian(self, 
+                      vec: ReadOnlyVector
+                      ) -> Operator:
         if self.p != 2:
             raise NotImplementedError('proximal only implemented for L2 norm')
         self._sbuf = self.dual_vector_norm(vec, axis=self._vaxes)
@@ -201,18 +292,29 @@ class VectorIntegralFunctional(Functional):
 
         return scal_mult + proj.adjoint * ptw_mult * proj   
 
-class LppL2(VectorIntegralFunctional):
-    """
-    VectorIntegralFunctional with :math:`f_i(x):=(1/p)|x|^p`.
+    @property
+    def is_norm_squared_type(self) -> bool:
+        r"""Whether the functional is norm squared type.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return self.scalar_func.is_norm_squared_type
 
+class LppL2(VectorIntegralFunctional):
+    r"""VectorIntegralFunctional with :math:`f_i(x):=(1/p)|x|^p`.
+    
     Parameters
     ----------
-    vdomain : `regpy.vecsps.MeasureSpaceFcts`
+    vdomain: VectorSpaceBase
         A vector valued measure space.
-    p: float (default: 2.)
-        exponent of the :math:`L^p` norm. 
+    p: float [default: 2.0]
+        exponent of the :math:`L^p` norm.
     """
-    def __init__(self, vdomain,p=2.):
+    def __init__(self, vdomain: VectorSpaceBase,p: float=2.) -> None:
         sfunc = LppPower(vdomain.scalar_space(),p=p)
         super().__init__(vdomain, scalar_func=sfunc, 
                          Lipschitz=1. if p== 2 else np.inf,
@@ -220,36 +322,55 @@ class LppL2(VectorIntegralFunctional):
                          )
 
 class L1L2(VectorIntegralFunctional):
-    """
-    VectorIntegralFunctional with absolute value function as :math:`f_i`.
-
+    r"""VectorIntegralFunctional with absolute value function as :math:`f_i`.
+    
     Parameters
     ----------
-    vdomain : `regpy.vecsps.MeasureSpaceFcts`
+    vdomain: VectorSpaceBase
         A vector valued measure space.
-    conj_tol : float
+    conj_tol: float [default: 1e-16]
         A tolarance introduced into `L1` functional that allows also numbers slighly bigger then 1.0 in the conjugate.
     """
-    def __init__(self, vdomain, conj_tol = 1e-16):
+    def __init__(self, vdomain: VectorSpaceBase, conj_tol: float = 1e-16) -> None:
         sfunc = L1MeasureSpace(vdomain.scalar_space(), conj_tol= conj_tol)
         super().__init__(vdomain, scalar_func= sfunc, Lipschitz=np.inf)
 
 class HuberL2(VectorIntegralFunctional):
-    """
-    VectorIntegralFunctional with Huber functional as :math:`f_i`.
-
+    r"""VectorIntegralFunctional with Huber functional as :math:`f_i`.
+    
     Parameters
     ----------
-    vdomain : `regpy.vecsps.MeasureSpaceFcts`
+    vdomain: VectorSpaceBase
         A vector valued measure space.
-    sigma: float, default: 1.
+    sigma: float [default: 1.0]
         Parameter in Huber functional
     """
-    def __init__(self, vdomain,sigma=1.):
+    def __init__(self, vdomain: VectorSpaceBase,sigma: float=1.) -> None:
         sfunc = (1./sigma)*Huber(vdomain.scalar_space(),sigma=sigma)
         super().__init__(vdomain, scalar_func=sfunc, Lipschitz=sfunc.Lipschitz)
 
 class TVUniformGridFcts(Composed):
+    r"""TVUniformGridFcts interface.
+    
+    Parameters
+    ----------
+    domain: VectorSpaceBase
+        Domain vector space.
+    beta: float [default: 0.0]
+        Beta.
+    boundary_condition: str [default: 'Neum']
+        Boundary condition.
+    prox_method: str [default: 'dFISTA']
+        Prox method.
+    prox_method_param: dict [default: {}]
+        Options for prox method param.
+    prox_stop_rule: StopRule | None [default: None]
+        Prox stop rule.
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
+    prox_it_logging_level: str [default: 'INFO']
+        Prox it logging level.
+    """
     import logging
     r"""Total Variation Norm: For :math:`C^1` functions the :math:`l^1`-norm of the gradient on a `UniformGrid`
 
@@ -265,7 +386,7 @@ class TVUniformGridFcts(Composed):
         Boundary condition in the discretization of gradient, see ForwardFDGradient
     prox_method: str, optional
         A string specifying the method for computing the prox operator. This must be a solver for the class-internal
-        TV_prox_setting derived from Setting. The default is "dual_FISTA". An alternative -- besides most other standard solvers 
+        TV_prox_setting derived from Setting. The default is "dFISTA". An alternative -- besides most other standard solvers 
         for convex Tikhonov settings -- is "Chambolle" implementing Chambolle's dual fixed point iteration.  
     prox_method_param: dict, optional
         parameters of the prox_method. Defaults to {}
@@ -274,16 +395,16 @@ class TVUniformGridFcts(Composed):
     """
 
     ###############################################################################
-    from regpy.solvers import Setting
+    from regpy.solvers.setting import Setting
     class TV_prox_setting(Setting):
-        r""" Rockafellar-Fenchel type setting for computing the proximal mapping of the TV functional: 
-
+        r"""Rockafellar-Fenchel type setting for computing the proximal mapping of the TV functional: 
+        
         ::math::
             prox_{tau TV} = argmin_u  S(grad u) +  \frac{1}{2*tau} \|u-x\|_{L^2}^2
-
+        
         where S is either an L1L2 functional (for beta==0) or a HuberL2 functional
             
-        Parameters:
+        Parameters
             tv: TVUnivormGridFct 
                the TV functional
             penalty_shift: np.ndarray | None (optional)
@@ -291,15 +412,23 @@ class TVUniformGridFcts(Composed):
             tau: float (optional)
                  Parameter of the prox. Defaults to 1. 
             
+        Parameters
+        ----------
+        tv: TVUniformGridFcts
+            Tv.
+        penalty_shift: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        tau: float [default: 1.0]
+            Proximal or iteration step size.
         """  
-        def __init__(self, tv,
-                     penalty_shift = None,
+        def __init__(self, tv: TVUniformGridFcts,
+                     penalty_shift: ReadOnlyVector | None = None,
                      tau:float = 1.
-                     ):
+                     ) -> None:
             super().__init__(op=tv.grad,
                              data_fid = tv.func, 
                              penalty = L2, 
-                             penalty_shift=penalty_shift, 
+                             init = penalty_shift, 
                              regpar = 1./tau,
                              explicitDataWarning=False)
 
@@ -310,11 +439,18 @@ class TVUniformGridFcts(Composed):
                                           'full':"Chambolle's dual fixed point iteration"}})
             return _methods
 
-        def set_penalty_shift(self, penalty_shift):
+        def set_penalty_shift(self, penalty_shift: ReadOnlyVector) -> None:
+            r"""Set penalty shift.
+            
+            Parameters
+            ----------
+            penalty_shift: ReadOnlyVector
+                Input vector; its coefficients are only read.
+            """
             self.set_penalty(L2, penalty_shift=penalty_shift)
 
     #############################################################################
-    from regpy.solvers.general import RegSolver
+    from regpy.solvers.solver import RegSolver
     class Chambolle(RegSolver):
         r"""Fixed point iteration for the dual problem suggested by A. Chambolle (J. Math. Imaging and Vision 20: 89-97, 2004). 
         Compared to this original reference, the free variable is rescaled by the factor (tau*grid.volume_elem)
@@ -322,15 +458,24 @@ class TVUniformGridFcts(Composed):
         
         Parameters
         ----------
-        x: np.array 
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        x: ReadOnlyVector | None [default: None]
             First argument of prox
-        tau: float >=0
-            Second (scaling) argument of prox
-        stepsize_safety: float or None [optional, default: self.stepsize_safety_chambolle]
+        y: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        stepsize_safety: float [default: 1.0]
             Safety parameter for the stepsize. Convergence is guaranteed for values <=1, but empirically, 
             best results are optained for stepsize_safety =2.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        Other Parameters
+        ----------------
+        tau: float >=0
+            Second (scaling) argument of prox
         """           
-        def __init__(self, setting, x=None, y=None, stepsize_safety = 1., **kwargs):
+        def __init__(self, setting: Setting, x: ReadOnlyVector | None=None, y: ReadOnlyVector | None=None, stepsize_safety: float = 1., **kwargs: Any) -> None:
             out,_ = TVUniformGridFcts.Chambolle.check_applicability(setting)
             if not out['applicable']:
                 raise ValueError(out['info'])
@@ -351,7 +496,7 @@ class TVUniformGridFcts(Composed):
                 self.beta = setting.penalty.convexity_param # the parameter in the Huber functional
             self.y = self.grad.adjoint(self.x)
 
-        def _next(self):
+        def _next(self) -> None:
             self.lastx = self.x; 
             self.u = self.y+self.ref
             self.update = self.grad(-self.u)
@@ -367,13 +512,26 @@ class TVUniformGridFcts(Composed):
                 self.x = (self.x+self.update) / np.expand_dims(1.+(1./self.ub)*self.S.vector_norm(x = self.update, axis=self.S._vaxes),-1)
             self.y = self.grad.adjoint(self.x)
 
-        def primal(self):
-            """primal variables (of the dual problem) needed for the evaluation of the dualitzy gap
+        def primal(self) -> tuple[Vector | None, Vector | None]:
+            r"""primal variables (of the dual problem) needed for the evaluation of the dualitzy gap
+                        
+            
+            Returns
+            -------
+            tuple[Vector | None, Vector | None]
+                Result described above.
             """
             return (self.x,self.y)
 
-        def dual(self):
-            """dual variables of the dual problem (i.e., actually the primal variables) needed for the evaluation of the dualitzy gap
+        def dual(self) -> tuple[Vector | None, Vector | None]:
+            r"""dual variables of the dual problem (i.e., actually the primal variables) 
+            needed for the evaluation of the dualitzy gap
+                        
+            
+            Returns
+            -------
+            tuple[Vector | None, Vector | None]
+                Result described above.
             """
             if hasattr(self,'u'):
                 return ((1./self.vol_el)*self.u,(-1./(self.vol_el*self.stepsize))*self.update) 
@@ -381,7 +539,22 @@ class TVUniformGridFcts(Composed):
                 return (self.y,self.x)
 
         @staticmethod
-        def check_applicability(setting, op_norm=None)->tuple[dict,dict]:
+        def check_applicability(setting: Setting, op_norm: float | None=None)->tuple[dict,dict]:
+            r"""Check the requirements of this solver for the supplied setting.
+            
+            Parameters
+            ----------
+            setting: Setting
+                Problem setting containing the operator, penalty, and data fidelity.
+            op_norm: float | None [default: None]
+                Operator-norm estimate; None requests numerical estimation.
+            
+            
+            Returns
+            -------
+            tuple[dict, dict]
+                Result described above.
+            """
             from regpy.solvers import Setting            
             out = {'info':''}; par = {}            
             if not isinstance(setting,Setting) or not isinstance(setting._primal_setting,TVUniformGridFcts.TV_prox_setting):
@@ -391,15 +564,15 @@ class TVUniformGridFcts(Composed):
             return out,par 
 
     #####################################################################
-    def __init__(self, domain,
+    def __init__(self, domain: VectorSpaceBase,
                  beta:float =0.,
                  boundary_condition:str='Neum',
-                 prox_method:str = 'dual_FISTA',
+                 prox_method:str = 'dFISTA',
                  prox_method_param:dict = {},
-                 prox_stop_rule = None,
-                 logging_level = "INFO",
-                 prox_it_logging_level = "INFO"
-                ):
+                 prox_stop_rule: StopRule | None = None,
+                 logging_level: int | str = "INFO",
+                 prox_it_logging_level: str = "INFO"
+                ) -> None:
         from regpy.stoprules import DualityGapStopping,CountIterations,StopRule
 
         if not isinstance(domain, UniformGridFcts):
@@ -415,6 +588,7 @@ class TVUniformGridFcts(Composed):
             raise ValueError(Errors.value_error(f"{prox_method} not in list of applicable methods of the TV_pvrox_setting, which is {self.prox_setting.applicable_methods()}."))
         else:
             self.prox_method = prox_method      
+        self._fista_zero_data = {}
         if prox_stop_rule is None:
             prox_stop_rule = DualityGapStopping(tol=1e-4,stop_at_infty = False,logging_level=prox_it_logging_level) + CountIterations(500,logging_level=prox_it_logging_level)
         elif not isinstance(prox_stop_rule,StopRule):
@@ -427,16 +601,25 @@ class TVUniformGridFcts(Composed):
         self.log.setLevel(logging_level)
 
     @property
-    def beta(self):
-        """
-        Parameter in Huber approximation of the L^1-norm. Exact TV functional only for beta==0.
+    def beta(self) -> ReadOnlyVector | float | None:
+        r"""Parameter in Huber approximation of the L^1-norm. Exact TV functional only for beta==0.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector | float | None
+            Result described above.
         """
         return self._beta
     
     @beta.setter
-    def beta(self, beta_val):
-        """
-        Sets beta as well as the functional that is applied to the gradient (L1L2 if beta == 0 and HuberL2 else)
+    def beta(self, beta_val: float) -> None:
+        r"""Sets beta as well as the functional that is applied to the gradient (L1L2 if beta == 0 and HuberL2 else)
+        
+        Parameters
+        ----------
+        beta_val: float
+            Beta val.
         """
         if not isinstance(beta_val,(float,int)) and (beta_val>=0.):
             raise ValueError(Errors.value_error('beta must be a non-negative float'))
@@ -447,8 +630,19 @@ class TVUniformGridFcts(Composed):
         if hasattr(self,'prox_setting'):
             self.prox_setting.data_fid = self.func
 
-    def _grad_func(self, beta)->Functional:
+    def _grad_func(self, beta: float)->Functional:
         r"""Returns the functional applied to the gradient -- L1L2 if beta ==0 and HuberL2 if beta>0
+                
+        Parameters
+        ----------
+        beta: float
+            Beta.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
         """
         if beta==0.:
             func = L1L2(self.grad.codomain)
@@ -458,11 +652,21 @@ class TVUniformGridFcts(Composed):
             func.sigmaeps = np.broadcast_to(1.+1e-5, self.grad.domain.shape) # increase tolerance to avoid inf's in duality gap evaluations
         return func
       
-    def _proximal(self, x, tau: float, out=None, **kwargs):
-        self.prox_setting.set_penalty_shift(x)
+    def _proximal(self, x: ReadOnlyVector, tau: float, out: Vector | None=None, **kwargs: Any) -> Vector:
+        self.prox_setting.init = x
         self.prox_setting.regpar = 1. / tau
         prox_method_param = self.prox_method_param.copy()
         prox_method_param.update(kwargs)
+        if self.prox_method in {'FISTA', 'dFISTA'} and 'data' not in prox_method_param:
+            data_space = (
+                self.grad.domain
+                if self.prox_method == 'dFISTA'
+                else self.grad.codomain
+            )
+            if self.prox_method not in self._fista_zero_data:
+                self._fista_zero_data[self.prox_method] = data_space.zeros()
+            prox_method_param['data'] = self._fista_zero_data[self.prox_method]
+            prox_method_param.setdefault('update_setting', False)
         result = self.prox_setting.run(
             self.prox_method, stoprule=self.prox_stop_rule,
             **prox_method_param

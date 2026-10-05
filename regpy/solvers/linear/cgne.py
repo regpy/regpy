@@ -1,88 +1,92 @@
-from regpy.util import Errors
+from __future__ import annotations
 
-from ..general import RegSolver
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.vecsps.base import ReadOnlyVector, Scalar, VectorSpaceBase
+from regpy.util import Errors
+from regpy.vecsps import Vector
+from math import sqrt
+
+from ..solver import RegSolver
+from ..setting import Setting, check_Hilbert_applicability_linear
 
 __all__ = ["CGNE"]
 
 
-def _axpy(space, target, scalar, direction, work):
-    """Compute ``target += scalar * direction`` using a reusable vector."""
+def _axpy(space: VectorSpaceBase, target: Vector, scalar: Scalar, direction: ReadOnlyVector, work: Vector) -> None:
+    r"""Compute ``target += scalar * direction`` using a reusable vector.
+    
+    Parameters
+    ----------
+    space: VectorSpaceBase
+        Space.
+    target: Vector
+        Writable vector used by this operation.
+    scalar: Scalar
+        Scalar.
+    direction: ReadOnlyVector
+        Input vector; its coefficients are only read.
+    work: Vector
+        Writable vector used by this operation.
+    """
     space.copyto(work, direction)
     work *= scalar
     target += work
 
 
 class CGNE(RegSolver):
-    r"""
-    The conjugate gradient method applied to the normal equation
+    r"""The conjugate gradient method applied to the normal equation
     :math:`T^*T=T^*g` for solving linear inverse problems :math:`Tf=g`.
     Regularization is achieved by early stopping, typically using the
     discrepancy principle.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         Regularization setting involving Hilbert space norms.
-    data : array-like, optional
-        Right-hand side ``g``. If omitted, the data is taken from ``setting``.
-    x0 : array-like, optional
-        Initial iterate. Defaults to zero.
-    logging_level
-        Controls the amount of output.
+    data: ReadOnlyVector | None [default: None]
+        Right-hand side in ``setting.op.codomain``. In the default case,
+        ``setting.data`` is used.
+    init: Vector | None [default: None]
+        Initial guess. If omitted, it is taken from the setting.
+        Must be writable when ``change_init=True``; otherwise a copy is used.
+    change_init: bool [default: False]
+        If true, ``init`` itself is used as iteration vector. Otherwise it is
+        copied.
+    logging_level: int | str [default: 'INFO']
+        Logging level.
     """
 
-    def __init__(self, setting, data=None, x0=None, logging_level="INFO"):
+    def __init__(
+        self,
+        setting: Setting,
+        data: ReadOnlyVector | None = None,
+        init: Vector | None = None,
+        change_init: bool = False,
+        logging_level: int | str = "INFO",
+    ) -> None:
+        out, par = self.check_applicability(
+            setting, user_data=data, user_init=init
+        )
+        if not out['applicable']:
+            raise ValueError('CGNE not applicable to this setting. ' + out['info'])
         super().__init__(setting)
-        if not self.op.linear:
-            raise ValueError(
-                Errors.not_linear_op(
-                    self.op,
-                    add_info="CGNE requires the operator to be linear!",
-                )
-            )
-
-        if data is None:
-            if setting.data is None:
-                raise ValueError(
-                    Errors.value_error(
-                        "Data has to be included in setting or given directly."
-                    )
-                )
-            data = setting.data
-        if data not in self.op.codomain:
-            raise ValueError(
-                Errors.not_in_vecsp(
-                    data,
-                    self.op.codomain,
-                    vec_name="data",
-                    space_name="codomain",
-                )
-            )
-        if x0 is not None and x0 not in self.op.domain:
-            raise ValueError(
-                Errors.not_in_vecsp(
-                    x0,
-                    self.op.domain,
-                    vec_name="first iteration",
-                    space_name="domain",
-                )
-            )
-
         self.log.setLevel(logging_level)
-        self.x0 = x0
-        r"""The zero-th CG iterate. ``x0=None`` corresponds to zero."""
+        data = par['data']
+        initial = par['init']
 
         domain = self.op.domain
         codomain = self.op.codomain
 
-        self.x = domain.zeros() if x0 is None else x0.copy()
+        if change_init:
+            self.x = initial
+        else:
+            self.x = domain.empty()
+            domain.copyto(self.x, initial)
         """The current iterate."""
 
-        if x0 is None:
-            self.y = codomain.zeros()
-        else:
-            self.y = codomain.empty()
-            self.op(self.x, out=self.y)
+        self.y = codomain.empty()
+        self.op(self.x, out=self.y)
         """The image of the current iterate under the operator."""
 
         # Persistent work vectors used by initialization and every CG step.
@@ -116,7 +120,46 @@ class CGNE(RegSolver):
         domain.copyto(self.g_dir, self.g_res)
         """The domain Gram matrix applied to the search direction."""
 
-    def _next(self):
+    @staticmethod
+    def check_applicability(
+        setting: Setting,
+        op_norm: float | None = None,
+        user_data: ReadOnlyVector | None = None,
+        user_init: ReadOnlyVector | None = None,
+    ) -> tuple[dict, dict]:
+        r"""Check whether CGNE can be used for ``setting``.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        user_data: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        user_init: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
+        out, par = check_Hilbert_applicability_linear(
+            setting,
+            op_norm=op_norm,
+            user_data=user_data,
+            user_init=user_init,
+        )
+        if setting.codomain_free:
+            out['info'] += (
+                'CGNE has no implementation without codomain vectors. '
+            )
+        out['applicable'] = out['info'] == ''
+        return out, par
+
+    def _next(self) -> None:
         domain = self.op.domain
         codomain = self.op.codomain
 
@@ -124,11 +167,9 @@ class CGNE(RegSolver):
         self.h_codomain.gram(self._Tdir, out=self._g_Tdir)
 
         denominator = codomain.vdot(self._g_Tdir, self._Tdir).real
-        if denominator == 0:
-            raise RuntimeError(
-                "The CGNE step size is undefined because the search direction "
-                "has zero image norm."
-            )
+        if sqrt(denominator) <=1e-15:
+            self.log.info(f'CGNE: stopped at iteration {self.iteration_step_nr} as residual is 0 to machine precision.')
+            self.converge()
         alpha = self.sq_norm_res / denominator
 
         _axpy(domain, self.x, alpha, self.dir, self._domain_work)

@@ -1,285 +1,257 @@
-from math import sqrt
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from collections.abc import Iterable, Iterator
+from numbers import Real
+from typing import cast
 
 import numpy as np
 
+from regpy.operators import ObsDataT
 from regpy.util import Errors
-from ..general import RegSolver
+from regpy.vecsps import ReadOnlyVector, Vector
+from .. import RegSolver, Setting, check_Hilbert_applicability, Naturals
 
-__all__ = ["Landweber", "LandweberOnlyDomain"]
-
+__all__ = ["Landweber"]
 
 class Landweber(RegSolver):
-    r"""The Landweber method. Solves the potentially nonlinear, ill-posed equation
-
+    r"""The nonlinear Landweber method for the ill-posed equation
+    
     .. math::
-        F(x) = data,
-
-    where :math:`F` is a Frechet-differentiable operator, by gradient descent applied 
-    to :math:`\Vert F(x) - g^\delta\Vert^2`:
-
+        F(x) = data.
+    
+    It applies gradient descent to :math:`\lVert F(x)-data\rVert_Y^2` given by
+    
     .. math::
-
-        x_{k+1} = x_{k} - \mu F'[x_k]^*(F(x_k)-data)
-
-
+            x_{k+1} = x_k  -  \mu  G_X^{-1}  F'[x_k]^*  G_Y  (F(x_k) - data).
+    
+    If ``setting.codomain_free`` is true, this iteration formula is evaluated
+    through ``adjoint_eval`` and ``adjoint_data``, and no codomain vector is
+    allocated.
+    
+    There are two mutually exclusive step-length modes:
+    
+    - By default, the derivative norm is estimated initially and again at the
+      iterations specified by ``stepsize_selection_steps``.
+    - Supplying ``stepsize`` selects a fixed step length.
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
-        The setting of the forward problem.
-    init : array-like, optional
-        The initial guess and starting point of the iteration. If None (default), it is taken from setting.
-    data : array-like, default None
-        The measured data/right-hand side. If None it is taken from setting.
-    stepsize : float, optional
-        The step length; must be chosen not too large. If omitted, it is guessed from the norm of
-        the derivative at the initial guess. Alternatively, if backtracking is used, stepsize defines an
-        initial guess for the step length which has to be sufficiently large. If omitted the initial step
-        length will be 10**16.
-    backtracking : boolean, optional
-        Wether or not to use backtracking for finding a sufficient step length. Default: True.
-    """
-
-    def __init__(self, setting,init=None,data=None, stepsize=None, backtracking=True, eta = 0.5, op_norm_method = "lanczos",update_setting = True):
-        super().__init__(setting)
-        if self.op.linear:
-            self.log.warning(
-                "Using non-linear Landweber with a linear Operator! Consider "
-                "using the linear Landweber implementation."
-            )
-
-        initial = setting.get_or_update_initial_guess(init, update_setting)
-        self.x = self.op.domain.empty()
-        self.op.domain.copyto(self.x, initial)
-        self.rhs = setting.get_or_update_data(data, update_setting)
-
-        self.y = self.op.codomain.empty()
-        _, self.deriv = self.op.linearize(self.x, out=self.y)
-
-        self.backtracking = bool(backtracking)
-        if self.backtracking:
-            self.stepsize = 10**16 if stepsize is None else stepsize
-        else:
-            self.stepsize = (
-                0.9 / self.deriv.norm(
-                    setting.h_domain, setting.h_codomain,
-                    method=op_norm_method
-                )**2
-                if stepsize is None else stepsize
-            )
-        if self.stepsize <= 0:
-            raise ValueError(Errors.value_error(
-                "The step size must be positive!"
-            ))
-        self.eta = eta
-        if not 0 < eta < 1:
-            raise ValueError(Errors.value_error(
-                "The step size reduction constant must be between 0 and 1!"
-            ))
-
-        domain, codomain = self.op.domain, self.op.codomain
-        self._residual = codomain.empty()
-        self._gy_residual = codomain.empty()
-        self._update = domain.empty()
-        self._trial_x = domain.empty()
-        self._scaled_update = domain.empty()
-
-        if self.backtracking:
-            self._update_residual()
-            self._old_err = codomain.vdot(
-                self._residual, self._gy_residual
-            ).real
-
-    def _update_residual(self):
-        self.op.codomain.copyto(self._residual, self.y)
-        self._residual -= self.rhs
-        self.h_codomain.gram(
-            self._residual, out=self._gy_residual
-        )
-
-    def _write_trial(self):
-        self.op.domain.copyto(self._trial_x, self.x)
-        np.multiply(
-            self._update, self.stepsize, out=self._scaled_update
-        )
-        self._trial_x -= self._scaled_update
-
-    def _next(self):
-        if not self.backtracking:
-            self._update_residual()
-
-        self.deriv.adjoint(self._gy_residual, out=self._update)
-        self.h_domain.gram_inv(self._update, out=self._update)
-
-        if self.backtracking:
-            while True:
-                self._write_trial()
-                self.op(self._trial_x, out=self.y)
-                self._update_residual()
-                new_err = self.op.codomain.vdot(
-                    self._residual, self._gy_residual
-                ).real
-                if new_err < self._old_err:
-                    self._old_err = new_err
-                    break
-                self.stepsize *= self.eta
-            self.x, self._trial_x = self._trial_x, self.x
-        else:
-            self._update *= self.stepsize
-            self.x -= self._update
-
-        # Compute the derivative for the next step directly into ``self.y``.
-        _, self.deriv = self.op.linearize(self.x, out=self.y)
-
-        if self.log.isEnabledFor(20):
-            err = (
-                self._old_err if self.backtracking
-                else self.op.codomain.vdot(
-                    self._residual, self._gy_residual
-                ).real
-            )
-            self.log.info("|residual| = {}".format(sqrt(err)))
-
-
-class LandweberOnlyDomain(RegSolver):
-    r"""Nonlinear Landweber iteration without constructing codomain vectors.
-
-    The ordinary Landweber gradient can be written as
-
-    .. math::
-
-        G_X^{-1}\left(
-            F'[x]^*G_YF(x) - F'[x]^*G_Ydata
-        \right).
-
-    This variant obtains the two terms directly in the operator domain through
-    ``linearize(..., return_adjoint_eval=True)`` and
-    ``deriv.adjoint_data(data)``. Consequently, it does not allocate codomain work vectors or store
-    an iterate image in ``op.codomain``. The supplied operator must implement optimized
-    in-place versions of adjoint evaluation, adjoint data, and adjoint
-    derivative that incorporate the codomain Gram matrix.
-
-    Backtracking is deliberately not supported because its acceptance test
-    requires evaluating codomain residual norms.
-
-    Parameters
-    ----------
-    setting : regpy.solvers.Setting
-        Setting of the nonlinear forward problem.
-    init : array-like, optional
-        Initial guess. If omitted, it is taken from ``setting``.
-    data
-        Measured data or another object accepted by
-        ``deriv.adjoint_data``. If omitted, ``setting.data`` is used.
-        The solver retains this object but creates no codomain work vector.
-    stepsize : float, optional
-        Positive Landweber step size. If omitted, ``0.9 / norm(deriv)**2`` is
-        used, with the derivative norm computed in codomain-free mode.
-    op_norm_method : str, optional
-        Method used for derivative norm estimation.
-    update_setting : bool, optional
-        Whether the initial guess should be updated in ``setting``.
-        Data are intentionally not copied into the setting by this variant.
-    logging_level
+    setting: Setting
+        Setting of the inverse problem.
+    data: ReadOnlyVector | ObsDataT | None [default: None]
+        Right-hand side. In the default case, ``setting.data`` is used. For a
+        codomain-free setting, it may be any object accepted by
+        ``deriv.adjoint_data``.
+    init: ReadOnlyVector | None [default: None]
+        Initial guess. In the default case, it is taken from the setting.
+    stepsize: float | None [default: None]
+        Positive fixed step length. If supplied, derivative-norm estimates are
+        not used.
+    stepsize_selection_steps: Iterable[int] | None [default: None]
+        Iterates at which the derivative norm is estimated to select a new
+        step length. Selection is always performed once at the initial iterate
+        (iteration zero). By default, it is then repeated at iterations
+        ``1, 2, 4, 8, ...``. Passing ``[0]`` therefore selects the step length
+        only initially. Values must be nonnegative and strictly increasing.
+        The derivative norm at :math:`x_k` determines the update from
+        :math:`x_k` to :math:`x_{k+1}`. This argument cannot be combined with
+        a fixed ``stepsize``.
+    stepsize_safety: float [default: 0.9]
+        Safety factor for norm-based step lengths. The selected value is
+        ``stepsize_safety / norm(deriv)**2``. It must lie in ``(0, 1]`` and9``.
+    op_norm_method: str [default: 'lanczos']
+        Method used to estimate the derivative norm.
+        Norm estimates use ``reltol=0.05 / sqrt(1 + iteration_step_nr)``.
+    logging_level: int | str [default: 'INFO']
         Logging level.
     """
 
     def __init__(
         self,
-        setting,
-        init=None,
-        data=None,
-        stepsize=None,
-        op_norm_method="lanczos",
-        update_setting=True,
-        logging_level="INFO",
-    ):
+        setting: Setting,
+        data: ReadOnlyVector | ObsDataT | None = None,
+        init: ReadOnlyVector | None = None,
+        stepsize: float | None = None,
+        stepsize_selection_steps: Iterable[int] | None = None,
+        stepsize_safety: float = 0.9,
+        op_norm_method: str = "lanczos",
+        logging_level: int | str = "INFO",
+    ) -> None:
+        out, par = self.check_applicability(setting, user_data=data, user_init=init)
+        if not out['applicable']:
+            raise ValueError(
+                'Nonlinear Landweber not applicable to this setting. '
+                + out['info']
+            )
         super().__init__(setting)
+        self.log.setLevel(logging_level)
         if self.op.linear:
             self.log.warning(
-                "Using nonlinear LandweberOnlyDomain with a linear operator. "
-                "Consider using the linear domain-only Landweber implementation."
+                "Using nonlinear Landweber with a linear operator. Consider "
+                "using the linear Landweber implementation."
             )
-        self.log.setLevel(logging_level)
 
-        initial = setting.get_or_update_initial_guess(init, update_setting)
         domain = self.op.domain
+        self.x: Vector = par['init']  # use memory of par['init']
+        self.data: ReadOnlyVector | ObsDataT = par['data']
 
-        self.x = domain.empty()
-        domain.copyto(self.x, initial)
-        self.y = None
-
-        if data is None:
-            data = setting.data
-        if data is None:
-            raise ValueError(Errors.value_error(
-                "Data have to be included in the setting or supplied directly."
+        if (isinstance(stepsize_safety, bool)
+                or not isinstance(stepsize_safety, Real)):
+            raise TypeError(Errors.type_error(
+                "stepsize_safety must be a real scalar."
             ))
-        self.data = data
+        self.stepsize_safety: float = float(stepsize_safety)
+        if not 0 < self.stepsize_safety <= 1:
+            raise ValueError(Errors.value_error(
+                "stepsize_safety must lie in (0, 1]."
+            ))
+        self.op_norm_method: str = op_norm_method
 
-        self._adjoint_eval = domain.empty()
-        self._adjoint_data = domain.empty()
-        self._normal_residual = domain.empty()
-        self._update = domain.empty()
+        self._update: Vector = domain.empty()
+        if setting.codomain_free:
+            self.y = None
+            self._adjoint_data: Vector = domain.empty()
+            _, self.deriv = self.op.linearize(
+                self.x,
+                out=self._update,
+                return_adjoint_eval=True,
+            )
+        else:
+            codomain = self.op.codomain
+            self.y = codomain.empty()
+            _, self.deriv = self.op.linearize(self.x, out=self.y)
+            self._residual: Vector = codomain.empty()
+            self._gy_residual: Vector = codomain.empty()
 
-        _, self.deriv = self.op.linearize(
-            self.x,
-            out=self._adjoint_eval,
-            return_adjoint_eval=True,
-        )
+        self._stepsize_selection_steps: Iterator[int] | None = None
+        self._last_stepsize_selection_step: int = -1
+        self._next_stepsize_selection_step: int | None = None
+        self.stepsize: float
 
         if stepsize is None:
-            norm = self.deriv.norm(
-                setting.h_domain,
-                setting.h_codomain,
-                method=op_norm_method,
-                without_codomain_vectors=True,
-            )
-            if norm <= 0:
-                raise ValueError(Errors.value_error(
-                    "The derivative norm must be positive."
-                ))
-            stepsize = 0.9 / norm**2
-        if stepsize <= 0:
-            raise ValueError(Errors.value_error(
-                "The step size must be positive!"
-            ))
-        self.stepsize = stepsize
-
-    def primal(self):
-        """Return the current domain iterate and no codomain image."""
-        return self.x, None
-
-    def _next(self):
-        domain = self.op.domain
-
-        self.deriv.adjoint_data(
-            self.data,
-            out=self._adjoint_data,
-        )
-        domain.copyto(self._normal_residual, self._adjoint_eval)
-        self._normal_residual -= self._adjoint_data
-
-        self.h_domain.gram_inv(
-            self._normal_residual,
-            out=self._update,
-        )
-
-        if self.log.isEnabledFor(20):
-            norm_sq = domain.vdot(
-                self._normal_residual,
-                self._update,
-            ).real
-            self.log.info(
-                "|normal residual| = {}".format(
-                    sqrt(max(norm_sq, 0.0))
+            try:
+                self._stepsize_selection_steps = iter(
+                    (2 ** Naturals())
+                    if stepsize_selection_steps is None
+                    else stepsize_selection_steps
                 )
-            )
+            except TypeError as error:
+                raise TypeError(Errors.type_error(
+                    "stepsize_selection_steps must be an iterable of "
+                    "integers."
+                )) from error
+            self._advance_stepsize_selection_step()
+            self._estimate_stepsize()
+            if self._next_stepsize_selection_step == 0:
+                self._advance_stepsize_selection_step()
+        else:
+            if stepsize_selection_steps is not None:
+                raise ValueError(Errors.value_error(
+                    "stepsize_selection_steps cannot be used with a fixed "
+                    "stepsize."
+                ))
+            if isinstance(stepsize, bool) or not isinstance(stepsize, Real):
+                raise TypeError(Errors.type_error(
+                    "stepsize must be a real scalar."
+                ))
+            self.stepsize = float(stepsize)
+            self.log.debug(f'Step size set to {self.stepsize} in constructor.')
+            if not np.isfinite(self.stepsize) or self.stepsize <= 0:
+                raise ValueError(Errors.value_error(
+                    "The step length must be finite and positive."
+                ))
+
+    check_applicability = staticmethod(check_Hilbert_applicability)
+
+    def _next(self) -> None:
+        if self.setting.codomain_free:
+            self._next_codomain_free()
+            return
+
+        self.op.codomain.copyto(self._residual, self.y)
+        self._residual -= self.data
+        self.h_codomain.gram(self._residual, out=self._gy_residual)  
+        if self.iteration_step_nr<=10 or (self.iteration_step_nr<=100 and self.iteration_step_nr%10==0) or self.iteration_step_nr%50 ==0:
+            self.log.debug(f'it. {self.iteration_step_nr}: residual = {np.sqrt(self.op.codomain.vdot(self._residual,self._gy_residual))}')
+        self.deriv.adjoint(self._gy_residual, out=self._update)
+        self.h_domain.gram_inv(self._update, out=self._update)
 
         self._update *= self.stepsize
         self.x -= self._update
 
+        _, self.deriv = self.op.linearize(self.x, out=self.y)
+        self._update_norm_based_stepsize()
+
+    def _next_codomain_free(self) -> None:
+        self.deriv.adjoint_data(self.data, out=self._adjoint_data)
+        self._update -= self._adjoint_data
+        self.h_domain.gram_inv(self._update, out=self._update)
+
+        self._update *= self.stepsize
+        self.x -= self._update
         _, self.deriv = self.op.linearize(
             self.x,
-            out=self._adjoint_eval,
+            out=self._update,
             return_adjoint_eval=True,
         )
+        self._update_norm_based_stepsize()
+
+    def _advance_stepsize_selection_step(self) -> None:
+        r"""Read and validate the next step-length selection step.
+        """
+        if self._stepsize_selection_steps is None:
+            self._next_stepsize_selection_step = None
+            return
+        try:
+            step = next(self._stepsize_selection_steps)
+        except StopIteration:
+            self._next_stepsize_selection_step = None
+            return
+        if (isinstance(step, bool)
+                or not isinstance(step, (int, np.integer))):
+            raise TypeError(Errors.type_error(
+                "stepsize_selection_steps must contain integers."
+            ))
+        step = int(step)
+        if step < 0:
+            raise ValueError(Errors.value_error(
+                "Step-length selection steps must be nonnegative."
+            ))
+        if step <= self._last_stepsize_selection_step:
+            raise ValueError(Errors.value_error(
+                "Step-length selection steps must be strictly increasing."
+            ))
+        self._last_stepsize_selection_step = step
+        self._next_stepsize_selection_step = step
+
+    def _estimate_stepsize(self) -> None:
+        r"""Estimate the derivative norm and update the step length.
+        """
+        norm = self.deriv.norm(
+            self.setting.h_domain,
+            None if self.setting.codomain_free else self.setting.h_codomain,
+            method=self.op_norm_method,
+            reltol=0.05 / np.sqrt(1 + self.iteration_step_nr),
+            codomain_free=self.setting.codomain_free,
+        )
+        if not np.isfinite(norm) or norm <= 0:
+            raise ValueError(Errors.value_error(
+                "The derivative norm must be finite and positive."
+            ))
+        self.stepsize = self.stepsize_safety / norm**2
+        self.log.debug(f'it. {self.iteration_step_nr:}: Step size changed by norm estimation to {self.stepsize}')
+
+    def _update_norm_based_stepsize(self) -> None:
+        r"""Refresh a norm-based step length at the current iteration.
+        """
+        step = self._next_stepsize_selection_step
+        if step is None:
+            return
+        if step < self.iteration_step_nr:
+            raise RuntimeError(Errors.runtime_error(
+                "A scheduled step-length selection step was skipped."
+            ))
+        if step == self.iteration_step_nr:
+            self._estimate_stepsize()
+            self._advance_stepsize_selection_step()
