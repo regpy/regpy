@@ -24,10 +24,15 @@ if TYPE_CHECKING:
 __all__ = ["Solver", "RegSolver", "CombinedSolver"]
 
 class Solver:
-    r"""Abstract base class for solvers. Solvers do not implement loops themselves, but are driven by
-    repeatedly calling the `next` method. They expose the current iterate and its value as attributes
+    r"""Abstract base class for iterative solvers. 
+    Solvers typically implement iterative methods for solving operator equations or optimization problems involving an operator. However, the operator is not part of the base class interface, allowing solvers to be used in a variety of contexts. 
+
+    Solvers do not implement loops themselves, but are driven by
+    repeatedly calling the `next` method. They expose the current iterate and its value under the operator as attributes
     `x` and `y`, and can be iterated over, yielding the `(x, y)` tuple on every iteration (which
     may or may not be the same arrays as before, modified in-place).
+    
+    The convenience methods ``run``, ``while_`` and ``until`` run the solver with a `regpy.stoprules.StopRule`. The latter two allow for monitoring, plotting, etc, of the iterates by the caller. 
     
     Each call to ``iter(solver)`` creates a generator driving the same mutable
     solver state; it does not restart the solver. The solver is iterable but
@@ -36,10 +41,9 @@ class Solver:
     
     Yielded vectors are read-only views, not copies. Solver updates may
     still change their contents. Copy them when retaining snapshots of the
-    iteration history. Both components may be ``None``.
+    iteration history. Either of the components may be ``None``.
     
-    Convenience methods run the solver with a `regpy.stoprules.StopRule`.
-    
+
     Subclasses should override the method `_next(self)` to perform a single iteration where the values of 
     the attributes `x` and `y` are updated. The main difference to `next` is that `_next` does not have a
     return value. If the solver converged, `converge` should be called, afterwards `_next` will never be
@@ -51,7 +55,7 @@ class Solver:
     x: Vector | None [default: None]
         Initial argument for iteration.
     y: Vector | None [default: None]
-        Initial value at current iterate.
+        Initial value of the operator at the current iterate.
     """
 
     log = ClassLogger()
@@ -62,7 +66,7 @@ class Solver:
         self.x: Vector | None = x
         """The current iterate."""
         self.y: Vector | None = y
-        """The value at the current iterate. May be needed by stopping rules, but callers should
+        """The value of the operator at the current iterate. May be needed by stopping rules, but callers should
         handle the case when it is not available."""
         self.__converged: bool = False
         self.iteration_step_nr: int = 0
