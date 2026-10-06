@@ -1771,6 +1771,7 @@ class Setting:
     def run(self,
             method_name: str|None = None,
             max_it: int | None = None,
+            max_op_evals: int | None = None,            
             stoprule: StopRule | None = None,
             ref_sol: (ReadOnlyVector
                         | tuple[ReadOnlyVector | None, ReadOnlyVector]
@@ -1788,6 +1789,9 @@ class Setting:
             If None the "best" method is selected by select_best_method().
         max_it: int | None [default: None]
             Override the factory's iteration cap for this run. For an explicit
+            StopRule, add an extra timed, evaluation-counting cap instead.
+        max_op_evals: int | None [default: None]
+            Override the factory's evaluation cap for this run. For an explicit
             StopRule, add an extra timed, evaluation-counting cap instead.
         stoprule: StopRule | None [default: None]
             An explicit rule overrides the factory for this run. A reset copy
@@ -1856,12 +1860,24 @@ class Setting:
                     'max_it must be nonnegative.', max_it
                 ))
             max_it = int(max_it)
+        if max_op_evals is not None:
+            if isinstance(max_op_evals, (bool, np.bool_)) or not isinstance(max_op_evals, (int, np.integer)):
+                raise TypeError(Errors.type_error(
+                    'max_op_evals must be an integer or None.', max_op_evals
+                ))
+            if max_op_evals < 0:
+                raise ValueError(Errors.value_error(
+                    'max_op_evals must be nonnegative.', max_op_evals
+                ))
+            max_op_evals = int(max_op_evals)
 
         if stoprule is None:
             params = deepcopy(themethod['stoprule_params'])
             params.update(solver_class=themethod['class'], logging_level=logging_level)
             if max_it is not None:
                 params['max_it'] = max_it
+            if max_op_evals is not None:
+                params['max_op_evals'] = max_op_evals
             factory = resolve_stoprule_factory(params.pop('factory'))
             if gap_tol is not None and factory is default_convex_stoprule:
                 params['tol'] = gap_tol
@@ -1870,10 +1886,10 @@ class Setting:
                 raise TypeError("The factory must return a StopRule.")
         elif not isinstance(stoprule, StopRule):
             raise TypeError("stoprule must be a StopRule or None.")
-        elif max_it is not None:
+        elif max_it is not None or max_op_evals is not None:
             # Copy before composition to leave the caller's rule untouched.
             stoprule = stoprule.copy_and_reset() + CountIterations_factory(thesetting,
-                {'max_it': max_it, 'logging_level': logging_level})
+                {'max_it': max_it, 'max_op_evals': max_op_evals, 'logging_level': logging_level})
 
         if ref_sol is not None:
             monitor_ref_sol = ref_sol
