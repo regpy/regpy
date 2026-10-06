@@ -70,7 +70,7 @@ def _register_functionals() -> None:
 
     Lpp.register(MeasureSpaceFcts, LppPower)
  
-    KL.register(MeasureSpaceFcts, KullbackLeibler)
+    KL.register(MeasureSpaceFcts, KullbackLeiblerOffset)
     
     RE.register(MeasureSpaceFcts, RelativeEntropy)
 

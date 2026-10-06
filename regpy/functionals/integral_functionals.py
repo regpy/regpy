@@ -23,7 +23,7 @@ from regpy.hilbert import L2
 
 from .base import Functional, LinearFunctional, LinearCombination,HorizontalShiftDilation, NotInEssentialDomainError,NotTwiceDifferentiableError, as_functional
 
-__all__ = ["IntegralFunctionalBase","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","Huber_old","Quadratic","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","L1Generic"]
+__all__ = ["IntegralFunctionalBase","LppPower","L1MeasureSpace","KullbackLeibler","KullbackLeiblerOffset","RelativeEntropy","Huber","Huber_old","Quadratic","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","L1Generic"]
 
 
 class IntegralFunctionalBase(Functional):
@@ -3327,6 +3327,124 @@ class KullbackLeibler(IntegralFunctionalBase):
         finally:
             self._free_scratch('_aux')
         return out
+
+
+class _OffsetKullbackLeibler(HorizontalShiftDilation):
+    """Keep data owned by KL even before the first observation is assigned."""
+
+    @property
+    def data(self) -> ReadOnlyVector:
+        return self.func.data
+
+    @data.setter
+    def data(self, value: ReadOnlyVector | None) -> None:
+        if value is None:
+            del self.data
+            return
+        self.func.data = self.func._copy_vector(value)
+        self._shifted_data_fid = True
+        self.is_data_func = True
+
+    @data.deleter
+    def data(self) -> None:
+        del self.func.data
+        self._shifted_data_fid = True
+        self.is_data_func = False
+
+    def as_data_func(self, data: ReadOnlyVector | None = None) -> Functional:
+        if data is not None:
+            self.data = data
+        elif not self.is_data_func:
+            self.data = self.domain.zeros()
+        return self
+
+
+def KullbackLeiblerOffset(
+    domain: MeasureSpaceFcts,
+    offset: float | ReadOnlyVector | None = None,
+    **kwargs: Any,
+) -> Functional:
+    r"""Construct the concrete implementation of ``KL(offset=...)``.
+
+    With a positive offset sigma and observations g, the default result is
+
+    .. code-block:: python
+
+        KullbackLeibler(domain, w=sigma, data=g,
+                       quad_taylor_l=sigma).shift(-sigma)
+
+    Thus both arguments of KL are offset: ``KL(g + sigma, u + sigma)``.
+    The lower quadratic extension starts at ``u=0`` in the final coordinates.
+    It allows negative trial values without evaluating a logarithm there.
+
+    Parameters
+    ----------
+    domain: MeasureSpaceFcts
+        Space on which the abstract KL functional is instantiated.
+    offset: float | ReadOnlyVector | None [default: None]
+        Finite, nonnegative scalar or vector in domain. None or an
+        identically zero offset preserves the ordinary KullbackLeibler
+        construction. The default quadratic extension requires a strictly
+        positive offset at every coordinate.
+    **kwargs: Any
+        Arguments for KullbackLeibler. An explicit ``w`` is added to the
+        offset. ``data`` may be supplied now or later by Setting. Explicit
+        lower constraints or linear/quadratic extension settings override
+        the default lower quadratic extension. Bounds and extension
+        thresholds are in the unshifted argument coordinates ``u + offset``.
+
+    Returns
+    -------
+    Functional
+        KullbackLeibler for an absent/zero offset, otherwise its horizontal
+        shift by minus the offset. Later data assignment changes KL's first
+        argument, not the horizontal shift. Inputs are copied.
+
+    Examples
+    --------
+    >>> fidelity = KL(offset=sigma)
+    >>> setting = Setting(op, penalty, fidelity, data=data, regpar=alpha)
+    """
+    if offset is None:
+        return KullbackLeibler(domain, **kwargs)
+    values = np.asarray(offset)
+    if (not np.issubdtype(values.dtype, np.number)
+            or np.iscomplexobj(values) or not np.all(np.isfinite(values))
+            or np.any(values < 0)):
+        raise ValueError('offset must contain finite, nonnegative real values.')
+    if values.ndim == 0:
+        sigma = float(values) * domain.ones()
+    elif offset in domain:
+        sigma = domain.empty()
+        domain.copyto(sigma, offset)
+    else:
+        raise ValueError('offset must be a scalar or a vector in domain.')
+    if np.all(sigma == 0):
+        return KullbackLeibler(domain, **kwargs)
+
+    if ('quad_taylor_l' not in kwargs
+            and kwargs.get('lin_taylor_l') is None
+            and kwargs.get('constr_l') is None):
+        if np.any(sigma == 0):
+            raise ValueError(
+                'The default quadratic extension requires a strictly positive '
+                'offset. Use quad_taylor_l=None to disable that extension.'
+            )
+        kwargs['quad_taylor_l'] = sigma.copy()
+    w = kwargs.pop('w', None)
+    weight = sigma if w is None else sigma + w
+    data = kwargs.pop('data', None)
+    if data is not None:
+        if data not in domain:
+            raise ValueError('data must belong to domain.')
+        copied_data = domain.empty()
+        domain.copyto(copied_data, data)
+        data = copied_data
+    func = KullbackLeibler(domain, w=weight, data=data, **kwargs)
+    result = _OffsetKullbackLeibler(func, shift=-sigma)
+    # The intrinsic shift never contains observations, even before data exist.
+    result._shifted_data_fid = True
+    return result
 
 
 class RelativeEntropy(IntegralFunctionalBase):
