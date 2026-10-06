@@ -1,4 +1,7 @@
 from math import sqrt,isqrt
+from copy import copy
+
+from regpy.functionals.base import as_functional
 from numbers import Real
 from typing import Iterable, Iterator
 
@@ -74,6 +77,28 @@ def _inner_cg_parameters(
     return pars
 
 
+def _linearized_cg_setting(solver: RegSolver, reference: ReadOnlyVector) -> Setting:
+    """Build the Hilbert CG problem with its explicit correction penalty.
+
+    IRGNM uses reference = initial - current, whereas LM uses zero. Keep
+    the Hilbert norms and solver-supplied data used by these methods.
+    """
+    problem = copy(solver.setting)
+    if not problem.codomain_free:
+        problem._data_fid = as_functional(
+            solver.h_codomain, solver.op.codomain
+        ).as_data_func(solver.data)
+    problem._data = solver.data
+    penalty = as_functional(
+        solver.h_domain, solver.op.domain
+    ).as_data_func(reference)
+    return problem.get_linearized_setting(
+        solver.x, solver.regpar, y0=solver.y, deriv=solver.deriv,
+        inner_penalty=penalty,
+        adjoint_y0=solver._adjoint_eval if problem.codomain_free else None,
+    )
+
+
 def _run_inner_cg(
     solver: RegSolver,
     reference: ReadOnlyVector,
@@ -84,43 +109,10 @@ def _run_inner_cg(
     cg_pars.setdefault(
         'logging_level', solver.inner_it_logging_level
     )
-    if solver.setting.codomain_free:
-        solver.deriv.adjoint_data(
-            solver.data, out=solver._adjoint_data
-        )
-        solver.op.domain.copyto(
-            solver._normal_rhs, solver._adjoint_data
-        )
-        solver._normal_rhs -= solver._adjoint_eval
-        inner_setting = Setting(
-            solver.deriv.adjoint_eval,
-            solver.h_domain,
-            solver.h_domain,
-            regpar=solver.regpar,
-            init=reference,
-            codomain_free=True,
-            explicitDataWarning=False,
-            logging_level=solver.inner_it_logging_level,
-        )
-        return LavrentievCG(
-            setting=inner_setting,
-            data=solver._normal_rhs,
-            x0=solver.deriv.domain.zeros(),
-            **cg_pars,
-        ).run(stoprule=stoprule)
-
-    inner_setting = Setting(
-        solver.deriv,
-        solver.h_domain,
-        solver.h_codomain,
-        regpar=solver.regpar,
-        init=reference,        
-        explicitDataWarning=False,
-        logging_level=solver.inner_it_logging_level,
-    )
+    inner_setting = _linearized_cg_setting(solver, reference)
+    inner_setting.log.setLevel(solver.inner_it_logging_level)
     return TikhonovCG(
         setting=inner_setting,
-        data=solver.data - solver.y,
         x0=solver.deriv.domain.zeros(),
         **cg_pars,
     ).run(stoprule=stoprule)
@@ -217,8 +209,6 @@ class IrgnmCG(RegSolver):
             self._adjoint_eval, self.deriv = self.op.linearize(
                 self.x, return_adjoint_eval=True
             )
-            self._adjoint_data = self.op.domain.empty()
-            self._normal_rhs = self.op.domain.empty()
         elif simplified_op:
             self.simplified_op = simplified_op
             _, self.deriv = self.simplified_op.linearize(self.x)
@@ -400,8 +390,6 @@ class LevenbergMarquardt(RegSolver):
             self._adjoint_eval, self.deriv = self.op.linearize(
                 self.x, return_adjoint_eval=True
             )
-            self._adjoint_data = self.op.domain.empty()
-            self._normal_rhs = self.op.domain.empty()
         elif simplified_op:
             self.simplified_op = simplified_op
             _, self.deriv = self.simplified_op.linearize(self.x)
@@ -654,19 +642,14 @@ class IrgnmCGPrec(RegSolver):
         stoprule.log.setLevel("WARNING")
         self.log.info('Running Tikhonov solver.')
         
+        reference = self.init - self.x
+        inner_setting = _linearized_cg_setting(self, reference)
         if self.need_prec_update:
             self.log.info('Spectral Preconditioner needs to be updated')
             step, _ = TikhonovCG(
-                setting=Setting(
-                    self.deriv,
-                    self.h_domain,
-                    self.h_codomain,
-                    regpar=self.regpar,
-                    explicitDataWarning=False,
-                ),
-                data=self.data - self.y,
+                setting=inner_setting,
                 krylov_basis=self.krylov_basis,
-                init=self.init - self.x,
+                x0=reference,
                 **self.cg_pars
             ).run(stoprule=stoprule)
             for i in range(0, self.krylov_order):
@@ -678,15 +661,8 @@ class IrgnmCGPrec(RegSolver):
           
         else:
             step, _ = TikhonovCG(
-                setting=Setting(
-                    self.deriv,
-                    self.h_domain,
-                    self.h_codomain,
-                    regpar=self.regpar,
-                    explicitDataWarning=False,
-                ),
-                data=self.data - self.y,
-                init=self.init-self.x,
+                setting=inner_setting,
+                x0=reference,
                 preconditioner=self.preconditioner,
                 **self.cg_pars
             ).run(stoprule=stoprule)

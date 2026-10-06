@@ -2,7 +2,7 @@ from __future__ import annotations
 import math as ma
 import warnings
 import numpy as np
-from typing import Callable, Any
+from typing import Callable, Any, Literal
 from copy import deepcopy
 
 from regpy.util import ClassLogger, Errors
@@ -27,6 +27,35 @@ __all__ = [
     "check_Hilbert_applicability",
     "check_Hilbert_applicability_linear",
 ]
+
+class _LinearizedCodomainFreeOperator(Operator):
+    """Derivative with domain-space, already backprojected residual data.
+
+    Forward and adjoint actions remain those of the derivative. The normal
+    action includes the outer operator's fidelity Gram factor exactly once.
+    Only this private adapter interprets its observation as a domain covector.
+    """
+
+    def __init__(self, deriv: Operator) -> None:
+        super().__init__(deriv.domain, deriv.codomain, linear=True)
+        self.deriv = deriv
+
+    def _eval(self, h: ReadOnlyVector) -> Vector:
+        return self.deriv(h)
+
+    def _adjoint(self, v: ReadOnlyVector) -> Vector:
+        return self.deriv.adjoint(v)
+
+    def _adjoint_eval(self, h: ReadOnlyVector) -> Vector:
+        return self.deriv.adjoint_eval(h)
+
+    def _adjoint_data(self, data: ReadOnlyVector) -> Vector:
+        if data not in self.domain:
+            raise ValueError('Linearized data must be a domain covector.')
+        result = self.domain.empty()
+        self.domain.copyto(result, data)
+        return result
+
 
 def _with_stoprule_defaults(methods: dict, factory: Callable[[Setting, dict], StopRule]) -> dict:
     """Attach independent configuration dictionaries, without creating rules."""
@@ -597,6 +626,165 @@ class Setting:
                 self.op.domain.copyto(out, stored_init)
         return out
 
+    def get_linearized_setting(
+        self,
+        x0: ReadOnlyVector,
+        regpar: float,
+        y0: ReadOnlyVector | None = None,
+        deriv: Operator | None = None,
+        use_bregman_penalty: bool = False,
+        inner_penalty: Functional | Literal[False] | None = False,
+        *,
+        adjoint_y0: ReadOnlyVector | None = None,
+    ) -> Setting:
+        r"""Construct a Tikhonov problem in the correction ``h = x - x0``.
+
+        The objective is
+
+        .. math::
+            S(F(x_0) + F'[x_0]h) + \alpha R(x_0+h).
+
+        Here ``S`` is the current data fidelity, including any incorporated
+        data. With ``use_bregman_penalty=True``, replace the penalty by
+        :math:`\Delta_R^{R'(x_0)}(x_0+h,x_0)`, using the functional's chosen
+        subgradient. An explicit ``inner_penalty`` takes precedence.
+
+        Parameters
+        ----------
+        x0: ReadOnlyVector
+            Linearization point in the operator domain.
+        regpar: float
+            Finite, strictly positive inner regularization parameter.
+        y0: ReadOnlyVector | None [default: None]
+            Previously computed ``self.op(x0)``.
+        deriv: Operator | None [default: None]
+            Previously computed derivative at ``x0``; must be linear and
+            have the same domain and codomain as ``self.op``.
+        use_bregman_penalty: bool [default: False]
+            Use the Bregman divergence instead of the shifted penalty.
+        inner_penalty: Functional | False | None [default: False]
+            Explicit penalty already expressed in correction coordinates.
+            It is copied and used without another shift. ``False`` and
+            ``None`` select the penalty constructed from ``self.penalty``.
+
+        adjoint_y0: ReadOnlyVector | None [default: None]
+            Codomain-free cache of ``F'[x0]' G_Y F(x0)``, as returned by
+            ``self.op.linearize(x0, return_adjoint_eval=True)``. Together
+            with ``deriv``, avoids repeating that evaluation. Ignored when
+            explicit codomain vectors are used.
+
+        Returns
+        -------
+        Setting
+            With explicit codomain vectors, a fresh setting with operator
+            ``deriv`` and data fidelity ``z -> S(y0 + z)``. Both functionals
+            are deep copies, independent of the originals.
+            In the codomain-free case, a setting with a private derivative
+            adapter and backprojected residual data. Its ``adjoint_eval``
+            is ``deriv.adjoint_eval``, and ``adjoint_data(inner.data)`` is
+            ``deriv.adjoint_data(self.data) - adjoint_y0``. The fidelity is
+            implicit in these operations, as in the outer setting.
+            The initial correction is zero in both cases.
+
+        Notes
+        -----
+        For codomain-free quadratic fidelity, the inner objective (up to an
+        additive constant) is ``<h, A h>/2 - <b, h> + regpar * penalty(h)``,
+        where ``A = F'[x0]' G_Y F'[x0]`` and
+        ``b = F'[x0]' G_Y (data - F(x0))``. The returned setting can be used
+        by codomain-free minimizers such as TikhonovCG through ``run``.
+        Its private operator accepts already backprojected data; do not
+        replace those data by an ordinary codomain observation.
+        No codomain vector is allocated when ``y0`` is omitted. As in the
+        operator's codomain-free interface, ``G_Y`` is already incorporated
+        into its normal and adjoint-data operations.
+
+        For an explicit codomain, if either ``y0`` or ``deriv`` is missing,
+        both are computed in one linearization and only missing arguments
+        are filled. In codomain-free mode the cached ``adjoint_y0`` replaces
+        the need for ``y0``. Linearization
+        uses a private copy of ``self.op`` so its caches and existing
+        derivative handles are not changed. Providing both avoids this copy
+        and any additional operator evaluation. A supplied derivative is
+        reused; its lifetime remains subject to the operator's usual rules.
+        Neither this setting nor the supplied vectors/functionals is modified.
+        """
+        if x0 not in self.op.domain:
+            raise ValueError('x0 must belong to the operator domain.')
+        if (isinstance(regpar, (bool, np.bool_))
+                or not isinstance(regpar, (int, float, np.integer, np.floating))
+                or not np.isfinite(regpar) or regpar <= 0):
+            raise ValueError('regpar must be finite and strictly positive.')
+        if not isinstance(use_bregman_penalty, (bool, np.bool_)):
+            raise TypeError('use_bregman_penalty must be boolean.')
+        explicit_penalty = inner_penalty is not False and inner_penalty is not None
+        if explicit_penalty and not isinstance(inner_penalty, Functional):
+            raise TypeError('inner_penalty must be a Functional, False, or None.')
+        if explicit_penalty and inner_penalty.domain != self.op.domain:
+            raise ValueError('inner_penalty must have the operator domain.')
+
+        point = self.op.domain.empty()
+        self.op.domain.copyto(point, x0)
+        if self.codomain_free:
+            if self.data is None:
+                raise ValueError('Codomain-free linearization requires data.')
+            if deriv is None or (adjoint_y0 is None and y0 is None):
+                value, derivative = deepcopy(self.op).linearize(
+                    point, return_adjoint_eval=True
+                )
+                if deriv is None:
+                    deriv = derivative
+                if adjoint_y0 is None and y0 is None:
+                    adjoint_y0 = value
+        elif y0 is None or deriv is None:
+            value, derivative = deepcopy(self.op).linearize(point)
+            if y0 is None:
+                y0 = value
+            if deriv is None:
+                deriv = derivative
+        if (not isinstance(deriv, Operator) or not deriv.linear
+                or deriv.domain != self.op.domain
+                or deriv.codomain != self.op.codomain):
+            raise ValueError('deriv must be linear with matching domain and codomain.')
+        if self.codomain_free:
+            if adjoint_y0 is None:
+                if y0 not in self.op.codomain:
+                    raise ValueError('y0 must belong to the operator codomain.')
+                adjoint_y0 = deriv.adjoint(y0)
+                adjoint_y0 *= deriv.gram_factor
+            if adjoint_y0 not in self.op.domain:
+                raise ValueError('adjoint_y0 must belong to the operator domain.')
+            rhs = deriv.adjoint_data(self.data)
+            rhs -= adjoint_y0
+        else:
+            if y0 not in self.op.codomain:
+                raise ValueError('y0 must belong to the operator codomain.')
+            value = self.op.codomain.empty()
+            self.op.codomain.copyto(value, y0)
+
+        if explicit_penalty:
+            penalty = deepcopy(inner_penalty)
+        else:
+            penalty = deepcopy(self.penalty)
+            if use_bregman_penalty:
+                penalty = penalty.bregman_func(point)
+            penalty = penalty.shift(v=-point)
+        if self.codomain_free:
+            return Setting(
+                op=_LinearizedCodomainFreeOperator(deriv),
+                penalty=penalty, data_fid=None,
+                regpar=float(regpar), data=rhs, codomain_free=True,
+                init=self.op.domain.zeros(), incorporate_init_in_penalty=False,
+                explicitDataWarning=False, logging_level=self.log.level,
+            )
+        fidelity = deepcopy(self.data_fid).shift(v=-value)
+        return Setting(
+            op=deriv, penalty=penalty, data_fid=fidelity,
+            regpar=float(regpar), init=self.op.domain.zeros(),
+            incorporate_init_in_penalty=False,
+            explicitDataWarning=False, logging_level=self.log.level,
+        )
+
     ######Methods exploiting duality
     def get_dual_setting(self) -> Setting:
         r"""Yields the setting of the dual optimization problem
@@ -989,7 +1177,8 @@ class Setting:
                     raise ValueError(f'Unknown method name {method_name}. Known methods are {self._methods.keys()}.')
         # Only convex Tikhonov solvers use the global operator norm for their
         # convergence-rate estimates. It may not exist for nonlinear methods.
-        op_norm = self.op.norm() if method_names and self.is_tikhonov and self.is_convex else None
+        op_norm = (self.op.norm(codomain_free=self.codomain_free)
+                   if method_names and self.is_tikhonov and self.is_convex else None)
         for method_name in method_names:
             method = self._methods[method_name]
             if self.is_tikhonov:

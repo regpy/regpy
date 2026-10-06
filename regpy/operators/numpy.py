@@ -1979,14 +1979,14 @@ class ForwardFDGradient(Operator):
                         out[ax][i_flat,neigh_flat] = 1/h 
         return [out[j].tocsc() for j in range(ndim)]
     
-    def norm(self,h_domain=None,h_codomain=None,method=None,without_codomain_vectors=False):
+    def norm(self,h_domain=None,h_codomain=None,method=None,codomain_free=False):
         """ A good upper bound on the  norm with respect to the standard L2 inner product can be computed analytically.         
         """
         from regpy.hilbert import L2
         if (h_domain is None or h_domain==L2) and (h_codomain is None or h_codomain==L2) and method is None:
             return 2*np.linalg.norm(1./self.domain.spacing)
         else: 
-            return super().norm(h_domain=h_domain,h_codomain=h_codomain,method=method,without_codomain_vectors=without_codomain_vectors)
+            return super().norm(h_domain=h_domain,h_codomain=h_codomain,method=method,codomain_free=codomain_free)
 
 class OuterProduct(Operator):
     r"""The operator \(x_1,x_2,\dots,x_n \mapsto x_1\otimes x_2\otimes\dots\otimes x_n\).
