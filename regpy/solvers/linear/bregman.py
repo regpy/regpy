@@ -51,9 +51,11 @@ class Bregman(RegSolver):
     ----------
     setting: Setting
         Linear operator and convex penalty and fidelity. A regularization
-        parameter is optional when ``regpars`` is supplied. Explicit
-        codomain vectors and an explicit data-fidelity functional are required.
-        Data already incorporated into the fidelity are retained unchanged.
+        parameter is optional when ``regpars`` is supplied. Codomain-free
+        settings are supported for the quadratic fidelity encoded by the
+        operator's ``adjoint_eval`` and ``adjoint_data`` operations. Such
+        settings must contain data. With an explicit codomain, data already
+        incorporated into the fidelity are retained unchanged.
     regpars: Sequence | Iterable[float] | None [default: None]
         Finite or infinite sequence of finite, strictly positive parameters.
         Any iterable is accepted, including RegPy's arithmetic Sequences.
@@ -72,6 +74,8 @@ class Bregman(RegSolver):
         taken from ``setting._convex_solvers``, including stopping parameters.
         Dual methods are supported through Setting.run(), which returns a
         reconstruction in primal coordinates of the supplied setting.
+        Codomain-free settings require a primal inner method that supports
+        codomain-free problems, for example TikhonovCG for quadratic penalties.
     nr_its: int [default: 2]
         Number of outer steps for a constant parameter. Must be
         positive. Used only when regpars is None, in which case the setting
@@ -89,6 +93,10 @@ class Bregman(RegSolver):
         ``bregman_func(x, ystar)``. None uses R's default subgradient for the
         first divergence and whenever S has no subgradient implementation;
         otherwise it uses ``T.adjoint(-S.subgradient(Tx) / alpha_previous)``.
+        For codomain-free quadratic fidelity, the candidate is computed as
+        ``(T.adjoint_data(data) - T.adjoint_eval(x)) / alpha_previous``.
+        As in the explicit-codomain case, this candidate is projected onto
+        the penalty subdifferential using ``R.dist_subdiff``.
         Selection occurs once at initialization and once before each later
         inner solve, never speculatively after the last completed step.
     logging_level: int | str [default: 'INFO']
@@ -107,7 +115,12 @@ class Bregman(RegSolver):
     subproblem, whose executed rule is available through ``get_stoprule``.
     Inner stopping tolerances control the accuracy of the outer iteration.
     
-    ``x`` and ``y`` expose the initial pair immediately. Each solver step
+    ``x`` and ``y`` expose the initial pair immediately. In codomain-free
+    mode, ``y`` remains None throughout; neither initialization nor the outer
+    iteration evaluates ``T(x)``. The backprojected data are computed once
+    for the default subgradient selection. The operator's normal and
+    adjoint-data operations must already include the fidelity's Gram factor.
+    Each solver step
     performs one inner solve; inherited iteration yields its result as
     read-only views. Finite sequences end without yielding a duplicate final
     iterate. One parameter is buffered in advance to recognize exhaustion.
@@ -163,6 +176,8 @@ class Bregman(RegSolver):
             raise ValueError('regpars must contain at least one parameter.')
         alpha = self._validate_alpha(self._pending_alpha)
         self._inner_template = self._method_template(setting, inner_solver)
+        if setting.codomain_free and not self._inner_template['primal']:
+            raise ValueError('Codomain-free Bregman requires a primal inner solver.')
         initial = setting.init if init is None else init
         if initial not in setting.op.domain:
             raise ValueError('init must belong to the operator domain.')
@@ -173,7 +188,13 @@ class Bregman(RegSolver):
         self.op.domain.copyto(self.x, initial)
         # This also validates the base point and subgradient before any solve.
         self._bregman_penalty = self._make_bregman_penalty()
-        self.y = self.op(self.x)
+        if setting.codomain_free:
+            self.data = setting.data
+            self.y = None
+            if self.select_subgradient is None:
+                self._backprojected_data = self.op.adjoint_data(self.data)
+        else:
+            self.y = self.op(self.x)
         self.inner_setting: Setting | None = None
         self.inner_method_name = '_bregman_inner'
 
@@ -265,7 +286,8 @@ class Bregman(RegSolver):
         if select_subgradient is not None and not callable(select_subgradient):
             info.append('select_subgradient must be callable or None.')
         if setting.codomain_free:
-            info.append('An explicit codomain and data-fidelity functional are required.')
+            if setting.data is None:
+                info.append('Codomain-free Bregman requires data in the setting.')
         elif not setting.data_fid.is_convex:
             info.append('The data fidelity must be convex.')
         return {'applicable': not info, 'info': ' '.join(info)}, {}
@@ -293,7 +315,9 @@ class Bregman(RegSolver):
 
         inner = Setting(
             op=self.op, penalty=penalty,
-            data_fid=self.data_fid, regpar=alpha,
+            data_fid=None if self.setting.codomain_free else self.data_fid,
+            data=self.data if self.setting.codomain_free else None,
+            codomain_free=self.setting.codomain_free, regpar=alpha,
             init=init, incorporate_init_in_penalty=False,
             explicitDataWarning=False, logging_level=self.log.level,
         )
@@ -310,7 +334,9 @@ class Bregman(RegSolver):
         if x not in self.op.domain:
             raise RuntimeError('The inner solver did not return a domain reconstruction.')
         self.op.domain.copyto(self.x, x)
-        if y is None:
+        if self.setting.codomain_free:
+            self.y = None
+        elif y is None:
             self.y = self.op(self.x)
         else:
             self.y = self.op.codomain.empty()
@@ -322,14 +348,15 @@ class Bregman(RegSolver):
         if self._pending_alpha is _END:
             self.converge()
 
-    def primal(self) -> tuple[Vector, Vector]:
+    def primal(self) -> tuple[Vector, Vector | None]:
         r"""Current pair in the coordinates of the supplied setting.
         
         
         Returns
         -------
-        tuple[Vector, Vector]
-            Result described above.
+        tuple[Vector, Vector | None]
+            Current reconstruction and operator image, or None for the
+            image in codomain-free mode.
         """
         return self.x, self.y
 
@@ -348,15 +375,24 @@ class Bregman(RegSolver):
             Constructed functional.
         """
         if self.select_subgradient is None:
-            if previous_alpha is None or 'subgradient' not in self.data_fid.methods:
+            if previous_alpha is None:
                 return self.penalty.bregman_func(self.x)
-            # self.y is T f_n and previous_alpha is alpha_n, even when the
-            # next solve uses a different regularization parameter.
-            p = self.data_fid.subgradient(self.y)
-            p *= (-1. / previous_alpha)
-            Tp = self.op.adjoint(p)
-            self.penalty.dist_subdiff(Tp,self.x,best_approx=Tp)
-            return self.penalty.bregman_func(self.x,Tp)
+            if self.setting.codomain_free:
+                # Both terms are domain covectors, including the fidelity
+                # Gram factor. Never form a vector in the operator codomain.
+                Tp = self.op.domain.empty()
+                self.op.domain.copyto(Tp, self._backprojected_data)
+                Tp -= self.op.adjoint_eval(self.x)
+                Tp /= previous_alpha
+            else:
+                if 'subgradient' not in self.data_fid.methods:
+                    return self.penalty.bregman_func(self.x)
+                # Use the parameter of the completed solve, not the next one.
+                p = self.data_fid.subgradient(self.y)
+                p *= (-1. / previous_alpha)
+                Tp = self.op.adjoint(p)
+            self.penalty.dist_subdiff(Tp, self.x, best_approx=Tp)
+            return self.penalty.bregman_func(self.x, Tp)
         subgradient = self.select_subgradient(
             self.setting, self.op.domain.read_only(self.x))
         if subgradient is None:

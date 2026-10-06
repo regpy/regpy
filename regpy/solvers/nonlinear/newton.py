@@ -186,17 +186,11 @@ class IterativelyRegularizedNewton(RegSolver):
     
     Parameters
     ----------
-<<<<<<< HEAD
     setting : Setting
         Non-Tikhonov setting. Codomain-free settings are supported for the
         quadratic fidelity encoded by the operator's normal/adjoint-data
         interface; the selected inner solver must support that interface.
-    inner_solver : str or dict or None, optional
-=======
-    setting: Setting
-        Non-Tikhonov setting with explicit codomain vectors.
     inner_solver: str | dict | None [default: None]
->>>>>>> development
         Convex solver label, method dictionary, or None, as in Bregman.
         None uses ``setting._default_inner_solver``. A label retains the
         constructor and stopping parameters in ``setting._convex_solvers``.
@@ -204,22 +198,14 @@ class IterativelyRegularizedNewton(RegSolver):
         'method_params', and 'stoprule_params'. Each step creates a fresh
         solver and stopping history. Dual solvers return a primal correction
         through Setting.run().
-<<<<<<< HEAD
     data : ReadOnlyVector or ObsDataT or None, optional
         Optional replacement data. Otherwise retain the setting's fidelity,
         including data already incorporated into it. For codomain-free
         settings, observations may be any object accepted by adjoint_data.
-    regpar : float, optional
-        First regularization parameter; defaults to 1.
-    regpar_step : float, optional
-=======
-    data: ReadOnlyVector | None [default: None]
-        Optional replacement data. Otherwise retain the setting's fidelity,
-        including data already incorporated into it.
     regpar: float [default: 1.0]
         First regularization parameter;
     regpar_step: float [default: 2 / 3]
->>>>>>> development
+
         Geometric factor, default 2/3.
     init: ReadOnlyVector | None [default: None]
         Initial guess;init. Copied into solver storage.
@@ -246,11 +232,7 @@ class IterativelyRegularizedNewton(RegSolver):
 
     def __init__(
         self, setting: Setting, inner_solver: str | dict | None = None,
-<<<<<<< HEAD
         data: ReadOnlyVector | ObsDataT | None = None, regpar: float = 1.,
-=======
-        data: ReadOnlyVector | None = None, regpar: float = 1.,
->>>>>>> development
         regpar_step: float = 2 / 3, init: ReadOnlyVector | None = None,
         regpars: Iterable[float] | None = None,
         inner_solver_configurator: Callable[
@@ -312,7 +294,6 @@ class IterativelyRegularizedNewton(RegSolver):
         self._previous_regpar: float | None = None
         self._linearize_current()
 
-<<<<<<< HEAD
     def _linearize_current(self) -> None:
         """Refresh the derivative and the available nonlinear image."""
         if self.setting.codomain_free:
@@ -326,18 +307,6 @@ class IterativelyRegularizedNewton(RegSolver):
     def _inner_penalty(self) -> Functional | None:
         """None lets Setting construct the shifted original penalty."""
         return None
-=======
-    def _inner_penalty(self) -> Functional:
-        r"""Penalty in correction coordinates for the current Newton step.
-        
-        
-        Returns
-        -------
-        Functional
-            Constructed functional.
-        """
-        return self.penalty.shift(v=-self.x)
->>>>>>> development
 
     def _next(self) -> None:
         from .irgnm import _next_regularization_parameter
@@ -429,7 +398,6 @@ class NonlinBregman(IterativelyRegularizedNewton):
     default selection, including at initialization. Selection is performed
     once at initialization and once before each later solve, never after the
     last solve. Each divergence is built from the original penalty.
-<<<<<<< HEAD
 
     The setting must have no regularization parameter and have convex
     penalty and fidelity. The forward operator may be nonlinear. Quadratic
@@ -437,11 +405,6 @@ class NonlinBregman(IterativelyRegularizedNewton):
     There, the subgradient candidate is computed as
     ``(deriv.adjoint_data(data) - adjoint_eval) / previous_regpar`` and
     ``y`` remains None.
-=======
-    
-    The setting must have no regularization parameter, an explicit codomain,
-    and convex penalty and fidelity. The forward operator may be nonlinear.
->>>>>>> development
     Inner guesses are in correction coordinates (or the selected dual
     solver's coordinates). The default primal correction guess is zero.
     ``x`` and ``y`` are the current nonlinear iterate and F(x), respectively.
@@ -472,11 +435,7 @@ class NonlinBregman(IterativelyRegularizedNewton):
 
     def __init__(
         self, setting: Setting, inner_solver: str | dict | None = None,
-<<<<<<< HEAD
         data: ReadOnlyVector | ObsDataT | None = None, regpar: float = 1.,
-=======
-        data: ReadOnlyVector | None = None, regpar: float = 1.,
->>>>>>> development
         regpar_step: float = 2 / 3, init: ReadOnlyVector | None = None,
         regpars: Iterable[float] | None = None,
         inner_solver_configurator: Callable[
@@ -538,11 +497,8 @@ class NonlinBregman(IterativelyRegularizedNewton):
         return out, par
 
     def _make_bregman_penalty(self) -> Functional:
-<<<<<<< HEAD
         # Bregman construction and subgradient projection may use caches.
         penalty = deepcopy(self.penalty)
-=======
->>>>>>> development
         if self.select_subgradient is not None:
             subgradient = self.select_subgradient(
                 self.setting, self.op.domain.read_only(self.x))
@@ -564,11 +520,7 @@ class NonlinBregman(IterativelyRegularizedNewton):
         penalty.dist_subdiff(candidate, self.x, best_approx=candidate)
         return penalty.bregman_func(self.x, candidate)
 
-<<<<<<< HEAD
     def _inner_penalty(self) -> Functional | None:
-=======
-    def _inner_penalty(self) -> Functional:
->>>>>>> development
         if self._previous_regpar is not None:
             self._bregman_penalty = self._make_bregman_penalty()
         return self._bregman_penalty.shift(v=-self.x)
