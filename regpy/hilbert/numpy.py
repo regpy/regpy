@@ -1,3 +1,11 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from types import NotImplementedType
+    from numpy.typing import DTypeLike
+    from regpy.vecsps.numpy import MeasureSpaceFcts, UniformGridFcts
+    from regpy._typing import Mask
 import numpy as np
 from scipy.sparse import csc_matrix
 
@@ -14,21 +22,21 @@ class L2MeasureSpaceFcts(HilbertSpace):
     
     Parameters
     ----------
-    vecsp : regpy.vecsps.MeasureSpaceFcts
+    vecsp: vecsps.MeasureSpaceFcts
         Underlying discretization
-    weights : array-like
+    weights: np.ndarray | None [default: None]
         Weight in the norm.
     """
 
     def __init__(self, vecsp:vecsps.MeasureSpaceFcts, 
-                 weights:np.ndarray|None=None):
+                 weights:np.ndarray|None=None) -> None:
         if not isinstance(vecsp,vecsps.MeasureSpaceFcts):
             raise TypeError(Errors.not_instance(vecsp,vecsps.MeasureSpaceFcts,"To define an L2MeasureSpaceFcts the vector space needs to be at least a MeasureSpaceFcts or a derivative of it."))
         super().__init__(vecsp)
         self.weights = weights
 
     @memoized_property
-    def _gram_weights(self):
+    def _gram_weights(self) -> np.ndarray | None:
         if self.weights is None:
             if np.all(self.vecsp.measure == 1):
                 return None
@@ -37,13 +45,29 @@ class L2MeasureSpaceFcts(HilbertSpace):
 
     @memoized_property
     def gram(self)->PtwMultiplication:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        PtwMultiplication
+            Result described above.
+        """
         weights = self._gram_weights
         if weights is None:
             return self.vecsp.identity
         return PtwMultiplication(self.vecsp, weights)
 
     @memoized_property
-    def cholesky(self):
+    def cholesky(self) -> Operator:
+        r"""Cholesky factor of the Gram operator.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         weights = self._gram_weights
         if weights is None:
             return self.vecsp.identity
@@ -56,9 +80,16 @@ class L2MeasureSpaceFcts(HilbertSpace):
 class L2UniformGridFcts(HilbertSpace):
     r"""`L2` implementation on a `regpy.vecsps.UniformGridFcts`, taking into account the volume
     element.
+    
+    Parameters
+    ----------
+    vecsp: vecsps.UniformGridFcts
+        Underlying vector space.
+    weights: np.ndarray | None [default: None]
+        Weights.
     """
 
-    def __init__(self, vecsp:vecsps.UniformGridFcts, weights:np.ndarray|None=None):
+    def __init__(self, vecsp:vecsps.UniformGridFcts, weights:np.ndarray|None=None) -> None:
         if not isinstance(vecsp,vecsps.UniformGridFcts):
             raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an L2UniformGridFcts the vector space needs to be at a UniformGridFcts or a derivative of it."))
         super().__init__(vecsp)
@@ -66,13 +97,29 @@ class L2UniformGridFcts(HilbertSpace):
 
     @memoized_property
     def gram(self)-> PtwMultiplication:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        PtwMultiplication
+            Result described above.
+        """
         if self.weights is None:
             return self.vecsp.volume_elem * self.vecsp.identity
         else:
             return self.vecsp.volume_elem * PtwMultiplication(self.vecsp, self.weights)
 
     @memoized_property
-    def cholesky(self):
+    def cholesky(self) -> Operator:
+        r"""Cholesky factor of the Gram operator. 
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if self.weights is None:
             return np.sqrt(self.vecsp.volume_elem) * self.vecsp.identity
         else:
@@ -80,20 +127,20 @@ class L2UniformGridFcts(HilbertSpace):
 
 class SobolevUniformGridFcts(HilbertSpace):
     r"""`Sobolev` implementation on a `regpy.vecsps.UniformGridFcts`.
-
+    
     Parameters
     ----------
-    vecsp : regpy.vecsps.UniformGridFcts
+    vecsp: L2UniformGridFcts
         Grid on which to define the Sobolev space.
-    index : float, optional
+    index: float [default: 1.0]
         Sobolev index, Defaults: 1
-    axes : list, optional
+    axes: list[int] | None [default: None]
         List of axes for which to compute in default all axes, Defaults: None
     """
     def __init__(self, 
                  vecsp:L2UniformGridFcts, 
                  index:float=1., 
-                 axes:list[int]|None=None):
+                 axes:list[int]|None=None) -> None:
         if not isinstance(vecsp,vecsps.UniformGridFcts):
             raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"To define an SobolevUniformGridFcts the vector space needs to be at a UniformGridFcts or a derivative of it."))
         super().__init__(vecsp)
@@ -102,7 +149,7 @@ class SobolevUniformGridFcts(HilbertSpace):
             axes = range(len(vecsp.shape_domain))
         self.axes = list(axes)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool | NotImplementedType:
         if isinstance(other, type(self)):
             return (
                 self.vecsp == other.vecsp and
@@ -113,11 +160,27 @@ class SobolevUniformGridFcts(HilbertSpace):
 
     @memoized_property
     def gram(self)-> Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         from regpy.operators.convolution import BesselPotential        
         return BesselPotential(self.vecsp,2*self.index,convolution_axes=self.axes)
 
     @memoized_property
-    def cholesky(self):
+    def cholesky(self) -> Operator:
+        r"""Cholesky factor of the Gram operators.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         from regpy.operators.convolution import BesselPotential        
         return BesselPotential(self.vecsp,self.index,convolution_axes=self.axes)
 
@@ -127,47 +190,46 @@ class HmDomain(HilbertSpace):
     `{mask==0}` are Dirichlet boundaries, and `{mask==-1}` Neumann boundaries.
     `mask` may also be boolean, in this case there are only Dirichlet boundaries.
     Boundary condition at the exterior boundaries are specified by `ext_bd_cond`, default is Neumann ('Neum')
-
+    
     `m=index` is a non-negative integer, the order or index of the Sobolev space.
     The gram matrix is given by :math:`(\alpha I - \Delta)^{-m}`.
-
+    
     By default it is assumed that the lengths in grid are given in physical dimensions,
     and a non-dimensionalization is carried out such that the largest side length (extent) of the grid is 1.
-
+    
     If `weight` is specified, the Gram matrix will approximate :math:`(\alpha I-{weight}\Delta)^{-m}`. `weight` should be slowly varying.
-
+    
     Parameters
     ----------
-    vecsp : regpy.vecsps.UniformGridFcts
+    vecsp: vecsps.UniformGridFcts
         Underlying grid functions.
-    mask : array-type or None, optional
+    mask: Mask | None [default: None]
         Mask to capture that subset :math:`D` on which the Sobolev space is defined. Can only contain 
-        values `{-1,0,1}` or is a boolean. Shape has to match the shape of `vecsp`.
-        Defaults to None. In this case it is set to all True.
-    h : tuple or None or string, optional
+        values `{-1,0,1}` or is a boolean. Shape has to match the shape of `vecsp`. In this case it is set to all True.
+    h: str [default: 'normalized']
         The extent of the domain either given as a tuple or computed. Option key strings "physical" or 
-        "normalized". (Defaults: "normalized)
-    index : int, optional
-        The Sobolev index :math:`m`. (Defaults: 1)
-    weight : array-type, optional
-        Weights to be applied to Laplacian in the gram matrix definition. (Defaults: None)
-    ext_bd_cond : any, optional
-        Exterior boundary conditions to be applied. If not "Neum" takes Dirichlet boundary conditions. (Defaults: "Neum")
-    alpha : scalar, optional
-        Parameter when computing the gram matrix as :math:`(\alpha I - \Delta)^{-m}`. (Defaults: 1)
-    dtype : type, optional
-        Type of underlying grid. (Defaults: float) 
+        "normalized".
+    index: int [default: 1]
+        The Sobolev index :math:`m`.
+    weight: float | None [default: None]
+        Weights to be applied to Laplacian in the gram matrix definition.
+    ext_bd_cond: str [default: 'Neum']
+        Exterior boundary conditions to be applied. If not "Neum" takes Dirichlet boundary conditions.
+    alpha: float [default: 1.0]
+        Parameter when computing the gram matrix as :math:`(\alpha I - \Delta)^{-m}`.
+    dtype: DTypeLike [default: float]
+        Type of underlying grid.
     """
 
     def __init__(self,
                 vecsp:vecsps.UniformGridFcts, 
-                mask = None,
+                mask: Mask | None = None,
                 h:str='normalized',
                 index:int=1,
-                weight=None,
+                weight: float | None=None,
                 ext_bd_cond:str = 'Neum',
                 alpha:float = 1.,
-                dtype = float):
+                dtype: DTypeLike = float) -> None:
         if not isinstance(vecsp,vecsps.UniformGridFcts):
             raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"The underlying vecsp has to be of type UniformGridFcts"))
         if mask is None:
@@ -236,10 +298,16 @@ class HmDomain(HilbertSpace):
     @memoized_property
     def _I_minus_Delta_matrix(self)->csc_matrix:
         r"""Assemble ``alpha * I - Delta`` on the masked domain.
-
+        
         Index and value chunks are collected separately and concatenated once.
         This avoids the quadratic copying caused by repeatedly extending NumPy
         arrays inside the neighbor loop.
+        
+        
+        Returns
+        -------
+        csc_matrix
+            Result described above.
         """
         weights = None if self.weight is None else self.weight.ravel()
         labels = self.G.ravel()
@@ -310,7 +378,14 @@ class HmDomain(HilbertSpace):
         return csc_matrix((values, (rows, columns)), shape=(size, size))
 
     def I_minus_Delta(self)->csc_matrix:
-        """Return the cached sparse matrix ``alpha * I - Delta``."""
+        r"""Return the cached sparse matrix ``alpha * I - Delta``.
+        
+        
+        Returns
+        -------
+        csc_matrix
+            Result described above.
+        """
         return self._I_minus_Delta_matrix
 
     @memoized_property
@@ -327,13 +402,29 @@ class HmDomain(HilbertSpace):
 
     @memoized_property
     def gram(self)->Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         mat = Pow(self._I_minus_Delta_operator, self.index)
         gram = self.proj.adjoint * mat * self.proj
         gram.inverse = self.proj.adjoint * mat.inverse * self.proj
         return gram
 
     @memoized_property
-    def cholesky(self):
+    def cholesky(self) -> Operator:
+        r"""Cholesky.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if self.index % 2 == 0:
             mat = Pow(self._I_minus_Delta_operator, self.index // 2)
             return self.proj.adjoint * mat * self.proj

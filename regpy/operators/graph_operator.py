@@ -1,3 +1,9 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from regpy.vecsps.base import ReadOnlyVector, Vector, VectorSpaceBase
 from regpy import vecsps
 from regpy.util import Errors
 
@@ -6,15 +12,15 @@ from .base import Operator,Identity
 __all__ = ["OperatorNode","Edge","OperatorGraph"]
 
 class OperatorNode:
-    """Object that represents a node in a Graph of operators and manages the input and output from the edges to the operator.
-
+    r"""Object that represents a node in a Graph of operators and manages the input and output from the edges to the operator.
+    
     Parameters
     ----------
-    op : regpy.vecsps.Operator
+    op: Operator
         The underlying operator
     """
 
-    def __init__(self,op):
+    def __init__(self,op: Operator) -> None:
         if not isinstance(op,Operator):
             raise TypeError(Errors.not_instance(op,Operator, add_info="An OperatorNode can only be constructed on a RegPy Operator!"))
         self.op=op
@@ -23,40 +29,59 @@ class OperatorNode:
         self.input_edges=[None]*self.N_in
         self.output_edges=[]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.op)
 
-    def get_free_inputs(self):
-        """Calculates set of inputs with no assigned input edge.
-
-        Returns:
+    def get_free_inputs(self) -> set[int]:
+        r"""Calculates set of inputs with no assigned input edge.
+        
+        Returns
             set: set of indices of inputs with no assigned input edge.
+        
+        
+        Returns
+        -------
+        set[int]
+            Result described above.
         """        
         return set([i for i in range(self.N_in) if self.input_edges[i] is None])
     
-    def get_in_nodes(self):
-        """Compute nodes where incoming edges come from.
-
-        Returns:
+    def get_in_nodes(self) -> set[OperatorNode]:
+        r"""Compute nodes where incoming edges come from.
+        
+        Returns
             set: set of nodes
+        
+        
+        Returns
+        -------
+        set[OperatorNode]
+            Result described above.
         """        
         return set([edge.start_node for edge in self.input_edges if edge is not None and edge.start_node is not None])
     
-    def get_out_nodes(self):
-        """Compute nodes where outgoing edges go to.
-
-        Returns:
+    def get_out_nodes(self) -> set[OperatorNode]:
+        r"""Compute nodes where outgoing edges go to.
+        
+        Returns
             set: set of nodes
+        
+        
+        Returns
+        -------
+        set[OperatorNode]
+            Result described above.
         """       
         return set([edge.end_node for edge in self.output_edges if edge is not None and edge.end_node is not None])
     
-    def combine_input(self,data_dict):
-        """Combines the input from the input edges.
-
+    def combine_input(self,data_dict: dict[str, Any]) -> Vector:
+        r"""Combines the input from the input edges.
+        
         Parameters
         ----------
-            data_dict (dict): Dictionary with nodes as keys and computed data of that node as value
-
+        data_dict: dict[str, Any]
+            Options for data dict.
+        
         Returns
         -------
             array-like: element in the domain of the operator
@@ -69,13 +94,14 @@ class OperatorNode:
         else:
             return self.op.domain.join(*[edge.pass_forward(data_dict[edge.start_node]) for edge in self.input_edges])
         
-    def combine_output(self,data_dict):
-        """Combines the output from the output edges. This is used for the evaluation of the adjoint.
-
+    def combine_output(self,data_dict: dict[str, Any]) -> Vector:
+        r"""Combines the output from the output edges. This is used for the evaluation of the adjoint.
+        
         Parameters
         ----------
-            data_dict (dict): Dictionary with nodes as keys and computed data of that node as value
-
+        data_dict: dict[str, Any]
+            Options for data dict.
+        
         Returns
         -------
             array-like: element in the codomain of the operator
@@ -99,21 +125,21 @@ class OperatorNode:
             return self.op.codomain.join(*[d if d is not None else self.op.codomain.summands[i].zeros() for i,d in enumerate(data_list)])
 
 class Edge:
-    """Object that represents an edge in a Graph of operators and manages the data transport between operator nodes.
-
+    r"""Object that represents an edge in a Graph of operators and manages the data transport between operator nodes.
+    
     Parameters
     ----------
-    start_node : OperatorNode
+    start_node: OperatorNode
         The node where the edge starts.
-    end_node : OperatorNode
+    end_node: OperatorNode
         The node where the edge ends.
-    start_list : list of int
+    start_list: list[int]
         list of output indices of the start node
-    end_index : int
+    end_index: int
         index of input of the end node
     """
 
-    def __init__(self,start_node,end_node,start_list,end_index):
+    def __init__(self,start_node: OperatorNode,end_node: OperatorNode,start_list: list[int],end_index: int) -> None:
         if not isinstance(start_node,OperatorNode) and start_node is not None:
             raise TypeError(Errors.type_error("The start node for an Edge in operator networks need to be either None or an OperatorNode"))
         if not isinstance(end_node,OperatorNode) and end_node is not None:
@@ -141,9 +167,9 @@ class Edge:
             else:
                 self.end_space=self.end_node.op.domain.summands[self.end_index]
 
-    def construct_start_space(self):
-        """Constructs vector space corresponding to input of the edge.
-
+    def construct_start_space(self) -> VectorSpaceBase:
+        r"""Constructs vector space corresponding to input of the edge.
+        
         Returns
         -------
             regpy.vecsps.VectorSpace: VectorSpace corresponding to combined input of this edge.
@@ -156,8 +182,8 @@ class Edge:
             return self.start_node.op.codomain.summands[self.start_list[0]]
         return vecsps.DirectSum(*[self.start_node.codomain.summands[i] for i in self.start_list])
 
-    def remove(self):
-        """Removes this edge.
+    def remove(self) -> None:
+        r"""Removes this edge.
         """
         if(self.start_node is not None):
             self.start_node.output_edges.remove(self)
@@ -166,20 +192,20 @@ class Edge:
         self.start_node=None
         self.end_node=None
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.start_node}{self.start_list}-->[{self.end_index}]{self.end_node}"
 
-    def pass_forward(self,x):
-        """Passes and transforms data forwards through the edge.
-
+    def pass_forward(self,x: ReadOnlyVector) -> Vector:
+        r"""Passes and transforms data forwards through the edge.
+        
         Parameters
         ----------
-        x : array_like
+        x: ReadOnlyVector
             element of the codomain of the operator of the input node.
-
+        
         Returns
         -------
-        array_like 
+        Vector
             element of the part of the domain of the operator of the output node.
         """       
         if self.end_node is None or self.start_node is None:
@@ -197,17 +223,17 @@ class Edge:
                 return self.end_space.join(*[x_split[i] for i in self.start_list])
             
 
-    def pass_backward(self,y):
-        """Passes and transforms data backwards through the edge.
-
+    def pass_backward(self,y: ReadOnlyVector) -> list[ReadOnlyVector | None]:
+        r"""Passes and transforms data backwards through the edge.
+        
         Parameters
         ----------
-        y : array-like 
+        y: ReadOnlyVector
             element of the part of the domain of the operator of the output node.
-
+        
         Returns
         -------
-        list
+        list[ReadOnlyVector | None]
             List where each entry corresponds to that part of the codomain of the operator of the input node.
         """ 
         if(self.end_node.N_in>1):
@@ -225,7 +251,7 @@ class Edge:
                     x_vals[index]+=y_split[i]
             return x_vals
         
-    def __getitem__(self,index):
+    def __getitem__(self,index: int) -> tuple[Any, Any]:
         if not isinstance(index,int):
             raise IndexError(Errors.indexation(index=index,obj=self,add_info="Indexation of edge only allows integers 0 or 1, for start and end node respectively!"))
         if index == 0:
@@ -237,19 +263,19 @@ class Edge:
         
 
 class OperatorGraph(Operator):
-    """Operator that consists of different operators that are connected in a Graph structure.
-
+    r"""Operator that consists of different operators that are connected in a Graph structure.
+    
     Parameters
     ----------
-    operators : list of regpy.vecsps.Operator
+    operators: list[Operator]
         The underlying operators
-    edges : list of tuple
+    edges: list[tuple[tuple[int | None, list[int]], tuple[int | None, int]]]
         Tuple representing edges have the form ((input operator,[input indices]),(output operator,output index))
-    calc_exec_order : bool, optional
+    calc_exec_order: bool [default: True]
         If True the order of calculations of the operators is computed. Else it is assumed to be the order in which
-        the operators are given. Defaults to True.
+        the operators are given.
     """
-    def __init__(self, operators,edges,calc_exec_order=True):
+    def __init__(self, operators: list[Operator],edges: list[tuple[tuple[int | None, list[int]], tuple[int | None, int]]],calc_exec_order: bool=True) -> None:
         if not isinstance(operators,list) or any(not isinstance(op_i,Operator) for op_i in operators):
             raise TypeError(Errors.type_error("To construct an operator graph the operators need to be a list of proper RegPy operators"))
         # if not OperatorGraph._validate_edges_input(edges):
@@ -328,30 +354,30 @@ class OperatorGraph(Operator):
     #     else:
     #         return True
 
-    def _clean_edge_data(edge_data):
-        """Cleans up edge data. Removes duplicates and overwrites empty inputs if necessary.
+    def _clean_edge_data(edge_data: list[Any]) -> tuple[Any, Any, Any]:
+        r"""Cleans up edge data. Removes duplicates and overwrites empty inputs if necessary.
         Additionally sorts edge data into incoming, middle and outgoing.
-
+        
         Parameters
         ----------
-        edge_data : list 
+        edge_data: list[Any]
             List of edge data in format specified in constructor
-
+        
         Raises
         ------
         ValueError
             if multiple different edges are assigned to same input of operator
-
+        
         Returns
         -------
-        ed_in (list)
+        tuple[Any, Any, Any]
             list of data for incoming edges
-
+        
         ed_middle (list)
             list of data for middle edges
-
+        
         ed_out (list)
-            list of data for outgoing edges 
+            list of data for outgoing edges
         """        
         ed_dict={}
         ed_in=[]
@@ -372,17 +398,17 @@ class OperatorGraph(Operator):
                     raise ValueError(f"Conflicting edge data {ed_dict[ed[1]][1]} and {ed}.")
         return ed_in,ed_middle,ed_out
 
-    def _compute_domain(self,ed_in):
-        """Computes domain of the whole operator by extracting and combining the domains from the input edge data
-
+    def _compute_domain(self,ed_in: list[Any]) -> VectorSpaceBase:
+        r"""Computes domain of the whole operator by extracting and combining the domains from the input edge data
+        
         Parameters
         ----------
-        ed_in : list of tuple 
+        ed_in: list[Any]
             List of input edge data
-
+        
         Returns
         -------
-        vecsps.VectorSpace
+        VectorSpaceBase
             domain of the operator
         """        
         space_dict={}
@@ -396,17 +422,17 @@ class OperatorGraph(Operator):
                     raise ValueError(f"Input {index} used for different spaces")
         return vecsps.DirectSum(*(space_dict[j] for j in sorted(space_dict.keys()))) if len(space_dict.keys())>1 else space_dict[space_dict.keys()[0]]
 
-    def _calc_exec_order(self):
-        """Computes execution order using a topological sort.
-
+    def _calc_exec_order(self) -> list[Operator]:
+        r"""Computes execution order using a topological sort.
+        
         Raises
         ------
         ValueError
             If the graph has cycles or start and end are not connected.
-
+        
         Returns
         -------
-        list
+        list[Operator]
             List of ordered operators
         """        
         in_sets={op:self.node_dict[op].get_in_nodes() for op in self.node_dict.keys()}
@@ -426,7 +452,7 @@ class OperatorGraph(Operator):
         op_order.append(self.output_op)
         return op_order
     
-    def _run_forward(self, x, out=None, differentiate=False, derivative=False):
+    def _run_forward(self, x: ReadOnlyVector, out: Vector | None=None, differentiate: bool=False, derivative: bool=False) -> Vector:
         data_dict = {self.node_dict[self.input_op]: x}
         last_index = len(self.operators) - 1
         for i in range(1, len(self.operators)):
@@ -444,19 +470,19 @@ class OperatorGraph(Operator):
             data_dict[current_node] = y
         return data_dict[self.node_dict[self.output_op]]
 
-    def _eval(self, x, differentiate=False):
+    def _eval(self, x: ReadOnlyVector, differentiate: bool=False) -> Vector:
         return self._run_forward(x, differentiate=differentiate)
 
-    def _ieval(self, x, out, differentiate=False):
+    def _ieval(self, x: ReadOnlyVector, out: Vector, differentiate: bool=False) -> Vector:
         return self._run_forward(x, out=out, differentiate=differentiate)
 
-    def _derivative(self, x):
+    def _derivative(self, x: ReadOnlyVector) -> Vector:
         return self._run_forward(x, derivative=True)
 
-    def _iderivative(self, x, out):
+    def _iderivative(self, x: ReadOnlyVector, out: Vector) -> Vector:
         return self._run_forward(x, out=out, derivative=True)
 
-    def _run_adjoint(self, y, out=None):
+    def _run_adjoint(self, y: ReadOnlyVector, out: Vector | None=None) -> Vector:
         data_dict = {self.node_dict[self.output_op]: y}
         reverse_ops = self.operators[-2::-1]
         last_index = len(reverse_ops) - 1
@@ -471,9 +497,9 @@ class OperatorGraph(Operator):
             data_dict[current_node] = x
         return data_dict[self.node_dict[self.input_op]]
 
-    def _adjoint(self, y):
+    def _adjoint(self, y: ReadOnlyVector) -> Vector:
         return self._run_adjoint(y)
 
-    def _iadjoint(self, y, out):
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector) -> Vector:
         return self._run_adjoint(y, out=out)
 

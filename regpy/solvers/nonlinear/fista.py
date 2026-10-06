@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.vecsps.base import ReadOnlyVector
 from collections.abc import Iterable, Iterator
 from math import sqrt
 from numbers import Real
@@ -14,12 +19,11 @@ __all__ = ["FISTA"]
 
 
 class FISTA(RegSolver):
-    r"""
-    The generalized FISTA algorithm for minimization of Tikhonov functionals
-
+    r"""The generalized FISTA algorithm for minimization of Tikhonov functionals
+    
     .. math::
         \mathcal{S}_{g^{\delta}}(F(f)) + \alpha \mathcal{R}(f).
-
+    
     Gradient steps are performed on the first term, and proximal steps on the second term.
     For a setting without a regularization parameter, FISTA instead minimizes
     only the data-fidelity term. This is admissible when the setting's penalty
@@ -28,14 +32,14 @@ class FISTA(RegSolver):
     penalty term :math:`\mathcal{R}` is then replaced by a null functional. This has been justified 
     by Hubmer and Ramlau, Inverse Problems, 2017 where the regularizing property 
     of this scheme is shown under the tangential cone condition. 
-
+    
     The step sizes for the gradient steps are determined using a backtracking method introduced in
     A. Beck and M. Teboulle. A fast iterative shrinkage-thresholding algorithm for
     linear inverse problems. SIAM J. Imaging Sci., 2(1):183–202, 2009.
     
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem. Includes the penalty and data
         fidelity functionals. If ``setting.regpar`` is not ``None``, FISTA
         minimizes the Tikhonov functional displayed above. If
@@ -44,14 +48,16 @@ class FISTA(RegSolver):
         :class:`~regpy.functionals.base.NullFunctional`. In that case FISTA
         minimizes the unregularized data-fidelity term and uses an internal
         null functional for its proximal step.
-    init : setting.op.domain [default: setting.op.domain.zeros()]
+    data: Vector | Any | None [default: None]
+        The data to be fitted. If None, the data is taken from the setting.
+    init: ReadOnlyVector | None [default: None]
         The initial guess
-    tau : float [default: 10**16]
+    tau: float [default: 10 ** 16]
         Initial step size for backtracking when the data-fidelity gradient has
         no finite Lipschitz constant. Has to be sufficiently large.
-    eta : float [default 0.8]
+    eta: float [default: 0.8]
         Step size reduction constant.
-    stepsize_selection_steps : iterable of int | None, optional
+    stepsize_selection_steps: Iterable[int] | None [default: None]
         Iterates at which the derivative norm is reestimated. Norm estimation
         is always performed once at the initial iterate. By default, it is
         repeated at iterations ``1, 2, 4, 8, ...``. Passing ``[0]`` therefore
@@ -59,32 +65,29 @@ class FISTA(RegSolver):
         strictly increasing. Whenever reestimation changes the step size, the
         accelerated three-term recursion is restarted. This option is ignored
         when backtracking is used.
-    stepsize_safety : float, optional
-        Safety factor for norm-based step sizes. Must lie in ``(0, 1]`` and
-        defaults to ``0.9``.
-    op_norm_method : str, optional
-        Method used to estimate the derivative norm. Defaults to ``"lanczos"``.
+    stepsize_safety: float [default: 0.9]
+        Safety factor for norm-based step sizes. Must lie in ``(0, 1]`` and9``.
+    op_norm_method: str [default: 'lanczos']
+        Method used to estimate the derivative norm.
         Norm estimates use ``reltol=0.05 / sqrt(1 + iteration_step_nr)``.
         Thus the initial tolerance is 0.05 and decreases with iteration count.
-    op_lower_bound : float [default: 0]
+    op_lower_bound: float [default: 0.0]
         lower bound of the operator: :math:`\|op(f)\|\geq op_lower_bound * \|f\|`\.
-        Used to define convexity parameter of data functional.     
-    proximal_pars : dict [default: {}]
-        Parameter dictionary passed to the computation of the prox-operator for the penalty term. 
-    logging_level: [default: logging.INFO]
+        Used to define convexity parameter of data functional.
+    proximal_pars: dict | None [default: None]
+        Parameter dictionary passed to the computation of the prox-operator for the penalty term.
+    logging_level: int | str [default: 'INFO']
         logging level
-    data : Vector or Any or None [default: None]
-        The data to be fitted. If None, the data is taken from the setting.
-    update_setting : bool [default: True]   
+    update_setting: bool [default: True]
         If True, the setting is updated with the initial guess and data. This can be used to save memory if the initial guess and data are very large.
-
+    
     Notes
     -----
     In the unregularized mode, a squared-norm setting penalty is not included
     in the objective. Its Hilbert space is still used as
     ``setting.h_domain`` for gradients, norm estimates, and step-size
     selection.
-
+    
     Whenever norm estimation or backtracking changes the step size, the next
     accelerated step starts afresh from the accepted current iterate. In
     particular, the previous iterate is discarded as a momentum state and the
@@ -95,7 +98,7 @@ class FISTA(RegSolver):
             self, 
             setting: Setting, 
             data: Vector | Any | None =None,
-            init: Vector | None =None, 
+            init: ReadOnlyVector | None =None, 
             tau: float = 10**16,
             eta: float = 0.8, 
             stepsize_selection_steps: Iterable[int] | None = None,
@@ -105,7 +108,7 @@ class FISTA(RegSolver):
             proximal_pars: dict | None = None, 
             logging_level: int | str = "INFO",
             update_setting: bool = True
-            ):
+            ) -> None:
         out, _ = self.check_applicability(setting)
         if not out["applicable"]:
             raise ValueError(
@@ -223,16 +226,35 @@ class FISTA(RegSolver):
         self.t = self.t_old = 0.
         self.q = self.tau * self.mu / (1 + self.tau * self.mu_penalty)
 
-    def primal(self):
+    def primal(self) -> tuple[Vector | None, Vector | None]:
+        r"""Return the current primal iterate and operator image, when available for monitoring and stopping.
+        
+        
+        Returns
+        -------
+        tuple[Vector | None, Vector | None]
+            Result described above.
+        """
         return (self.x, self.y)
 
     @staticmethod
-    def check_applicability(setting) -> tuple[dict, dict]:
-        """Check whether ``setting`` provides the operations FISTA needs.
-
+    def check_applicability(setting: Setting) -> tuple[dict, dict]:
+        r"""Check whether ``setting`` provides the operations FISTA needs.
+        
         Both the use as minimizer of possibly non-convex Tikhonov functionals 
         with externally chosen regularization parameter and the use as regularization 
         method are possible. 
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
         """
         out = {"info": "", "warning": ""}
         par = {}
@@ -263,7 +285,8 @@ class FISTA(RegSolver):
         return out, par
 
     def _advance_stepsize_selection_step(self) -> None:
-        """Read and validate the next norm-reestimation step."""
+        r"""Read and validate the next norm-reestimation step.
+        """
         if self._stepsize_selection_steps is None:
             self._next_stepsize_selection_step = None
             return
@@ -290,7 +313,8 @@ class FISTA(RegSolver):
         self._next_stepsize_selection_step = step
 
     def _estimate_stepsize(self) -> None:
-        """Estimate the current derivative norm and update ``tau``."""
+        r"""Estimate the current derivative norm and update ``tau``.
+        """
         norm = self.deriv.norm(
             self.setting.h_domain,
             None if self.codomain_free else self.setting.h_codomain,
@@ -310,7 +334,14 @@ class FISTA(RegSolver):
         )
 
     def _update_norm_based_stepsize(self) -> bool:
-        """Refresh the norm-based step size and report whether it changed."""
+        r"""Refresh the norm-based step size and report whether it changed.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         step = self._next_stepsize_selection_step
         if step is None:
             return False
@@ -326,15 +357,17 @@ class FISTA(RegSolver):
         return False
 
     def _restart_three_term_recursion(self) -> None:
-        """Discard momentum and restart FISTA at the current iterate."""
+        r"""Discard momentum and restart FISTA at the current iterate.
+        """
         self.op.domain.copyto(self.x_old, self.x)
         self.t = self.t_old = 0.
         self.q = self.tau * self.mu / (
             1 + self.tau * self.mu_penalty
         )
 
-    def _write_candidate(self):
-        """Write ``prox(h - tau * gradient)`` into ``x_old``."""
+    def _write_candidate(self) -> None:
+        r"""Write ``prox(h - tau * gradient)`` into ``x_old``.
+        """
         self.op.domain.copyto(self.x_old, self._h)
         np.multiply(self._gradient, self.tau, out=self._domain_work)
         self.x_old -= self._domain_work
@@ -343,7 +376,7 @@ class FISTA(RegSolver):
             **self.proximal_pars
         )
 
-    def _next(self):
+    def _next(self) -> None:
         tau_at_iteration_start = self.tau
         if self.mu == 0:
             self.t = (1 + sqrt(1 + 4 * self.t_old**2)) / 2

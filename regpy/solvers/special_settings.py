@@ -1,5 +1,9 @@
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
 import math as ma
 import numpy as np
 from typing import Callable
@@ -39,26 +43,43 @@ from regpy.solvers.linear import FISTA, SemiSmoothNewton
 from regpy.stoprules import CountIterations
 
 class FISTA_SSNewton(CombinedSolver):
-    """FISTA followed by SemiSmoothNewton.
-
+    r"""FISTA followed by SemiSmoothNewton.
+    
     FISTA is stopped after fista_steps iterations. Its stopping rule's
     selected solution is copied and passed to SemiSmoothNewton as init.
-
+    
     Both stages use the same setting and coordinate convention.
     An exterior stopping rule can stop the combined solver at any step,
     including before SemiSmoothNewton is constructed.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    init: ReadOnlyVector | None [default: None]
+        Initial iterate in the operator domain.
+    fista_stps: int [default: 10]
+        Fista stps.
+    is_primal: bool [default: True]
+        Whether the current solver iterates use primal coordinates.
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
+    fista_params: dict | None [default: None]
+        Options for fista params.
+    ssnewton_params: dict | None [default: None]
+        Options for ssnewton params.
     """
 
     def __init__(
         self,
-        setting,
-        init=None,
+        setting: Setting,
+        init: ReadOnlyVector | None=None,
         fista_stps: int = 10,
         is_primal: bool = True,
-        logging_level="INFO",
+        logging_level: int | str="INFO",
         fista_params: dict | None = None,
         ssnewton_params: dict | None = None,
-    ):
+    ) -> None:
         if isinstance(fista_stps, bool) or not isinstance(fista_stps, int):
             raise TypeError("fista_steps must be an integer.")
         if fista_stps < 0:
@@ -88,7 +109,22 @@ class FISTA_SSNewton(CombinedSolver):
         )
 
     @staticmethod
-    def check_applicability(setting, op_norm=None):
+    def check_applicability(setting: Setting, op_norm: float | None=None) -> tuple[dict[str, Any], dict[str, Any]]:
+        r"""Check the requirements of this solver for the supplied setting.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        
+        
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any]]
+            Result described above.
+        """
         fista_out, _ = FISTA.check_applicability(
             setting, op_norm=op_norm
         )
@@ -102,36 +138,42 @@ class FISTA_SSNewton(CombinedSolver):
         return out, {}
 
 class dFISTA_SSNewton(CombinedSolver):
-    """Dual FISTA followed by primal SemiSmoothNewton.
-
+    r"""Dual FISTA followed by primal SemiSmoothNewton.
+    
     During FISTA, x and y are dual coordinates and is_primal is False.
     At the transition, the selected dual iterate is converted once into
     a primal warm start. Thereafter is_primal is True.
-
+    
     Parameters
     ----------
-    setting : Setting
+    setting: Setting
         Original primal Tikhonov setting.
-    init : Vector or None
+    init: ReadOnlyVector | None [default: None]
         Initial dual FISTA iterate.
-    fista_stps : int
-        Maximum number of FISTA steps. Defaults to 10.
-    is_primal : bool
+    fista_stps: int [default: 10]
+        Maximum number of FISTA steps.
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
+    is_primal: bool [default: True]
         Constructor flag supplied by Setting.run(). The method must be
         registered with primal=True because it receives the primal setting.
         Its current coordinate flag follows the active child instead.
+    fista_pars: dict[str, Any] | None [default: None]
+        Options for fista pars.
+    ssn_pars: dict[str, Any] | None [default: None]
+        Options for ssn pars.
     """
 
     def __init__(
         self,
-        setting,
-        init=None,
-        fista_stps=10,
-        logging_level="INFO",
-        is_primal=True,
-        fista_pars=None,
-        ssn_pars=None,
-    ):
+        setting: Setting,
+        init: ReadOnlyVector | None=None,
+        fista_stps: int=10,
+        logging_level: int | str="INFO",
+        is_primal: bool=True,
+        fista_pars: dict[str, Any] | None=None,
+        ssn_pars: dict[str, Any] | None=None,
+    ) -> None:
         if is_primal is not True:
             raise ValueError(
                 "Register dFISTA_SSNewton with primal=True."
@@ -167,7 +209,15 @@ class dFISTA_SSNewton(CombinedSolver):
             stoprule=CountIterations(fista_stps),
         )
 
-    def next(self):
+    def next(self) -> bool:
+        r"""Next.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         if self.is_converged():
             return False
 
@@ -212,7 +262,22 @@ class dFISTA_SSNewton(CombinedSolver):
         return True
 
     @staticmethod
-    def check_applicability(setting, **kwargs):
+    def check_applicability(setting: Setting, **kwargs: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+        r"""Check the requirements of this solver for the supplied setting.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any]]
+            Result described above.
+        """
         dual_out, _ = FISTA.check_applicability(
             setting.get_dual_setting()
         )
@@ -226,7 +291,34 @@ class dFISTA_SSNewton(CombinedSolver):
         return out, {}
 
 class HilbertSetting(Setting):
-    r""" Class of settings in which both the penalty and the data fidelity functional are squared Hilbert norms.
+    r"""Class of settings in which both the penalty and the data fidelity functional are squared Hilbert norms.
+        
+    Parameters
+    ----------
+    op: Operator
+        Operator used by this construction.
+    penalty: Functional | HilbertSpace | Callable | None [default: None]
+        Penalty.
+    data_fid: Functional | HilbertSpace | Callable | None [default: None]
+        Data fid.
+    regpar: float | None [default: None]
+        Regularization parameter.
+    data: ReadOnlyVector | ObsDataT | None [default: None]
+        Observed data.
+    exact_data: ReadOnlyVector | None [default: None]
+        Input vector; its coefficients are only read.
+    init: ReadOnlyVector | None [default: None]
+        Initial iterate in the operator domain.
+    incorporate_init_in_penalty: bool [default: True]
+        Incorporate init in penalty.
+    codomain_free: bool [default: False]
+        Codomain free.
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
+    explicitDataWarning: bool [default: True]
+        Explicitdatawarning.
+    _primal_setting: Setting | None [default: None]
+         primal setting.
     """
     def  __init__(self,
             op: Operator, 
@@ -238,7 +330,7 @@ class HilbertSetting(Setting):
             init: ReadOnlyVector | None = None,
             incorporate_init_in_penalty: bool = True,
             codomain_free: bool = False,
-            logging_level = "INFO",
+            logging_level: int | str = "INFO",
             explicitDataWarning:bool = True,                 
             _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()
              )->None:
@@ -267,30 +359,52 @@ class HilbertSetting(Setting):
 class BoundConstrSetting(Setting):
     r"""Settings with smooth convex penalty and data fidelity functionals, separable penalty, 
     and pointwise bound constraints on the unknown.
-
+    
     The operator must be linear on a real domain. The data fidelity must be
     convex and provide a subgradient.
-
-    Parameters:
-    ------------------
-    penalty: Quadratic | None [default: None]
+    
+    Parameters
+    ----------
+    op: Operator
+        Operator used by this construction.
+    penalty: Functional
         In the default case a Quadratic is used with defaults a=1, b=0, c=0 and given constraints.
-    constr_l, constr_u: Vector | None [default: None]
+    data_fid: Functional | HilbertSpace | Callable | None
+        Data fid.
+    constr_l: ReadOnlyVector | None [default: None]
         Constraints of the penalty if penalty is None. Otherwise, constr_l and constr_u are ignored.
+    constr_u: ReadOnlyVector | None [default: None]
+        Constraints of the penalty if penalty is None. Otherwise, constr_l and constr_u are ignored.
+    regpar: float | None [default: None]
+        Regularization parameter.
+    incorporate_init_in_penalty: bool [default: True]
+        Incorporate init in penalty.
+    data: ReadOnlyVector | None [default: None]
+        Observed data.
+    exact_data: ReadOnlyVector | None [default: None]
+        Input vector; its coefficients are only read.
+    codomain_free: bool [default: False]
+        Codomain free.
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
+    explicitDataWarning: bool [default: True]
+        Explicitdatawarning.
+    _primal_setting: Setting | None [default: None]
+         primal setting.
     """
 
     def __init__(self, 
                  op: Operator, 
                  penalty: Functional,
                  data_fid: Functional | HilbertSpace | Callable | None,
-                 constr_l: Vector | None = None, 
-                 constr_u: Vector | None = None,
+                 constr_l: ReadOnlyVector | None = None, 
+                 constr_u: ReadOnlyVector | None = None,
                  regpar: float | None = None, 
                  incorporate_init_in_penalty: bool = True,
-                 data: Vector|None = None,
-                 exact_data:Vector|None = None,
+                 data: ReadOnlyVector | None = None,
+                 exact_data:ReadOnlyVector | None = None,
                  codomain_free: bool = False,
-                 logging_level = "INFO",
+                 logging_level: int | str = "INFO",
                  explicitDataWarning:bool = True,                 
                  _primal_setting:Setting | None =None
                  ) -> None:
@@ -344,6 +458,35 @@ class BoundConstrSetting(Setting):
 
 
 class Huber_XSetting(Setting):
+    r"""Huber_XSetting interface.
+    
+    Parameters
+    ----------
+    op: Operator
+        Operator used by this construction.
+    penalty: Functional | HilbertSpace | Callable | None [default: None]
+        Penalty.
+    data_fid: Functional | HilbertSpace | Callable | None [default: None]
+        Data fid.
+    regpar: float | None [default: None]
+        Regularization parameter.
+    data: ReadOnlyVector | ObsDataT | None [default: None]
+        Observed data.
+    exact_data: ReadOnlyVector | None [default: None]
+        Input vector; its coefficients are only read.
+    init: ReadOnlyVector | None [default: None]
+        Initial iterate in the operator domain.
+    incorporate_init_in_penalty: bool [default: True]
+        Incorporate init in penalty.
+    codomain_free: bool [default: False]
+        Codomain free.
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
+    explicitDataWarning: bool [default: True]
+        Explicitdatawarning.
+    _primal_setting: Setting | None [default: None]
+         primal setting.
+    """
     def  __init__(self,
             op: Operator, 
             penalty: Functional|HilbertSpace|Callable|None = None, 
@@ -354,7 +497,7 @@ class Huber_XSetting(Setting):
             init: ReadOnlyVector | None = None,
             incorporate_init_in_penalty: bool = True,
             codomain_free: bool = False,
-            logging_level = "INFO",
+            logging_level: int | str = "INFO",
             explicitDataWarning:bool = True,                 
             _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()
              )->None:
@@ -374,5 +517,20 @@ class Huber_XSetting(Setting):
                               default_inner_solver = 'dFISTA'
                               )
   
-    def duality_gap(self, primal = None, dual = None): #TODO: add specific implementation!
+    def duality_gap(self, primal: bool | None = None, dual: tuple[ReadOnlyVector | None, ReadOnlyVector | None] | None = None) -> float: #TODO: add specific implementation!
+        r"""Duality gap.
+        
+        Parameters
+        ----------
+        primal: bool | None [default: None]
+            Primal.
+        dual: tuple[ReadOnlyVector | None, ReadOnlyVector | None] | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return super().duality_gap(primal,dual)

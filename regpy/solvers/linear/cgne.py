@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.vecsps.base import ReadOnlyVector, Scalar, VectorSpaceBase
 from regpy.util import Errors
 from regpy.vecsps import Vector
 from math import sqrt
@@ -8,40 +13,54 @@ from ..setting import Setting, check_Hilbert_applicability_linear
 __all__ = ["CGNE"]
 
 
-def _axpy(space, target, scalar, direction, work):
-    """Compute ``target += scalar * direction`` using a reusable vector."""
+def _axpy(space: VectorSpaceBase, target: Vector, scalar: Scalar, direction: ReadOnlyVector, work: Vector) -> None:
+    r"""Compute ``target += scalar * direction`` using a reusable vector.
+    
+    Parameters
+    ----------
+    space: VectorSpaceBase
+        Space.
+    target: Vector
+        Writable vector used by this operation.
+    scalar: Scalar
+        Scalar.
+    direction: ReadOnlyVector
+        Input vector; its coefficients are only read.
+    work: Vector
+        Writable vector used by this operation.
+    """
     space.copyto(work, direction)
     work *= scalar
     target += work
 
 
 class CGNE(RegSolver):
-    r"""
-    The conjugate gradient method applied to the normal equation
+    r"""The conjugate gradient method applied to the normal equation
     :math:`T^*T=T^*g` for solving linear inverse problems :math:`Tf=g`.
     Regularization is achieved by early stopping, typically using the
     discrepancy principle.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         Regularization setting involving Hilbert space norms.
-    data : Vector or Any or None [default: None]
+    data: ReadOnlyVector | None [default: None]
         Right-hand side in ``setting.op.codomain``. In the default case,
         ``setting.data`` is used.
-    init : Vector or None [default: None]
-        Initial guess. In the default case, it is taken from the setting.
-    change_init : bool [default: False]
+    init: Vector | None [default: None]
+        Initial guess. If omitted, it is taken from the setting.
+        Must be writable when ``change_init=True``; otherwise a copy is used.
+    change_init: bool [default: False]
         If true, ``init`` itself is used as iteration vector. Otherwise it is
         copied.
-    logging_level : int or str [default: "INFO"]
+    logging_level: int | str [default: 'INFO']
         Logging level.
     """
 
     def __init__(
         self,
         setting: Setting,
-        data: Vector | None = None,
+        data: ReadOnlyVector | None = None,
         init: Vector | None = None,
         change_init: bool = False,
         logging_level: int | str = "INFO",
@@ -105,10 +124,28 @@ class CGNE(RegSolver):
     def check_applicability(
         setting: Setting,
         op_norm: float | None = None,
-        user_data: Vector | None = None,
-        user_init: Vector | None = None,
+        user_data: ReadOnlyVector | None = None,
+        user_init: ReadOnlyVector | None = None,
     ) -> tuple[dict, dict]:
-        """Check whether CGNE can be used for ``setting``."""
+        r"""Check whether CGNE can be used for ``setting``.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        user_data: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        user_init: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         out, par = check_Hilbert_applicability_linear(
             setting,
             op_norm=op_norm,
@@ -122,7 +159,7 @@ class CGNE(RegSolver):
         out['applicable'] = out['info'] == ''
         return out, par
 
-    def _next(self):
+    def _next(self) -> None:
         domain = self.op.domain
         codomain = self.op.codomain
 

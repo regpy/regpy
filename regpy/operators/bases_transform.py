@@ -1,3 +1,10 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any, Iterable
+    from numpy.typing import DTypeLike
+    from regpy.vecsps.base import ReadOnlyVector, Vector
 import numpy as np
 from scipy.interpolate import BSpline
 
@@ -9,32 +16,37 @@ from .base import Operator
 __all__ = ["BasisTransform", "chebyshev_basis", "legendre_basis", "bspline_basis"]
 
 class BasisTransform(Operator):
-    r"""
-    Consider an evaluation domain given as Tensor product :math:`D_1\otimes \dots\otimes D_n` with :math:`D_1,\dots,D_n` being :math:`n` 
+    r"""Consider an evaluation domain given as Tensor product :math:`D_1\otimes \dots\otimes D_n` with :math:`D_1,\dots,D_n` being :math:`n` 
     `regpy.vecsps.VectorSpaceBase`'s and a tensor in the coefficients domain :math:`V_1\otimes \dots\otimes V_m` then we define an 
     operator mapping coefficients to some function `f: eval_domain -> dtype`:
-
+    
     .. math::
         f(d_1,...,d_n) = \sum_{k_1=0}^{N_1-1} ... \sum_{k_n=0}^{N_n-1} c_{k_1,...k_n} b^1_{k_1}(x_1) .... b^n_{k_n}(x_n).
-
+    
     So that the operator BasisTransform maps the coefficient tensor :math:`c = (c_\{k_1,....k_n\})` to the tensor of function values
     :math:`(f(x))_{x in eval_domain}`
-
+    
     Parameters
     ----------
-    eval_domain : regpy.vecsps.Prod   
-        an instance of the class `regpy.vecsps.Prod` in vector spaces of size where each D_i has size M_i
-    coef_domain : regpy.vecsps.Prod   
+    coef_domain: Prod
         an instance of the class `regpy.vecsps.Prod` in vector spaces of size where each V_i has size N_i
-    bases : list(list)
+    eval_domain: Prod
+        an instance of the class `regpy.vecsps.Prod` in vector spaces of size where each D_i has size M_i
+    bases: list[np.ndarray]
         a list of matrices :math:`[B_1,..., B_n]` where the matrix :math:`B_l` of size :math:`M_l \times N_l` and contains the function values
         of the basis :math:`\{b^l_0, b^l_{M_l-1}\}` of the l-th coordinate:
-
+        
         .. math::
             B_l = (b^l_{k}(x_{l,j}))_{j=0:M_l-1, k=0:N_l-1}
-
+    dtype: DTypeLike [default: float]
+        NumPy data type of stored coefficients.
     """
-    def __init__(self,coef_domain,eval_domain,bases,dtype=float):
+    def __init__(self,
+                 coef_domain: Prod,
+                 eval_domain: Prod,
+                 bases: list[np.ndarray],
+                 dtype: DTypeLike=float
+                 ) -> None:
         if not isinstance(coef_domain,Prod):
             raise TypeError(Errors.not_instance(coef_domain,Prod))
         if not isinstance(eval_domain,Prod):
@@ -78,12 +90,40 @@ class BasisTransform(Operator):
         self._consts.update({'bases', '_conjugate_bases'})
 
     @staticmethod
-    def _copy_if_aliased(x, out):
-        """Return an independent input only when ``out`` overlaps it."""
+    def _copy_if_aliased(x: ReadOnlyVector, out: Vector) -> np.ndarray:
+        r"""Return an independent input only when ``out`` overlaps it.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return x.copy() if np.shares_memory(x, out) else x
 
-    def _get_einsum_path(self, operand, *, adjoint):
-        """Compute each contraction path only once and reuse it afterwards."""
+    def _get_einsum_path(self, operand: np.ndarray, *, adjoint: bool) -> list[Any]:
+        r"""Compute each contraction path only once and reuse it afterwards.
+        
+        Parameters
+        ----------
+        operand: np.ndarray
+            Operand.
+        adjoint: bool
+            Adjoint.
+        
+        
+        Returns
+        -------
+        list[Any]
+            Result described above.
+        """
         if adjoint:
             if self._adjoint_einsum_path is None:
                 self._adjoint_einsum_path = np.einsum_path(
@@ -103,8 +143,22 @@ class BasisTransform(Operator):
             )[0]
         return self._eval_einsum_path
 
-    def _ieval(self, coef, out):
-        """Evaluate the tensor-product basis transform directly into ``out``."""
+    def _ieval(self, coef: ReadOnlyVector, out: Vector) -> Vector:
+        r"""Evaluate the tensor-product basis transform directly into ``out``.
+        
+        Parameters
+        ----------
+        coef: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         coef = self._copy_if_aliased(coef, out)
 
         # Keep the BLAS-backed special cases used by the allocating implementation.
@@ -141,8 +195,22 @@ class BasisTransform(Operator):
             optimize=self._get_einsum_path(coef, adjoint=False)
         )
 
-    def _iadjoint(self, values, out):
-        """Apply the real-Hilbert-space adjoint directly into ``out``."""
+    def _iadjoint(self, values: Iterable[Any], out: Vector) -> Vector:
+        r"""Apply the real-Hilbert-space adjoint directly into ``out``.
+        
+        Parameters
+        ----------
+        values: Iterable[Any]
+            Values.
+        out: Vector
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         values = self._copy_if_aliased(values, out)
 
         if self.ndim == 1 and self.bases[0].shape[1] * self.bases[0].shape[0] <= 50000000:
@@ -180,22 +248,20 @@ class BasisTransform(Operator):
         )
 
 
-def chebyshev_basis(coef_nr,eval_domain) -> BasisTransform:
+def chebyshev_basis(coef_nr: int,eval_domain: Prod) -> BasisTransform:
     r"""Implements a tensor basis of Chebyshev polynomials for product spaces. It requires that 
     both coef_domain and eval_domain has the same dimension.
-
+    
     Parameters
     ----------
-    coef_nr : scalar or tuple
-        Number of Coefficients of Chebychev polynomials in the coefficients basis.  
-    eval_domain : regpy.vecsps.Prod
-        Tensor product of `GridFcts` instances on which the Chebyshev polynomial are evaluated. 
-    dtype : np.dtype, optional
-       type of the underlying spaces, by default float
-
+    coef_nr: int
+        Number of Coefficients of Chebychev polynomials in the coefficients basis.
+    eval_domain: Prod
+        Tensor product of `GridFcts` instances on which the Chebyshev polynomial are evaluated.
+    
     Returns
     -------
-    BasisTransform 
+    BasisTransform
         A bases transform from coefficients of Chebychev polynomial to their evaluation.
     """
     if not isinstance(eval_domain,Prod):
@@ -218,22 +284,20 @@ def chebyshev_basis(coef_nr,eval_domain) -> BasisTransform:
         bases.append(B_i)
     return BasisTransform(coef_domain,eval_domain,bases)
 
-def legendre_basis(coef_nr,eval_domain) -> BasisTransform:
+def legendre_basis(coef_nr: int,eval_domain: Prod) -> BasisTransform:
     r"""Implements a tensor basis of Legendre polynomials for product spaces. It requires that 
     both coef_domain and eval_domain has the same dimension.
-
+    
     Parameters
     ----------
-    coef_domain : regpy.vecsps.Prod
-        Coefficients of tensor products of Legendre polynomials.  
-    eval_domain : regpy.vecsps.Prod
-        Tensor product of `GridFcts` instances on which the Legendre polynomial are evaluated. 
-    dtype : np.dtype, optional
-       type of the underlying spaces, by default float
-
+    coef_nr: int
+        Coef nr.
+    eval_domain: Prod
+        Tensor product of `GridFcts` instances on which the Legendre polynomial are evaluated.
+    
     Returns
     -------
-    BasisTransform 
+    BasisTransform
         A bases transform from coefficients of Legendre polynomial to their evaluation.
     """
 
@@ -257,36 +321,36 @@ def legendre_basis(coef_nr,eval_domain) -> BasisTransform:
         bases.append(B_i)
     return BasisTransform(coef_domain,eval_domain,bases)
 
-def bspline_basis(k,t,dim=1,add_points=10) -> BasisTransform:
+def bspline_basis(k: int,t: np.ndarray,dim: int=1,add_points: int=10) -> BasisTransform:
     r"""Implements a B-Spline basis in an arbitrary Dimension (given by dim)
     the splines are generated via BSpline from scipy.interpolate.
     In each dimension it uses the knots given in t to generate a B-Spline Basis.
     The evaluation domain is a refined grid determined by the point added between points
     given by add_points:
-
+    
         np.linspace(t[0],t[-1],t.size*add_points)
     
     Note, that to do that accurately construct Splines, we use the key extrapolate=False and extend the
     original knot points given in t by additionally 2k points with equidistant distance to T.
     
     By this construction the splines will be zero at the boundary.
-
+    
     Parameters
     ----------
-    k : integer
+    k: int
         Smoothness degree of the used Splines.
-    t : np.ndarray
+    t: np.ndarray
         One dimensional array of knot points for evaluating the Splines.
-    dim : int, optional
-        Dimension of the resulting spaces, by default 1
-    add_points : int, optional
-        Number of points to be added between each Knot for evaluation, by default 10
-
+    dim: int [default: 1]
+        Dimension of the resulting spaces, by
+    add_points: int [default: 10]
+        Number of points to be added between each Knot for evaluation, by
+    
     Returns
     -------
     BasisTransform
         A base transform from coefficients of Splines to evaluation on a grid constructed from a refined
-        grid of the given evaluation knots. 
+        grid of the given evaluation knots.
     """
     if not isinstance(t, np.ndarray):
         raise TypeError(Errors.type_error("t for a B-Spline basis need to be an ndarray."))

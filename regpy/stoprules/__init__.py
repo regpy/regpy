@@ -3,6 +3,7 @@
 The public names are re-exported here to preserve imports such as
 ``from regpy.stoprules import CountIterations``.
 """
+from __future__ import annotations
 
 from .general import *
 from .parameter_choice_rules import *

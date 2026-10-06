@@ -1,3 +1,15 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any, Callable
+    from typing_extensions import Self
+    from types import NotImplementedType
+    from numpy.typing import ArrayLike
+    from regpy.vecsps.base import Scalar, Vector
+    from regpy.vecsps.numpy import MeasureSpaceFcts
+    from regpy.operators.base import Operator
+    from regpy._typing import Mask
 from copy import deepcopy
 
 import numpy as np
@@ -15,96 +27,114 @@ __all__ = ["IntegralFunctionalBase","LppPower","L1MeasureSpace","KullbackLeibler
 
 
 class IntegralFunctionalBase(Functional):
-    r"""
-    This class provides a general framework for integral functionals of the type
+    r"""This class provides a general framework for integral functionals of the type
     
     .. math::
         F\colon X &\to \mathbb{R} \\
         v&\mapsto \int_\Omega f(v(x),x)\mathrm{d}x
-
-    with :math:`f\colon \mathbb{R}^2\to \mathbb{R})`. 
-
+    
+    with :math:`f\colon \mathbb{R}^2\to \mathbb{R}`. 
+    
     Subclasses defining explicit functionals of this type have to implement
      * `_f` evaluation the function :math:`f`
      * `_f_deriv` the derivative :math:`\partial_v f`
-     * `_f_second_deriv' the second derivative :math:`\partial f^2/\partial v^2` (often not needed!)
+     * `_f_second_deriv' the second derivative :math:`\partial_v^2 f` (often not needed!)
      * `_f_prox` giving the proximal function :math:`\mathrm{prox}_{\tau f(.,x)}` for each :math:`x\in\Omega`
      * `_f_conj` evaluation the Fenchel conjugate function :math:`f^*(v^*,x)`
-     * `_f_conj_deriv` the derivative :math:`\partial_{v^*}f*`
-     * `_f_conj_second_deriv' the second derivative :math:`\partial f*^2/\partial v_*^2` (often not needed!)
+     * `_f_conj_deriv` the derivative :math:`\partial_{v^*}f^*`
+     * `_f_conj_second_deriv' the second derivative :math:`\partial_{v^*}^2 f^*` (often not needed!)
      * `_f_conj_prox` giving the proximal  function :math:`\mathrm{prox}_{\tau f^*(\cdot,x)}`     
     
-    (where _f_deriv, _f_prox, _f_conj, and _f_conj_prox must be able to handle out=input) since 
-
+    (where `_f_deriv`, `_f_prox`, `_f_conj`, and `_f_conj_prox` must be able to handle out=input) since 
+    
     .. math::
         F'[g]h = \int_\Omega h(x)(\partial_1 f)(g(x),x)
-
+    
     is a functional of the same type, and
-
+    
     .. math::
         \mathrm{prox}_{\tau F}(v)(x) = \mathrm{prox}_{\tau f(\cdot,x)}(v(x)).
-
+    
     It allows to replace the function :math:`f(\cdot,x)` on the interval :math:`(-\infty,a(x))` by one of 
     the following terms, and analogously on :math:`(b(x),\infty)` with :math:`-\infty<=a(x) < b(x)\leq \infty`
-
+    
     .. math::
         \infty &\text{hard constraint}\\
         f(a(x),x) + (x-a(x)) \partial_1 f(a(x),x) & \text{first order Taylor approximation}\\ 
         f(a(x),x) + (x-a(x)) \partial_1 f(a(x),x) +0.5(x-a(x))^2 \partial_1^2 f(a(x),x)& \text{second order Taylor approximation}\\ 
-
+    
     An important use case of quadratic Taylor approximations is the improvement of the convexity constant 
     (and the Lipschitz constant of the conjugate functional) in convex optimization methods. 
     As opposed to hard constraints, this preserves Lipschitz continuity of derivative. 
     Note that hard constraints correspond to linear Taylor approximations of the conjugate functionals and vice versa, 
     whereas quadratic Taylor approximations lead to quadratic Taylor approximation of the conjugate. 
-
+    
     Only one of the above replacements may for specified for all :math:`x` on each side.
-
+    
     Parameters
     ----------
-    domain : `regpy.vecsps.MeasureSpaceFcts`
+    domain: MeasureSpaceFcts
         Domain on which it is defined. Needs some Measure therefore a `regpy.vecsps.MeasureSpaceFcts`
-    nat_dom_l,nat_dom_u : float or np.ndarray, default: -np.inf, np.inf
+    nat_dom_l: float | ReadOnlyVector [default: -np.inf]
         lower and upper boundary of the natural essential domain of :math:`f`, i.e., the interval on which :math:`f` without artificial constraints or Taylor expansion is finite 
         If dom_l or dom_u are finite, :math:`f` should be finite at these points (possibly very large if :math:`f` tends to infinity there) 
         If the domain depends on the point `x` and/or arguments in `**kwargs`, this must be a NumPy array.
-    conj_nat_dom_l,conj_nat_dom_u : float or np.ndarray [default: -np.inf and np.inf, rsp.]
+    nat_dom_u: float | ReadOnlyVector [default: np.inf]
+        lower and upper boundary of the natural essential domain of :math:`f`, i.e., the interval on which :math:`f` without artificial constraints or Taylor expansion is finite 
+        If dom_l or dom_u are finite, :math:`f` should be finite at these points (possibly very large if :math:`f` tends to infinity there) 
+        If the domain depends on the point `x` and/or arguments in `**kwargs`, this must be a NumPy array.
+    conj_nat_dom_l: float | ReadOnlyVector [default: -np.inf]
         lower and upper boundary of the natural essential domain of the conjugate of :math:`f` 
         (as vector in primal space)
-    constr_u: None or float or np.ndarray [default: None]
+    conj_nat_dom_u: float | ReadOnlyVector [default: np.inf]
+        lower and upper boundary of the natural essential domain of the conjugate of :math:`f` 
+        (as vector in primal space)
+    constr_l: float | ReadOnlyVector | None [default: None]
+        If not None, a lower hard constraint is imposed, and constr_u specifies :math:`a(x)`
+    constr_u: float | ReadOnlyVector | None [default: None]
         If not None, an upper hard constraint is imposed, and constr_u specifies :math:`b(x)`
-    constr_l: None or float or np.ndarray [default: None]
-        If not None, a lower hard constraint is imposed, and constr_u specifies :math:`a(x)` 
-    lin_taylor_u: None or float or np.ndarray [default: None]
-        If not None, :math:`b(x)` for linear Taylor on the right-hand side
-    lin_taylor_l: None or float or np.ndarray [default: None]
+    lin_taylor_l: float | ReadOnlyVector | None [default: None]
         If not None, :math:`a(x)` for linear Taylor on the left hand side
-    quad_taylor_u: None or float or np.ndarray [default: None]
-        If not None, :math:`b(x)` for quadratic Taylor on the right-hand side
-    quad_taylor_l: None or float or np.ndarray [default: None]
+    lin_taylor_u: float | ReadOnlyVector | None [default: None]
+        If not None, :math:`a(x)` for linear Taylor on the right-hand side
+    quad_taylor_l: float | ReadOnlyVector | None [default: None]
         If not None, :math:`a(x)` for quadratic Taylor on the left hand side
-    methods, conj_methods = set of strings or None [default: None]
-        Names of the methods implemented by an IntegralFunctionalBase instance (see Functional!).
-        In the default case all methods are indicated as being implemented. 
+    quad_taylor_u: float | ReadOnlyVector | None [default: None]
+        If not None, :math:`a(x)` for quadratic Taylor on the right-hand side
+    Lipschitz: float [default: np.inf]
+        Lipschitz bound for the derivative.
+    convexity_param: float [default: 0.0]
+        Strong-convexity parameter.
+    methods: set[str] | None [default: None]
+        Names of the implemented functional operations.
+    conj_methods: set[str] | None [default: None]
+        Names of the implemented functional operations.
+    is_data_func: bool [default: False]
+        Is data func.
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
     """
 
-    def __init__(self, domain,
-                 nat_dom_l=-np.inf, nat_dom_u=np.inf, 
-                 conj_nat_dom_l=-np.inf,conj_nat_dom_u=np.inf,
-                 constr_l=None, constr_u=None,
-                 lin_taylor_l=None, lin_taylor_u=None,
-                 quad_taylor_l=None, quad_taylor_u= None,
-                 Lipschitz = np.inf, convexity_param=0.,
-                 methods = None, conj_methods = None,
-                 is_data_func = False,
-                 **kwargs):
+    def __init__(self, domain: MeasureSpaceFcts,
+                 nat_dom_l: float | ReadOnlyVector=-np.inf, nat_dom_u: float | ReadOnlyVector=np.inf, 
+                 conj_nat_dom_l: float | ReadOnlyVector=-np.inf,conj_nat_dom_u: float | ReadOnlyVector=np.inf,
+                 constr_l: float | ReadOnlyVector | None=None, constr_u: float | ReadOnlyVector | None=None,
+                 lin_taylor_l: float | ReadOnlyVector | None=None, lin_taylor_u: float | ReadOnlyVector | None=None,
+                 quad_taylor_l: float | ReadOnlyVector | None=None, quad_taylor_u: float | ReadOnlyVector | None= None,
+                 Lipschitz: float = np.inf, convexity_param: float=0.,
+                 methods: set[str] | None = None, conj_methods: set[str] | None = None,
+                 is_data_func: bool = False,
+                 **kwargs: Any) -> None:
         if not isinstance(domain,MeasureSpaceFcts):
             raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,add_info="IntegralFunctionalBase only implemented for real-valued MeasureSpaceFcts domains."))
         if not domain.shape_codomain == () or not np.issubdtype(domain.dtype, np.floating):
             raise RuntimeError(Errors.runtime_error(f'IntegralFunctionalBase only implemented for real-valued MeasureSpaceFcts. Got dtype={domain.dtype}, shape_codomain = {domain.shape_codomain}. Consider using  VectorIntegralFunctional instead.'))
         self.h_domain = L2(domain)
+        r""":math:`L^2` Hilbert space on self.domain with respect to self.measure."""
         self.measure = np.broadcast_to(domain.measure,domain.shape) if np.isscalar(domain.measure) else domain.measure
+        r"""The measure of self.domain"""
         self.domain = domain
+        r"""The vector space on which the functional is defined."""
 
         all_methods = {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'}
 
@@ -172,11 +202,26 @@ class IntegralFunctionalBase(Functional):
         if quad_taylor_u is not None: self.quad_taylor_u = quad_taylor_u
         
     @property
-    def constr_l(self):
+    def constr_l(self) -> np.ndarray | None:
+        r"""Constr l.
+        
+        
+        Returns
+        -------
+        np.ndarray | None
+            Result described above.
+        """
         return self._constr_l
     
     @constr_l.setter
-    def constr_l(self, constr_l):
+    def constr_l(self, constr_l: float | ReadOnlyVector) -> None:
+        r"""Constr l.
+        
+        Parameters
+        ----------
+        constr_l: float | ReadOnlyVector
+            Lower pointwise constraint; None leaves this side unconstrained.
+        """
         if constr_l is None or (constr_l is not None and np.all(constr_l<self._nat_dom_l)):
             self._constr_l = None
             self._delete_f_l()
@@ -192,11 +237,26 @@ class IntegralFunctionalBase(Functional):
             raise TypeError(Errors.type_error(f"The lower constraint if defined, can only be either a scalar or an element in the domain. Given constr_l = {constr_l}"))
         
     @property
-    def constr_u(self):
+    def constr_u(self) -> np.ndarray | None:
+        r"""Constr u.
+        
+        
+        Returns
+        -------
+        np.ndarray | None
+            Result described above.
+        """
         return self._constr_u
     
     @constr_u.setter
-    def constr_u(self, constr_u):
+    def constr_u(self, constr_u: float | ReadOnlyVector) -> None:
+        r"""Constr u.
+        
+        Parameters
+        ----------
+        constr_u: float | ReadOnlyVector
+            Upper pointwise constraint; None leaves this side unconstrained.
+        """
         if constr_u is None or (constr_u is not None and np.all(constr_u>self._nat_dom_u)):
             self._constr_u = None
             self._delete_f_u()
@@ -212,11 +272,26 @@ class IntegralFunctionalBase(Functional):
             raise TypeError(Errors.type_error(f"The upper constraint if defined, can only be either a scalar or an element in the domain. Given constr_u = {constr_u}"))
 
     @property
-    def lin_taylor_l(self):
+    def lin_taylor_l(self) -> np.ndarray | None:
+        r"""Lin taylor l.
+        
+        
+        Returns
+        -------
+        np.ndarray | None
+            Result described above.
+        """
         return self._lin_taylor_l
 
     @lin_taylor_l.setter        
-    def lin_taylor_l(self, lin_taylor_l):
+    def lin_taylor_l(self, lin_taylor_l: float | ReadOnlyVector) -> None:
+        r"""Lin taylor l.
+        
+        Parameters
+        ----------
+        lin_taylor_l: float | ReadOnlyVector
+            Lower threshold for a linear extension; None disables this extension.
+        """
         if lin_taylor_l is None or (lin_taylor_l is not None and np.all(lin_taylor_l<self._nat_dom_l)):
             self._lin_taylor_l = None
             self._delete_f_l()
@@ -232,11 +307,26 @@ class IntegralFunctionalBase(Functional):
             raise TypeError(Errors.type_error(f"The lower point at which to replace with an Taylor first order expansion if defined, can only be either a scalar or an element in the domain. Given lin_taylor_l = {lin_taylor_l}"))
         
     @property
-    def lin_taylor_u(self):
+    def lin_taylor_u(self) -> np.ndarray | None:
+        r"""Lin taylor u.
+        
+        
+        Returns
+        -------
+        np.ndarray | None
+            Result described above.
+        """
         return self._lin_taylor_u
 
     @lin_taylor_u.setter
-    def lin_taylor_u(self, lin_taylor_u):
+    def lin_taylor_u(self, lin_taylor_u: float | ReadOnlyVector) -> None:
+        r"""Lin taylor u.
+        
+        Parameters
+        ----------
+        lin_taylor_u: float | ReadOnlyVector
+            Upper threshold for a linear extension; None disables this extension.
+        """
         if lin_taylor_u is None or (lin_taylor_u is not None and np.all(lin_taylor_u>self._nat_dom_u)):
             self._lin_taylor_u = None
             self._delete_f_u() 
@@ -252,11 +342,26 @@ class IntegralFunctionalBase(Functional):
             raise TypeError(Errors.type_error(f"The upper point at which to replace with an Taylor first order expansion if defined, can only be either a scalar or an element in the domain. Given lin_taylor_u = {lin_taylor_u}"))
     
     @property
-    def quad_taylor_l(self):
+    def quad_taylor_l(self) -> np.ndarray | None:
+        r"""Quad taylor l.
+        
+        
+        Returns
+        -------
+        np.ndarray | None
+            Result described above.
+        """
         return self._quad_taylor_l
     
     @quad_taylor_l.setter
-    def quad_taylor_l(self, quad_taylor_l):
+    def quad_taylor_l(self, quad_taylor_l: float | ReadOnlyVector) -> None:
+        r"""Quad taylor l.
+        
+        Parameters
+        ----------
+        quad_taylor_l: float | ReadOnlyVector
+            Lower threshold for a quadratic extension; None disables this extension.
+        """
         if quad_taylor_l is None or (quad_taylor_l is not None and np.all(quad_taylor_l<self._nat_dom_l)):
             self._quad_taylor_l = None
             self._delete_f_l()
@@ -272,11 +377,26 @@ class IntegralFunctionalBase(Functional):
             raise TypeError(Errors.type_error(f"The lower point at which to replace with an Taylor second order expansion if defined, can only be either a scalar or an element in the domain. Given quad_taylor_l = {quad_taylor_l}"))
         
     @property   
-    def quad_taylor_u(self):
+    def quad_taylor_u(self) -> np.ndarray | None:
+        r"""Quad taylor u.
+        
+        
+        Returns
+        -------
+        np.ndarray | None
+            Result described above.
+        """
         return self._quad_taylor_u
     
     @quad_taylor_u.setter
-    def quad_taylor_u(self, quad_taylor_u):
+    def quad_taylor_u(self, quad_taylor_u: float | ReadOnlyVector) -> None:
+        r"""Quad taylor u.
+        
+        Parameters
+        ----------
+        quad_taylor_u: float | ReadOnlyVector
+            Upper threshold for a quadratic extension; None disables this extension.
+        """
         if quad_taylor_u is None or (quad_taylor_u is not None and np.all(quad_taylor_u>self._nat_dom_u)):
             self._quad_taylor_u = None
             self._delete_f_u()
@@ -291,7 +411,7 @@ class IntegralFunctionalBase(Functional):
         else: 
             raise TypeError(Errors.type_error(f"The upper point at which to replace with an Taylor second order expansion if defined, can only be either a scalar or an element in the domain. Given quad_taylor_u = {quad_taylor_u}"))
   
-    def _precompute_f_l(self):
+    def _precompute_f_l(self) -> None:
         if self.constr_l is not None:
             active_ind_l = self.constr_l > self._nat_dom_l
             self.conj_taylor_l = np.full(self.domain.shape, -np.inf)
@@ -368,7 +488,7 @@ class IntegralFunctionalBase(Functional):
                 )
                 self._if_constant_broadcast(self.fstarpp_l, mask=taylor_active_l)
 
-    def _delete_f_l(self):
+    def _delete_f_l(self) -> None:
         if hasattr(self,'conj_taylor_l'):
             del self.conj_taylor_l
         if hasattr(self,'f_l'):
@@ -380,7 +500,7 @@ class IntegralFunctionalBase(Functional):
         if hasattr(self,'fstarpp_l'):
             del self.fstarpp_l
 
-    def _precompute_f_u(self):
+    def _precompute_f_u(self) -> None:
         if self.constr_u is not None:
             active_ind_u = self.constr_u < self._nat_dom_u
             self.conj_taylor_u = np.full(self.domain.shape, np.inf)
@@ -457,7 +577,7 @@ class IntegralFunctionalBase(Functional):
                 )
                 self._if_constant_broadcast(self.fstarpp_u, mask=taylor_active_u)
 
-    def _delete_f_u(self):
+    def _delete_f_u(self) -> None:
         if hasattr(self,'conj_taylor_u'):
             del self.conj_taylor_u
         if hasattr(self,'f_u'):
@@ -470,7 +590,7 @@ class IntegralFunctionalBase(Functional):
             del self.fstarpp_u
 
     @property
-    def _taylor_l(self)->np.ndarray:
+    def _taylor_l(self)->np.ndarray | None:
         if self.lin_taylor_l is not None:
             return self.lin_taylor_l 
         elif self.quad_taylor_l is not None:
@@ -479,7 +599,7 @@ class IntegralFunctionalBase(Functional):
             return None
         
     @property
-    def _taylor_u(self)->np.ndarray:
+    def _taylor_u(self)->np.ndarray | None:
         if self.lin_taylor_u is not None:
             return self.lin_taylor_u 
         elif self.quad_taylor_u is not None:
@@ -488,23 +608,47 @@ class IntegralFunctionalBase(Functional):
             return None
 
     @property
-    def _Lipschitz_exterior(self):
+    def _Lipschitz_exterior(self) -> float:
         return np.inf if (self.constr_l is not None or self.constr_u is not None) else 0.
     
     @property
-    def Lipschitz(self):
+    def Lipschitz(self) -> float:
+        r"""Lipschitz.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return max([super().Lipschitz,self._Lipschitz_exterior])
 
     @property
-    def _convexity_param_exterior(self):
+    def _convexity_param_exterior(self) -> float:
         return 0. if (self.lin_taylor_l is not None or self.lin_taylor_u is not None) else np.inf
 
     @property
-    def convexity_param(self):
+    def convexity_param(self) -> float:
+        r"""Convexity param.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return min([super().convexity_param,self._convexity_param_exterior])    
 
     @property
     def dom_l(self)->np.ndarray:
+        r"""Dom l.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         toret = self._nat_dom_l.copy()
         if self._taylor_l is None:
             if not self.constr_l is None:
@@ -515,6 +659,14 @@ class IntegralFunctionalBase(Functional):
     
     @property
     def dom_u(self)->np.ndarray:
+        r"""Dom u.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         toret = self._nat_dom_u.copy()
         if self._taylor_u is None:
             if self.constr_u is not None:
@@ -525,6 +677,14 @@ class IntegralFunctionalBase(Functional):
 
     @property
     def conj_dom_l(self) -> np.ndarray:
+        r"""Conj dom l.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         if self.constr_u is None and self._taylor_l is None:
             return self._conj_nat_dom_l
         toret = self._conj_nat_dom_l.copy()
@@ -542,6 +702,14 @@ class IntegralFunctionalBase(Functional):
 
     @property
     def conj_dom_u(self) -> np.ndarray:
+        r"""Conj dom u.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         if self.constr_u is None and self._taylor_u is None:
             return self._conj_nat_dom_u
         toret = self._conj_nat_dom_u.copy()
@@ -559,10 +727,26 @@ class IntegralFunctionalBase(Functional):
 
     @property
     def everywhere_finite(self)->bool: 
+        r"""Everywhere finite.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return np.all(self.dom_l==-np.inf) and np.all(self.dom_u==np.inf)
     
     @property
     def conj_everywhere_finite(self)->bool: 
+        r"""Conj everywhere finite.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return np.all(self.conj_dom_l==-np.inf) and np.all(self.conj_dom_u==np.inf)
 
     """@property
@@ -578,7 +762,7 @@ class IntegralFunctionalBase(Functional):
         pass
     """
 
-    def _if_constant_broadcast(self, x, mask=None):
+    def _if_constant_broadcast(self, x: ReadOnlyVector, mask: Mask | None=None) -> ReadOnlyVector:
         if not isinstance(x, np.ndarray) or x.shape != self.domain.shape:
             raise TypeError(Errors.type_error(
                 "If constant use broadcasting in the IntegralFunctional init only allowed "
@@ -593,9 +777,22 @@ class IntegralFunctionalBase(Functional):
             x = np.broadcast_to(first, self.domain.shape)
         return x
 
-    def _get_scratch(self, name, like):
-        """Return a persistent scratch array (stored as ``self.<name>``) with the same
+    def _get_scratch(self, name: str, like: np.ndarray) -> np.ndarray:
+        r"""Return a persistent scratch array (stored as ``self.<name>``) with the same
         shape and dtype as ``like``, reusing the previous allocation whenever possible.
+        
+        Parameters
+        ----------
+        name: str
+            Name.
+        like: np.ndarray
+            Like.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
         """
         if name in self._buffer_status and self._buffer_status[name] == True:
             raise RuntimeError(Errors.generic_message('Now request for buffer {name}, but this buffer is already in use.'))
@@ -606,19 +803,37 @@ class IntegralFunctionalBase(Functional):
         self._buffer_status[name] = True
         return buf
 
-    def _free_scratch(self,name):
-        """Indicate that a buffer is no longer in use and hence not blocked.
+    def _free_scratch(self,name: str) -> None:
+        r"""Indicate that a buffer is no longer in use and hence not blocked.
         Does not free the memory!
+        
+        Parameters
+        ----------
+        name: str
+            Name.
         """
         self._buffer_status[name] = False
 
     @staticmethod
-    def _prepare_out(out, like):
-        """Return a writable output array compatible with ``like``.
+    def _prepare_out(out: Vector, like: np.ndarray) -> np.ndarray:
+        r"""Return a writable output array compatible with ``like``.
         If ``out`` is None, a new array is allocated and returned.
         If ``out`` is an array, it is returned without initialization.
         This is used in pointwise operations to share code between allocating and
         in-place implementations.
+        
+        Parameters
+        ----------
+        out: Vector
+            Writable output buffer. If None, allocate a new result.
+        like: np.ndarray
+            Like.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
         """
         if out is None:
             return np.empty_like(like)
@@ -636,8 +851,22 @@ class IntegralFunctionalBase(Functional):
         return out
 
     @staticmethod
-    def _where(mask, like):
-        """Return ``mask`` as a boolean array broadcast over the full input shape."""
+    def _where(mask: Mask, like: np.ndarray) -> np.ndarray | bool:
+        r"""Return ``mask`` as a boolean array broadcast over the full input shape.
+        
+        Parameters
+        ----------
+        mask: Mask
+            Coordinate-selection mask in the format used by the vector space.
+        like: np.ndarray
+            Like.
+        
+        
+        Returns
+        -------
+        np.ndarray | bool
+            Result described above.
+        """
         if mask is None:
             return np.broadcast_to(np.bool_(True), like.shape)
         where = np.asarray(mask, dtype=bool)
@@ -647,15 +876,46 @@ class IntegralFunctionalBase(Functional):
             ))
         return where
 
-    def _apply_pointwise(self, func, x, out, mask=None, **kwargs):
-        """Evaluate a pointwise method on full arrays using a NumPy ``where`` mask."""
+    def _apply_pointwise(self, func: Callable[..., np.ndarray], x: ReadOnlyVector, out: Vector, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
+        r"""Evaluate a pointwise method on full arrays using a NumPy ``where`` mask.
+        
+        Parameters
+        ----------
+        func: Callable[..., np.ndarray]
+            Functional to evaluate or transform.
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector
+            Writable output buffer. If None, allocate a new result.
+        mask: Mask | None [default: None]
+            Coordinate-selection mask in the format used by the vector space.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return func(x, out=out, mask=mask, **kwargs)
 
-    def _assert_interval(self, v, lower, upper, msg=None):
-        """Check bounds without subtracting equal infinite endpoints.
-
+    def _assert_interval(self, v: ReadOnlyVector, lower: float | np.ndarray, upper: float | np.ndarray, msg: str | None=None) -> None:
+        r"""Check bounds without subtracting equal infinite endpoints.
+        
         Infinite arguments are accepted at matching unbounded endpoints for
         internal limiting-value calculations. NaN is never admissible.
+        
+        Parameters
+        ----------
+        v: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        lower: float | np.ndarray
+            Lower.
+        upper: float | np.ndarray
+            Upper.
+        msg: str | None [default: None]
+            Msg.
         """
         msg = "" if msg is None else msg
         if np.any(np.isnan(v)):
@@ -669,38 +929,86 @@ class IntegralFunctionalBase(Functional):
             raise NotInEssentialDomainError(Errors.generic_message(
                 msg + f" argument too small in {self}."))
 
-    def _assert_essential_domain(self, v, msg=None):
+    def _assert_essential_domain(self, v: ReadOnlyVector, msg: str | None=None) -> None:
         self._assert_interval(v, self.dom_l, self.dom_u, msg)
 
-    def _assert_conj_essential_domain(self, vstar, msg=None):
+    def _assert_conj_essential_domain(self, vstar: ReadOnlyVector, msg: str | None=None) -> None:
         self._assert_interval(vstar, self.conj_dom_l, self.conj_dom_u, msg)
 
     def bregman(self, x: ReadOnlyVector, y: ReadOnlyVector | None,
                 ystar: ReadOnlyVector | None = None) -> float:
         r"""Evaluate the Bregman divergence by summing pointwise differences.
-
+        
         Computes F(x)-F(y)-<ystar,x-y>, with ystar in the
         subdifferential at y. If omitted, ystar is computed by
         subgradient(y). Constraints and linear/quadratic extensions are included. 
-
+        
         With y=None, ystar is required and the pointwise Fenchel--Young
         expression F(x)+F*(ystar)-<ystar,x> is integrated instead.
-
+        
         Subtraction precedes the final integration, reducing cancellation
         between large global values. 
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        y: ReadOnlyVector | None
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
         """
         return self._pointwise_bregman(x, y, ystar, conjugate=False)
 
     def conj_bregman(self, xstar: ReadOnlyVector, ystar: ReadOnlyVector | None,
                      y: ReadOnlyVector | None = None) -> float:
         r"""Evaluate the conjugate Bregman divergence before integration.
-
+        
         ystar=None uses F*(xstar)+F(y)-<y,xstar> and requires y.
+        
+        Parameters
+        ----------
+        xstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None
+            Input vector; its coefficients are only read.
+        y: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
         """
         return self._pointwise_bregman(xstar, ystar, y, conjugate=True)
 
-    def _pointwise_bregman(self, x, x0, pstar, *, conjugate):
-        """Shared pointwise reduction for the primal and conjugate."""
+    def _pointwise_bregman(self, x: ReadOnlyVector, x0: ReadOnlyVector, pstar: ReadOnlyVector, *, conjugate: bool) -> float:
+        r"""Shared pointwise reduction for the primal and conjugate.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        x0: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        pstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        conjugate: bool
+            Conjugate.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         if x0 is None:
             if pstar is None:
                 raise ValueError("bregman requires x0 or pstar.")
@@ -752,7 +1060,7 @@ class IntegralFunctionalBase(Functional):
         values -= np.real(np.conjugate(pstar) * (x - x0))
         return float(np.sum(values))
 
-    def _eval(self, v, func_vals=None, *, sum_values=True):
+    def _eval(self, v: ReadOnlyVector, func_vals: Vector | None=None, *, sum_values: bool=True) -> float | None:
         # See the comment in _conj.
         buf = self._get_scratch('_buf', v)
         try:
@@ -810,7 +1118,7 @@ class IntegralFunctionalBase(Functional):
         finally:
             self._free_scratch('_buf')
 
-    def _conj(self, vstar, func_vals=None, *, sum_values=True):
+    def _conj(self, vstar: ReadOnlyVector, func_vals: Vector | None=None, *, sum_values: bool=True) -> float | None:
         # Using the definition of the conjugate, exterior values are given by
         # the corresponding Taylor extensions.
         buf = self._get_scratch('_buf', vstar)
@@ -876,7 +1184,7 @@ class IntegralFunctionalBase(Functional):
             self._free_scratch('_buf2')
             self._free_scratch('_buf')
 
-    def _subgradient(self, v, out=None):
+    def _subgradient(self, v: ReadOnlyVector, out: Vector | None=None) -> Vector:
         if not self.everywhere_finite:
             self._assert_essential_domain(v, msg="_subgradient")
 
@@ -937,28 +1245,56 @@ class IntegralFunctionalBase(Functional):
                 self._free_scratch("_subgradient_input")
  
     @staticmethod
-    def _at_boundary(x, bound):
-        """Recognize a finite boundary up to floating-point roundoff.
-
+    def _at_boundary(x: ReadOnlyVector, bound: float | np.ndarray) -> np.ndarray:
+        r"""Recognize a finite boundary up to floating-point roundoff.
+        
         Coordinate transformations can move an exact boundary a few ulps
         into the interior. Use a small relative machine-precision tolerance,
         not NumPy's default isclose tolerance or the essential-domain
         tolerance. No absolute floor is used, so small weighted dual bounds
         retain the same relative precision as large ones.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        bound: float | np.ndarray
+            Bound.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
         """
         eps = max(np.finfo(np.result_type(np.asarray(value), 1.)).eps
                   for value in (x, bound))
         return np.isfinite(bound) & np.isclose(x, bound, rtol=8 * eps, atol=0.)
 
-    def dist_subdiff(self, vstar, x, best_approx=None):
-        """Dual distance, optionally writing the projection to best_approx.
-
+    def dist_subdiff(self, vstar: ReadOnlyVector, x: ReadOnlyVector, best_approx: Vector | None=None) -> float:
+        r"""Dual distance, optionally writing the projection to best_approx.
+        
         best_approx must be a pre-allocated vector in self.domain and may
         alias either input. Pointwise hooks return the signed residual
         ``vstar - projection``; active bounds add their normal cones.
         Only points within roundoff of a bound acquire its normal cone from
         the interior. Points just outside a bound, accepted by the
         essential-domain tolerance, also use that bound.
+        
+        Parameters
+        ----------
+        vstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        best_approx: Vector | None [default: None]
+            Writable vector used by this operation.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
         """
         self._validate_out(best_approx)
         self._assert_essential_domain(x, msg='dist_subdiff')
@@ -974,7 +1310,7 @@ class IntegralFunctionalBase(Functional):
             self._copy_vector(vstar - diff, out=best_approx)
         return distance
 
-    def _conj_subgradient(self, vstar, out=None):
+    def _conj_subgradient(self, vstar: ReadOnlyVector, out: Vector | None=None) -> Vector:
         if not self.conj_everywhere_finite:
             self._assert_conj_essential_domain(vstar, msg='_conj_subgradient')
         out = self._prepare_out(out, vstar)
@@ -1026,8 +1362,24 @@ class IntegralFunctionalBase(Functional):
         finally:
             self._free_scratch('_buf2')
 
-    def _conj_dist_subdiff(self, v, xstar, best_approx=None):
-        """Primal distance and optional projection onto the conjugate subdiff."""
+    def _conj_dist_subdiff(self, v: ReadOnlyVector, xstar: ReadOnlyVector, best_approx: Vector | None=None) -> float:
+        r"""Primal distance and optional projection onto the conjugate subdiff.
+        
+        Parameters
+        ----------
+        v: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        xstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        best_approx: Vector | None [default: None]
+            Writable vector used by this operation.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         self._validate_out(best_approx)
         self._assert_conj_essential_domain(xstar, msg='_conj_dist_subdiff')
         diff = self._conj_ptw_dist_subdiff(v, xstar)
@@ -1044,7 +1396,7 @@ class IntegralFunctionalBase(Functional):
             self._copy_vector(v - diff, out=best_approx)
         return distance
 
-    def _hessian(self, v):
+    def _hessian(self, v: ReadOnlyVector) -> Operator:
         if not self.everywhere_finite:
             self._assert_essential_domain(v, msg='_hessian')
         buf = self._get_scratch('_buf', v)
@@ -1072,7 +1424,7 @@ class IntegralFunctionalBase(Functional):
         finally:
             self._free_scratch('_buf')
 
-    def _conj_hessian(self, vstar):
+    def _conj_hessian(self, vstar: ReadOnlyVector) -> Operator:
         if not self.conj_everywhere_finite:
             self._assert_conj_essential_domain(vstar, msg='_conj_hessian')
         buf = self._get_scratch('_buf', vstar)
@@ -1107,7 +1459,7 @@ class IntegralFunctionalBase(Functional):
             self._free_scratch('_buf2')
             self._free_scratch('_buf')
     
-    def _proximal(self, v, tau, mask=None, out=None):
+    def _proximal(self, v: ReadOnlyVector, tau: float, mask: Mask | None=None, out: Vector | None=None) -> Vector:
         out = self._prepare_out(out, v)
         where = self._where(mask, v)
         needs_source = any(
@@ -1179,7 +1531,7 @@ class IntegralFunctionalBase(Functional):
             if source_scratch is not None:
                 self._free_scratch('_prox_input')
     
-    def _conj_proximal(self, vstar, tau, mask=None, out=None):
+    def _conj_proximal(self, vstar: ReadOnlyVector, tau: float, mask: Mask | None=None, out: Vector | None=None) -> Vector:
         out = self._prepare_out(out, vstar)
         where = self._where(mask, vstar)
         needs_source = any(
@@ -1254,22 +1606,38 @@ class IntegralFunctionalBase(Functional):
             if source_scratch is not None:
                 self._free_scratch('_prox_input')
 
-    def _f(self, v, out=None, mask=None, **kwargs):
+    def _f(self, v: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         raise NotImplementedError
     
-    def _f_deriv(self, v, out=None, mask=None, **kwargs):
+    def _f_deriv(self, v: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         raise NotImplementedError
 
-    def _ptw_dist_subdiff(self,vstar, w, **kwargs):
-        """Return the signed residual vstar minus its subdiff projection."""
+    def _ptw_dist_subdiff(self,vstar: ReadOnlyVector, w: Scalar | ArrayLike, **kwargs: Any) -> np.ndarray:
+        r"""Return the signed residual vstar minus its subdiff projection.
+        
+        Parameters
+        ----------
+        vstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        w: Scalar | ArrayLike
+            W.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return vstar-self.subgradient(w, **kwargs)
 
-    def _f_second_deriv(self, v, out=None, mask=None, **kwargs):
+    def _f_second_deriv(self, v: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         raise NotImplementedError
 
-    def _f_prox(self, v, tau, out=None, mask=None, tol=1e-12, abstol=1e-12,
-                maxNewtonIter=15, maxBisecIter=300, maxBoundsIter=100,
-                **kwargs):
+    def _f_prox(self, v: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, tol: float=1e-12, abstol: float=1e-12,
+                maxNewtonIter: int=15, maxBisecIter: int=300, maxBoundsIter: int=100,
+                **kwargs: Any) -> np.ndarray:
         if self.__class__.__dict__.get("_f_deriv") is not None:
             f_second_deriv = self._f_second_deriv if self._f_second_deriv is not None else None
             return self._numerical_prox(
@@ -1280,23 +1648,39 @@ class IntegralFunctionalBase(Functional):
             )
         raise NotImplementedError('Need first derivative for numerical prox operator')
     
-    def _f_conj(self, vstar, out=None, mask=None, **kwargs):
+    def _f_conj(self, vstar: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         raise NotImplementedError
     
-    def _f_conj_deriv(self, vstar, out=None, mask=None, **kwargs):
+    def _f_conj_deriv(self, vstar: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         raise NotImplementedError
 
-    def _conj_ptw_dist_subdiff(self, v, wstar, **kwargs):
-        """Return v minus its projection onto the conjugate subdifferential."""
+    def _conj_ptw_dist_subdiff(self, v: ReadOnlyVector, wstar: ReadOnlyVector, **kwargs: Any) -> np.ndarray:
+        r"""Return v minus its projection onto the conjugate subdifferential.
+        
+        Parameters
+        ----------
+        v: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        wstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return v-self.conj.subgradient(wstar, **kwargs)
 
-    def _f_conj_second_deriv(self, vstar, out=None, mask=None, **kwargs):
+    def _f_conj_second_deriv(self, vstar: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         raise NotImplementedError
 
-    def _f_conj_prox(self, vstar, tau, out=None, mask=None,
-                     tol=1e-12, abstol=1e-12,
-                     maxNewtonIter=15, maxBisecIter=300, maxBoundsIter=100,
-                     **kwargs):
+    def _f_conj_prox(self, vstar: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None,
+                     tol: float=1e-12, abstol: float=1e-12,
+                     maxNewtonIter: int=15, maxBisecIter: int=300, maxBoundsIter: int=100,
+                     **kwargs: Any) -> np.ndarray:
         if self.__class__.__dict__.get("_f_conj_deriv") is not None:
             f_conj_second_deriv = (
                 self._f_conj_second_deriv
@@ -1314,40 +1698,59 @@ class IntegralFunctionalBase(Functional):
             'Need first derivative of conjugate functional for numerical conjugate prox operator'
         )
 
-    def _numerical_prox(self, y, tau, fp, fpp, dom_l, dom_u,
-                        start=None, ub=None, lb=None, out=None, mask=None,
-                        tol=1e-15, abstol=1e-15,
-                        maxNewtonIter=15, maxBisecIter=300,
-                        maxBoundsIter=100, **kwargs):
-        """Vectorized proximal operator of a smooth convex scalar function
+    def _numerical_prox(self, y: ReadOnlyVector, tau: float, fp: Callable[..., np.ndarray], fpp: Callable[..., np.ndarray], dom_l: float | ReadOnlyVector, dom_u: float | ReadOnlyVector,
+                        start: np.ndarray | None=None, ub: float | ReadOnlyVector | None=None, lb: float | ReadOnlyVector | None=None, out: Vector | None=None, mask: Mask | None=None,
+                        tol: float=1e-15, abstol: float=1e-15,
+                        maxNewtonIter: int=15, maxBisecIter: int=300,
+                        maxBoundsIter: int=100, **kwargs: Any) -> np.ndarray:
+        r"""Vectorized proximal operator of a smooth convex scalar function
         implemented by Newton's method with automatic fallback to bisection.
-
+        
         Parameters
         ----------
-        y : np.ndarray
+        y: ReadOnlyVector
             Input array.
-        tau : float
+        tau: float
             Prox parameter (>0).
-        f, fp, fpp : callables
+        fp: Callable[..., np.ndarray]
             f, f', f'' (accept NumPy arrays).
-        dom_l, dom_u : floats
+        fpp: Callable[..., np.ndarray]
+            f, f', f'' (accept NumPy arrays).
+        dom_l: float | ReadOnlyVector
             Domain bounds (can be -np.inf, np.inf).
-        start: np.ndarray or None
+        dom_u: float | ReadOnlyVector
+            Domain bounds (can be -np.inf, np.inf).
+        start: np.ndarray | None [default: None]
             starting point
-        out: np.ndarray or None
-            If not None, this is used as the iterate and is returned
-        mask: np.ndarray[bool] or None
-            If not None, this specifies the subset of entries to which 
-            the Newton-bisection method is applied 
-        lb,ub: np.ndarray or None
+        ub: float | ReadOnlyVector | None [default: None]
             guesses for lower and upper bounds on solution (must not be valid!)
-        tol : float
+        lb: float | ReadOnlyVector | None [default: None]
+            guesses for lower and upper bounds on solution (must not be valid!)
+        out: Vector | None [default: None]
+            If not None, this is used as the iterate and is returned
+        mask: Mask | None [default: None]
+            If not None, this specifies the subset of entries to which 
+            the Newton-bisection method is applied
+        tol: float [default: 1e-15]
             Root-finding tolerance for Newton/bisection.
-        maxiter : int
-            Max Newton iterations before falling back.
-        **kwargs:
+        abstol: float [default: 1e-15]
+            Absolute tolerance.
+        maxNewtonIter: int [default: 15]
+            Maxnewtoniter.
+        maxBisecIter: int [default: 300]
+            Maxbiseciter.
+        maxBoundsIter: int [default: 100]
+            Maxboundsiter.
+        **kwargs: Any
             Passed to f,fp and fpp
-
+        
+        Other Parameters
+        ----------------
+        f: callables
+            f, f', f'' (accept NumPy arrays).
+        maxiter: int
+            Max Newton iterations before falling back.
+        
         Returns
         -------
         out : ndarray
@@ -1385,7 +1788,24 @@ class IntegralFunctionalBase(Functional):
         tmp = np.empty_like(y)
         candidate = np.empty_like(y)
 
-        def residual(z, result, active):
+        def residual(z: ReadOnlyVector, result: np.ndarray, active: np.ndarray) -> np.ndarray:
+            r"""Residual.
+            
+            Parameters
+            ----------
+            z: ReadOnlyVector
+                Input vector; its coefficients are only read.
+            result: np.ndarray
+                Result.
+            active: np.ndarray
+                Active.
+            
+            
+            Returns
+            -------
+            np.ndarray
+                Computed array.
+            """
             fp(z, out=result, mask=active, **kwargs)
             np.subtract(z, y_input, out=tmp, where=active)
             np.divide(tmp, tau, out=tmp, where=active)
@@ -1579,23 +1999,41 @@ class IntegralFunctionalBase(Functional):
         return x
     
 class LppPower(IntegralFunctionalBase):
-    r"""
-    Implements the norm power functional :math:`v\mapsto \frac{1}{p} \|v\|_{L^p}^p` power on some domain in `regpy.vecsps.MeasureSpaceFcts`
+    r"""Implements the norm power functional :math:`v\mapsto \frac{1}{p} \|v\|_{L^p}^p` power on some domain in `regpy.vecsps.MeasureSpaceFcts`
     as an integral functional. This corresponds to the function :math:`f(v):=\frac{1}{p}|v|^p`.
-
+    
     Parameters
     ----------
-    domain : `regpy.vecsps.MeasureSpaceFcts`
+    domain: MeasureSpaceFcts
         Domain on which it is defined. Needs some Measure therefore a `regpy.vecsps.MeasureSpaceFcts`
-    p: float >1 [option]
+    p: float [default: 2.0]
         exponent
-    constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
-        see IntegralFunctional  
+    constr_l: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    constr_u: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    lin_taylor_l: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    lin_taylor_u: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    quad_taylor_l: float | ReadOnlyVector | None [default: None]
+        Lower threshold for a quadratic extension; None disables this extension.
+    quad_taylor_u: float | ReadOnlyVector | None [default: None]
+        Upper threshold for a quadratic extension; None disables this extension.
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
     """
 
     @property
     def is_strictly_convex(self) -> bool:
-        """Strict convexity without linear tails; constraints are allowed."""
+        r"""Strict convexity without linear tails; constraints are allowed.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return bool(
             True
             and self.lin_taylor_l is None
@@ -1604,10 +2042,16 @@ class LppPower(IntegralFunctionalBase):
 
     @property
     def conj_is_strictly_convex(self) -> bool:
-        """Strict convexity of the conjugate without primal hard constraints.
-
+        r"""Strict convexity of the conjugate without primal hard constraints.
+        
         Primal constraints can generate affine tails in the conjugate.
         Linear primal extensions instead restrict its essential domain.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
         """
         return bool(
             True
@@ -1615,10 +2059,17 @@ class LppPower(IntegralFunctionalBase):
             and self.constr_u is None
         )
 
-    def __init__(self, domain, p=2.,
-                 constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
-                  quad_taylor_l=None, quad_taylor_u=None,
-                 **kwargs):       
+    def __init__(self, 
+                domain: MeasureSpaceFcts, 
+                p: float=2.,
+                constr_l: float | ReadOnlyVector | None=None, 
+                constr_u: float | ReadOnlyVector | None=None, 
+                lin_taylor_l: float | ReadOnlyVector | None=None, 
+                lin_taylor_u: float | ReadOnlyVector | None=None,
+                quad_taylor_l: float | ReadOnlyVector | None=None, 
+                quad_taylor_u: float | ReadOnlyVector | None=None,
+                **kwargs: Any
+                ) -> None:       
         if not np.isscalar(p): raise TypeError(Errors.not_instance(p,float,f"p in Lpp functional can only be a scalar. not {p} of type {type(p)}."))
         if p<= 1: raise ValueError(Errors.value_error(f"p in Lpp functional has to be bigger than one. was given p = {p}", self))
         self.p = p
@@ -1632,12 +2083,28 @@ class LppPower(IntegralFunctionalBase):
                          )
 
     @property
-    def is_norm_squared_type(self):
+    def is_norm_squared_type(self) -> bool:
+        r"""Whether the functional is norm squared type.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.p==2 and all([x is None for x in (self.constr_l, self.lin_taylor_l, self.quad_taylor_l,
                                                       self.constr_u, self.lin_taylor_u, self.quad_taylor_u)])
 
     @property
-    def Lipschitz(self):
+    def Lipschitz(self) -> float:
+        r"""Lipschitz.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         taylor_l = -np.inf if self.lin_taylor_l is None else self.lin_taylor_l
         if self.quad_taylor_l is not None:
             taylor_l = self.quad_taylor_l
@@ -1656,7 +2123,15 @@ class LppPower(IntegralFunctionalBase):
         return np.max([Lip,self._Lipschitz_exterior])
 
     @property
-    def convexity_param(self):
+    def convexity_param(self) -> float:
+        r"""Convexity param.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         dom2_l, dom2_u = self.dom_l, self.dom_u
         taylor_l = -np.inf if self.lin_taylor_l is None else self.lin_taylor_l
         if self.quad_taylor_l is not None:
@@ -1677,7 +2152,7 @@ class LppPower(IntegralFunctionalBase):
             conv = 1. if self.lin_taylor_l is None and self.lin_taylor_u is None else 0.
         return np.min([conv,self._convexity_param_exterior])
 
-    def _f(self, v, out=None, mask=None, **kwargs):
+    def _f(self, v: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = np.abs(v)**self.p/self.p
         where = self._where(mask, v)
         out = self._prepare_out(out, v)
@@ -1686,7 +2161,7 @@ class LppPower(IntegralFunctionalBase):
         np.divide(out, self.p, out=out, where=where)
         return out
     
-    def _f_deriv(self, v, out=None, mask=None, **kwargs):
+    def _f_deriv(self, v: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = np.abs(v)**(self.p-1)*np.sign(v)
         where = self._where(mask, v)
         out = self._prepare_out(out, v)
@@ -1700,7 +2175,7 @@ class LppPower(IntegralFunctionalBase):
             self._free_scratch('_aux')
         return out
     
-    def _f_second_deriv(self, v, out=None, mask=None, **kwargs):
+    def _f_second_deriv(self, v: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = (self.p-1)*np.abs(v)**(self.p-2)
         where = self._where(mask, v)
         out = self._prepare_out(out, v)
@@ -1709,7 +2184,7 @@ class LppPower(IntegralFunctionalBase):
         np.multiply(out, self.p - 1, out=out, where=where)
         return out
     
-    def _f_prox(self, v, tau, out=None, mask=None, **kwargs):
+    def _f_prox(self, v: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, v)
         out = self._prepare_out(out, v)
         if self.p == 2:
@@ -1722,7 +2197,7 @@ class LppPower(IntegralFunctionalBase):
             maxBoundsIter=300, **kwargs
         )
     
-    def _f_conj(self, vstar, out=None, mask=None, **kwargs):
+    def _f_conj(self, vstar: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = np.abs(vstar)**self.q/self.q
         where = self._where(mask, vstar)
         out = self._prepare_out(out, vstar)
@@ -1731,7 +2206,7 @@ class LppPower(IntegralFunctionalBase):
         np.divide(out, self.q, out=out, where=where)
         return out
 
-    def _f_conj_deriv(self, vstar, out=None, mask=None, **kwargs):
+    def _f_conj_deriv(self, vstar: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = np.abs(vstar)**(self.q-1)*np.sign(vstar)
         where = self._where(mask, vstar)
         out = self._prepare_out(out, vstar)
@@ -1745,7 +2220,7 @@ class LppPower(IntegralFunctionalBase):
             self._free_scratch('_aux')
         return out
     
-    def _f_conj_second_deriv(self, vstar, out=None, mask=None, **kwargs):
+    def _f_conj_second_deriv(self, vstar: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = (self.q-1)*np.abs(vstar)**(self.q-2)
         where = self._where(mask, vstar)
         out = self._prepare_out(out, vstar)
@@ -1754,7 +2229,7 @@ class LppPower(IntegralFunctionalBase):
         np.multiply(out, self.q - 1, out=out, where=where)
         return out
     
-    def _f_conj_prox(self, v_star, tau, out=None, mask=None, **kwargs):
+    def _f_conj_prox(self, v_star: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, v_star)
         out = self._prepare_out(out, v_star)
         if self.p == 2:
@@ -1769,21 +2244,43 @@ class LppPower(IntegralFunctionalBase):
 
 class Quadratic(IntegralFunctionalBase):
     r"""Quadratic functional :math:`v\mapsto \int\frac{a}{2}v(x)^2+b(x)v(x)+c(x)dx` on some domain in `regpy.vecsps.MeasureSpaceFcts` as an integral functional.
-
+    
     Parameters
     ----------
-    domain : `regpy.vecsps.MeasureSpaceFcts`
+    domain: MeasureSpaceFcts
         Domain on which it is defined. Needs some Measure therefore a `regpy.vecsps.MeasureSpaceFcts`
-    a,b,c: scalar or domain element
-        Coefficients of the quadratic functional. Defaults are 1., 0., and 0., respectively. If scalar, they are broadcasted to the shape of the domain.         
-    constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
-        see IntegralFunctional  
+    a: float [default: 1.0]
+        First coefficient of the quadratic functional.  If scalar, it is broadcasted to the shape of the domain.
+    b: float [default: 0.0]
+        Second coefficient of the quadratic functional. 
+    c: float [default: 0.0]
+        Third coefficient of the quadratic functional.
+    constr_l: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    constr_u: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    lin_taylor_l: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    lin_taylor_u: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    quad_taylor_l: float | ReadOnlyVector | None [default: None]
+        Lower threshold for a quadratic extension; None disables this extension.
+    quad_taylor_u: float | ReadOnlyVector | None [default: None]
+        Upper threshold for a quadratic extension; None disables this extension.
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
     """
-    def __init__(self, domain,
-                 a=1., b=0., c=0.,
-                 constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
-                 quad_taylor_l=None, quad_taylor_u=None,
-                 **kwargs):
+    def __init__(self, 
+                 domain: MeasureSpaceFcts,
+                 a: float=1., b: float=0., c: float=0.,
+                 constr_l: float | ReadOnlyVector | None=None, 
+                 constr_u: float | ReadOnlyVector | None=None, 
+                 lin_taylor_l: float | ReadOnlyVector | None=None, 
+                 lin_taylor_u: float | ReadOnlyVector | None=None,
+                 quad_taylor_l: float | ReadOnlyVector | None=None, 
+                 quad_taylor_u: float | ReadOnlyVector | None=None,
+                 **kwargs: Any
+                 ) -> None:
         if not np.isscalar(a) and a not in domain:
             raise ValueError(Errors.value_error(f'a needs to be either scalar or an element of the domain. Given a: {a} of type {type(a)}', self))
         self._a = np.broadcast_to(a, domain.shape) if np.isscalar(a) else a
@@ -1801,12 +2298,25 @@ class Quadratic(IntegralFunctionalBase):
                          )
     def bregman_func(self, y: ReadOnlyVector,
                      ystar: ReadOnlyVector | None = None) -> Functional:
-        """Return a Quadratic with the Bregman affine correction.
-
+        r"""Return a Quadratic with the Bregman affine correction.
+        
         Constraints, extensions, measure, and data metadata are preserved.
         The dual subgradient is divided by the integration measure to obtain
         its pointwise density. Constants are subtracted pointwise, before
         integration, rather than distributed from a global functional value.
+        
+        Parameters
+        ----------
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
         """
         if not self.is_convex:
             return super().bregman_func(y, ystar)
@@ -1823,28 +2333,46 @@ class Quadratic(IntegralFunctionalBase):
         return result
 
 
-    def _arithmetic_copy(self):
-        """Copy mutable state without cloning the domain or Hilbert geometry."""
+    def _arithmetic_copy(self) -> Quadratic:
+        r"""Copy mutable state without cloning the domain or Hilbert geometry.
+        
+        
+        Returns
+        -------
+        Quadratic
+            Constructed functional.
+        """
         result = deepcopy(self, {id(self.domain): self.domain,
                                  id(self.h_domain): self.h_domain})
         result.__dict__.pop('conj', None)
         return result
 
-    def _refresh_quadratic(self):
+    def _refresh_quadratic(self) -> None:
         self._precompute_f_l()
         self._precompute_f_u()
 
-    def __mul__(self, other):
+    def __mul__(self, other: float | Functional) -> Functional | NotImplementedType:
         if np.isscalar(other):
             return self.__rmul__(other)
         return super().__mul__(other)
 
-    def __rmul__(self, other):
-        """Scale coefficients, preserving compatible constraints and tails.
-
+    def __rmul__(self, other: float | Functional) -> Functional | NotImplementedType:
+        r"""Scale coefficients, preserving compatible constraints and tails.
+        
         Nonpositive scaling with constraints or extensions uses the generic
         representation, whose extended-real semantics cannot in general be
         represented by the convex quadratic extension machinery.
+        
+        Parameters
+        ----------
+        other: float | Functional
+            Other.
+        
+        
+        Returns
+        -------
+        Functional | NotImplementedType
+            Result described above.
         """
         if not np.isscalar(other) or not np.isrealobj(other):
             return NotImplemented
@@ -1861,8 +2389,20 @@ class Quadratic(IntegralFunctionalBase):
         result._refresh_quadratic()
         return result
 
-    def __imul__(self, other):
-        """Scale in place when the result remains a Quadratic."""
+    def __imul__(self, other: float | Functional) -> Self:
+        r"""Scale in place when the result remains a Quadratic.
+        
+        Parameters
+        ----------
+        other: float | Functional
+            Other.
+        
+        
+        Returns
+        -------
+        Self
+            Result described above.
+        """
         result = self.__rmul__(other)
         if not isinstance(result, Quadratic):
             return result
@@ -1873,15 +2413,26 @@ class Quadratic(IntegralFunctionalBase):
             self.__dict__['conj'] = conjugate
         return self
 
-    def __add__(self, other):
-        """Add a constant, linear functional, or compatible quadratic.
-
+    def __add__(self, other: float | Functional) -> Functional | NotImplementedType:
+        r"""Add a constant, linear functional, or compatible quadratic.
+        
         Constants are functional values, so their pointwise density is
         divided by the total measure. A linear functional's dual gradient
         is divided pointwise by the measure. Without extensions, constraint
         intervals are intersected. Matching extensions are preserved;
         incompatible extension joins or empty intersections fall back to
         LinearCombination.
+        
+        Parameters
+        ----------
+        other: float | Functional
+            Other.
+        
+        
+        Returns
+        -------
+        Functional | NotImplementedType
+            Result described above.
         """
         if np.isscalar(other):
             if not np.isrealobj(other):
@@ -1938,16 +2489,30 @@ class Quadratic(IntegralFunctionalBase):
         result._refresh_quadratic()
         return result
 
-    def __radd__(self, other):
+    def __radd__(self, other: float | Functional) -> Functional | NotImplementedType:
         return self.__add__(other)
 
     @property
     def data(self) -> ReadOnlyVector:
-        """Current data shift, exposed read-only."""
+        r"""Current data shift, exposed read-only.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector
+            Read-only vector view.
+        """
         return self.domain.read_only(self._data)
 
     @data.setter
     def data(self, value: ReadOnlyVector | None) -> None:
+        r"""Data.
+        
+        Parameters
+        ----------
+        value: ReadOnlyVector | None
+            Input vector; its coefficients are only read.
+        """
         if value is not None and value not in self.domain:
             raise ValueError("Quadratic data must be an element of its domain.")
         old = getattr(self, '_data', self.domain.zeros())
@@ -1970,18 +2535,31 @@ class Quadratic(IntegralFunctionalBase):
         self._precompute_f_u()
 
     @data.deleter
-    def data(self):
+    def data(self) -> None:
+        r"""Data.
+        """
         self.data = None
 
     def as_data_func(self, data: ReadOnlyVector | None = None) -> "Quadratic":
-        """Shift by data in place and return this Quadratic instance.
-
+        r"""Shift by data in place and return this Quadratic instance.
+        
         For an unshifted polynomial a*x**2/2+b*x+c, the shifted coefficients
         are b-a*data and c-b*data+a*data**2/2. All constraints and extension
         points are translated by data as well. Subsequent calls replace the
         previous data shift. None preserves an existing shift, or installs
         zero data on a functional that is not yet a data functional.
         Assigning data=None or deleting data removes the shift.
+        
+        Parameters
+        ----------
+        data: ReadOnlyVector | None [default: None]
+            Observed data.
+        
+        
+        Returns
+        -------
+        Quadratic
+            Constructed functional.
         """
         if data is not None:
             self.data = data
@@ -1990,63 +2568,148 @@ class Quadratic(IntegralFunctionalBase):
         return self
 
     @property
-    def a(self):
+    def a(self) -> np.ndarray:
+        r"""A.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._a
     
     @a.setter
-    def a(self, value):
+    def a(self, value: Scalar | ArrayLike) -> None:
+        r"""A.
+        
+        Parameters
+        ----------
+        value: Scalar | ArrayLike
+            Value.
+        """
         if not np.isscalar(value) and value not in self.domain:
             raise ValueError(Errors.value_error(f'a needs to be either scalar or an element of the domain. Given a: {value} of type {type(value)}', self))
         self._a = np.broadcast_to(value, self.domain.shape) if np.isscalar(value) else value    
         self._precompute_f_l(); self._precompute_f_u()
         
     @property
-    def b(self):
+    def b(self) -> np.ndarray:
+        r"""B.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._b
 
     @b.setter
-    def b(self, value): 
+    def b(self, value: Scalar | ArrayLike) -> None: 
+        r"""B.
+        
+        Parameters
+        ----------
+        value: Scalar | ArrayLike
+            Value.
+        """
         if not np.isscalar(value) and value not in self.domain:
             raise ValueError(Errors.value_error(f'b needs to be either scalar or an element of the domain. Given b: {value} of type {type(value)}', self))
         self._b = np.broadcast_to(value, self.domain.shape) if np.isscalar(value) else value    
         self._precompute_f_l(); self._precompute_f_u()
 
     @property
-    def c(self):
+    def c(self) -> np.ndarray:
+        r"""C.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return self._c
 
     @c.setter
-    def c(self, value):
+    def c(self, value: Scalar | ArrayLike) -> None:
+        r"""C.
+        
+        Parameters
+        ----------
+        value: Scalar | ArrayLike
+            Value.
+        """
         if not np.isscalar(value) and value not in self.domain:
             raise ValueError(Errors.value_error(f'c needs to be either scalar or an element of the domain. Given c: {value} of type {type(value)}', self))
         self._c = np.broadcast_to(value, self.domain.shape) if np.isscalar(value) else value    
         self._precompute_f_l(); self._precompute_f_u()
 
     @property
-    def Lipschitz(self):
+    def Lipschitz(self) -> float:
+        r"""Lipschitz.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return max([self._Lipschitz_exterior,np.max(np.abs(self._a))]) 
     
     @property
-    def convexity_param(self):
+    def convexity_param(self) -> float:
+        r"""Convexity param.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return min([self._convexity_param_exterior,np.min(self._a)])
     
     @property
-    def is_convex(self):
+    def is_convex(self) -> bool:
+        r"""Whether the functional is convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.convexity_param>=0
     
     @property
-    def conj_is_quadratic(self):
+    def conj_is_quadratic(self) -> bool:
+        r"""Conj is quadratic.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return (np.min(self.a)>0)
      
     @property
-    def is_norm_squared_type(self):
+    def is_norm_squared_type(self) -> bool:
+        r"""Whether the functional is norm squared type.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         a0 = self.a.flat[0]
         return (a0>0 and np.allclose(self.a, a0) and
                 all([x is None for x in (self.constr_l, self.lin_taylor_l, self.quad_taylor_l,
                                          self.constr_u, self.lin_taylor_u, self.quad_taylor_u)])             
                )
    
-    def _f(self, v, out=None, mask=None, **kwargs):
+    def _f(self, v: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = 0.5*self._a*v**2 + self._b*v + self._c
         where = self._where(mask, v)
         out = self._prepare_out(out, v)
@@ -2067,7 +2730,7 @@ class Quadratic(IntegralFunctionalBase):
                 self._free_scratch('_aux')
         return out
     
-    def _f_deriv(self, v, out=None, mask=None, **kwargs):
+    def _f_deriv(self, v: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = a*v +b
         where = self._where(mask, v)
         out = self._prepare_out(out, v)
@@ -2075,13 +2738,13 @@ class Quadratic(IntegralFunctionalBase):
         np.add(out, self._b, out=out, where=where)
         return out
     
-    def _f_second_deriv(self, v, out=None, mask=None, **kwargs):
+    def _f_second_deriv(self, v: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, v)
         out = self._prepare_out(out, v)
         np.copyto(out, self._a, where=where)
         return out
     
-    def _f_prox(self, v, tau, out=None, mask=None, **kwargs):
+    def _f_prox(self, v: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = (v - tau*b) / (1. + tau*a)
         where = self._where(mask, v)
         out = self._prepare_out(out, v)
@@ -2096,7 +2759,7 @@ class Quadratic(IntegralFunctionalBase):
             self._free_scratch('_aux')
         return out
     
-    def _f_conj(self, v_star, out=None, mask=None, **kwargs):
+    def _f_conj(self, v_star: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = 0.5*(v_star - b)**2 / a - c
         if np.min(self.a) <= 0:
             raise ValueError(Errors.value_error(
@@ -2111,7 +2774,7 @@ class Quadratic(IntegralFunctionalBase):
         np.subtract(out, self._c, out=out, where=where)
         return out
 
-    def _f_conj_deriv(self, v_star, out=None, mask=None, **kwargs):
+    def _f_conj_deriv(self, v_star: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         #  out = (v_star - b) / a
         if np.min(self.a) <= 0:
             raise ValueError(Errors.value_error(
@@ -2123,7 +2786,7 @@ class Quadratic(IntegralFunctionalBase):
         np.divide(out, self._a, out=out, where=where)
         return out
     
-    def _f_conj_second_deriv(self, v_star, out=None, mask=None, **kwargs):
+    def _f_conj_second_deriv(self, v_star: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         if np.min(self.a) <= 0:
             raise ValueError(Errors.value_error(
                 f'Conjugate of quadratic functional is only quadratic if a is positive. Given a: {self.a}', self
@@ -2133,7 +2796,7 @@ class Quadratic(IntegralFunctionalBase):
         np.divide(1., self._a, out=out, where=where)
         return out
         
-    def _f_conj_prox(self, v_star, tau, out=None, mask=None, **kwargs):
+    def _f_conj_prox(self, v_star: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out =  (a* v_star + tau*b) / (a + tau)
         if np.min(self.a) <= 0:
             raise ValueError(Errors.value_error(
@@ -2154,17 +2817,29 @@ class Quadratic(IntegralFunctionalBase):
 
 class L1MeasureSpace(IntegralFunctionalBase):
     r""":math:`L ^1` Functional on `MeasureSpace`. Proximal implemented for default :math:`L^2` as `h_domain`.
-
+    
     Parameters
     ----------
-    domain : regpy.vecsps.MeasureSpaceFcts
+    domain: MeasureSpaceFcts
         Domain on which to define the generic L1.
-    constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
+    constr_l: float | ReadOnlyVector | None [default: None]
         see IntegralFunctional
+    constr_u: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    lin_taylor_l: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    lin_taylor_u: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    quad_taylor_l: float | ReadOnlyVector | None [default: None]
+        Lower threshold for a quadratic extension; None disables this extension.
+    quad_taylor_u: float | ReadOnlyVector | None [default: None]
+        Upper threshold for a quadratic extension; None disables this extension.
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
     """
-    def __init__(self, domain,
-                constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
-                quad_taylor_l=None, quad_taylor_u=None, **kwargs):
+    def __init__(self, domain: MeasureSpaceFcts,
+                constr_l: float | ReadOnlyVector | None=None, constr_u: float | ReadOnlyVector | None=None, lin_taylor_l: float | ReadOnlyVector | None=None, lin_taylor_u: float | ReadOnlyVector | None=None,
+                quad_taylor_l: float | ReadOnlyVector | None=None, quad_taylor_u: float | ReadOnlyVector | None=None, **kwargs: Any) -> None:
 
         super().__init__(domain,conj_nat_dom_u=1.,conj_nat_dom_l=-1.,
                          constr_l=constr_l,constr_u=constr_u,lin_taylor_l=lin_taylor_l,lin_taylor_u=lin_taylor_u,
@@ -2172,19 +2847,19 @@ class L1MeasureSpace(IntegralFunctionalBase):
                          **kwargs
                          )
 
-    def _f(self, v, out=None, mask=None, **kwargs):
+    def _f(self, v: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, v)
         out = self._prepare_out(out, v)
         np.abs(v, out=out, where=where)
         return out
 
-    def _f_deriv(self, v, out=None, mask=None, **kwargs):
+    def _f_deriv(self, v: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, v)
         out = self._prepare_out(out, v)
         np.sign(v, out=out, where=where)
         return out
 
-    def _f_second_deriv(self, v, out=None, mask=None, **kwargs):
+    def _f_second_deriv(self, v: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, v)
         if np.any(where & (v == 0)):
             raise NotTwiceDifferentiableError('L1')
@@ -2192,7 +2867,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
         np.copyto(out, 0., where=where)
         return out
 
-    def _f_prox(self, v, tau, out=None, mask=None, **kwargs):
+    def _f_prox(self, v: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = np.maximum(0, np.abs(v)-tau)*np.sign(v)
         where = self._where(mask, v)
         out = self._prepare_out(out, v)
@@ -2207,7 +2882,7 @@ class L1MeasureSpace(IntegralFunctionalBase):
             self._free_scratch('_aux')
         return out
 
-    def _f_conj(self, v_star, out=None, mask=None, **kwargs):
+    def _f_conj(self, v_star: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = 0 if abs(v_star) <= 1, and np.inf otherwise
         where = self._where(mask, v_star)
         out = self._prepare_out(out, v_star)
@@ -2217,33 +2892,33 @@ class L1MeasureSpace(IntegralFunctionalBase):
         np.copyto(out, np.inf, where=outside)
         return out
     
-    def _f_conj_deriv(self, v_star, out=None, mask=None, **kwargs):
+    def _f_conj_deriv(self, v_star: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, v_star)
         out = self._prepare_out(out, v_star)
         np.copyto(out, 0., where=where)
         return out
 
-    def _f_conj_second_deriv(self, v_star, out=None, mask=None, **kwargs):
+    def _f_conj_second_deriv(self, v_star: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, v_star)
         out = self._prepare_out(out, v_star)
         np.copyto(out, 0., where=where)
         return out
 
-    def _f_conj_prox(self, vstar, tau, out=None, mask=None, **kwargs):
+    def _f_conj_prox(self, vstar: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, vstar)
         out = self._prepare_out(out, vstar)
         np.maximum(vstar, -1., out=out, where=where)
         np.minimum(out, 1., out=out, where=where)
         return out
 
-    def _ptw_dist_subdiff(self, vstar, x):
+    def _ptw_dist_subdiff(self, vstar: ReadOnlyVector, x: ReadOnlyVector) -> np.ndarray:
         diff = vstar - self.subgradient(x)
         zeroind = (x==0)
         diff[zeroind] = (np.sign(vstar[zeroind])
                          * np.maximum(np.abs(vstar[zeroind])-self.measure[zeroind],0.))
         return diff
 
-    def _conj_ptw_dist_subdiff(self, v, xstar):
+    def _conj_ptw_dist_subdiff(self, v: ReadOnlyVector, xstar: ReadOnlyVector) -> np.ndarray:
         w = v.copy()
         ind = np.where((xstar >= self.measure)
                        | self._at_boundary(xstar, self.measure))
@@ -2255,30 +2930,49 @@ class L1MeasureSpace(IntegralFunctionalBase):
 
 class KullbackLeibler(IntegralFunctionalBase):
     r"""Kullback-Leiber divergence defined by
-
+    
     .. math::
         F_w(u) = KL(w,u) = \int (u(x) -w(x) - w(x)\ln \frac{u(x)}{w(x)}) \mathrm{d}x
-
-
+    
+    
     Parameters
     ----------
-    domain : regpy.vecsps.MeasureSpaceFcts
+    domain: MeasureSpaceFcts
         Domain on which to define the Kullback-Leibler divergence
-    w: domain or scalar or None (default: None) 
-        First argument of Kullback-Leibler divergence. In the case of None, w is set to zero. If w is scalar, it is broadcasted to the shape of the domain. 
-    constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, np.isscalar or np.ndarray
+    w: Scalar | ArrayLike | None [default: None]
+        First argument of Kullback-Leibler divergence. In the case of None, w is set to zero. If w is scalar, it is broadcasted to the shape of the domain.
+    constr_l: float | ReadOnlyVector | None [default: None]
         see IntegralFunctional
-    data: explcitly declared data (default:None) 
+    constr_u: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    lin_taylor_l: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    lin_taylor_u: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    quad_taylor_l: float | ReadOnlyVector | None [default: None]
+        Lower threshold for a quadratic extension; None disables this extension.
+    quad_taylor_u: float | ReadOnlyVector | None [default: None]
+        Upper threshold for a quadratic extension; None disables this extension.
+    data: ReadOnlyVector | None [default: None]
         If data is given, then w is w+data; if the parameter w is not given, then w is just the data.
-    omit_normalization:bool (default:False)
+    omit_normalization: bool [default: False]
         If true, the term :math:`w(x)\ln w(x)` is omitted in the definition of F_w. (Then :math:`F_w(w)\neq 0`.)
         This is sometimes done if KullbackLeibler is used as Poisson log-likelihood since the omitted term is not well-defined for 
-        a continuous Poisson process, and it is irrelevant and large for large discrete data. 
+        a continuous Poisson process, and it is irrelevant and large for large discrete data.
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
     """
 
     @property
     def is_strictly_convex(self) -> bool:
-        """Strict convexity without linear tails; constraints are allowed."""
+        r"""Strict convexity without linear tails; constraints are allowed.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return bool(
             np.all(self.w > 0)
             and self.lin_taylor_l is None
@@ -2287,10 +2981,16 @@ class KullbackLeibler(IntegralFunctionalBase):
 
     @property
     def conj_is_strictly_convex(self) -> bool:
-        """Strict convexity of the conjugate without primal hard constraints.
-
+        r"""Strict convexity of the conjugate without primal hard constraints.
+        
         Primal constraints can generate affine tails in the conjugate.
         Linear primal extensions instead restrict its essential domain.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
         """
         return bool(
             np.all(self.w > 0)
@@ -2298,11 +2998,11 @@ class KullbackLeibler(IntegralFunctionalBase):
             and self.constr_u is None
         )
 
-    def __init__(self, domain, w=None,
-                 constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
-                 quad_taylor_l=None, quad_taylor_u=None, data = None,
+    def __init__(self, domain: MeasureSpaceFcts, w: Scalar | ArrayLike | None=None,
+                 constr_l: float | ReadOnlyVector | None=None, constr_u: float | ReadOnlyVector | None=None, lin_taylor_l: float | ReadOnlyVector | None=None, lin_taylor_u: float | ReadOnlyVector | None=None,
+                 quad_taylor_l: float | ReadOnlyVector | None=None, quad_taylor_u: float | ReadOnlyVector | None=None, data: ReadOnlyVector | None = None,
                  omit_normalization:bool = False,
-                 **kwargs):
+                 **kwargs: Any) -> None:
         if(w is None):
             w=0.
         if w in domain:
@@ -2334,13 +3034,28 @@ class KullbackLeibler(IntegralFunctionalBase):
         
 
     @property
-    def w(self):
+    def w(self) -> np.ndarray:
+        r"""w.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         if self.is_data_func:
             return self._w + self.data
         else:
             return self._w
     @w.setter
-    def w(self, new_w):
+    def w(self, new_w: ReadOnlyVector) -> None:
+        r"""w -- first (fixed) argument of KL.
+        
+        Parameters
+        ----------
+        new_w: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        """
         if new_w in self.domain or (isinstance(new_w, (int,float,np.floating,np.integer))): 
             if new_w in self.domain:
                 self._w = new_w.copy()
@@ -2354,10 +3069,25 @@ class KullbackLeibler(IntegralFunctionalBase):
 
     @property
     def data(self) -> ReadOnlyVector:
+        r"""Data.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector
+            Read-only vector view.
+        """
         return self.domain.read_only(self._data)
     
     @data.setter
-    def data(self, new_data):
+    def data(self, new_data: ReadOnlyVector) -> None:
+        r"""Data.
+        
+        Parameters
+        ----------
+        new_data: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        """
         if new_data is None:
             self.is_data_func = False
             if self.is_data_func:
@@ -2373,18 +3103,41 @@ class KullbackLeibler(IntegralFunctionalBase):
             raise ValueError(Errors.not_in_vecsp(new_data,self.domain,vec_name="new data vector",space_name="domain of functional"))
         
     @data.deleter
-    def data(self):
+    def data(self) -> None:
+        r"""Data.
+        """
         if self.is_data_func:
             del self._data
             self.is_data_func = False
             self._precompute_f_l(); self._precompute_f_u()
 
-    def as_data_func(self,data) -> Functional:
+    def as_data_func(self,data: ReadOnlyVector) -> Functional:
+        r"""As data func.
+        
+        Parameters
+        ----------
+        data: ReadOnlyVector
+            Observed data.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
         self.data=data
         return self
 
     @property
-    def Lipschitz(self):
+    def Lipschitz(self) -> float:
+        r"""Lipschitz.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         if self.constr_u is not None:
             return np.inf
         elif self._taylor_l is not None:
@@ -2393,7 +3146,15 @@ class KullbackLeibler(IntegralFunctionalBase):
             return np.inf
 
     @property
-    def convexity_param(self):
+    def convexity_param(self) -> float:
+        r"""Convexity param.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         if self.lin_taylor_l is not None or self.lin_taylor_u is not None:
             return 0. 
         elif self.constr_u is not None or self.quad_taylor_u is not None:
@@ -2402,7 +3163,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         else:
             return 0
 
-    def _f(self, u, out=None, mask=None, **kwargs):
+    def _f(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = u - w - w * log(u / w)
         if 'w' in kwargs:
             raise ValueError(Errors.value_error(
@@ -2435,7 +3196,7 @@ class KullbackLeibler(IntegralFunctionalBase):
                 self._free_scratch('_aux')
         return out
    
-    def _f_deriv(self, u, out=None, mask=None, **kwargs):
+    def _f_deriv(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out =  1 - w / u
         if 'w' in kwargs:
             raise ValueError(Errors.value_error(
@@ -2456,7 +3217,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         np.copyto(out, 1., where=zero)
         return out
 
-    def _f_second_deriv(self, u, out=None, mask=None, **kwargs):
+    def _f_second_deriv(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = w / u**2
         where = self._where(mask, u)
         out = self._prepare_out(out, u)
@@ -2464,7 +3225,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         np.divide(self.w, out, out=out, where=where)
         return out
 
-    def _f_conj(self, u_star, out=None, mask=None, **kwargs):
+    def _f_conj(self, u_star: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = - w * log(1-u_star)
         if 'w' in kwargs:
             raise ValueError(Errors.value_error(
@@ -2491,7 +3252,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         np.copyto(out, np.inf, where=invalid)
         return out
 
-    def _f_conj_deriv(self, u_star, out=None, mask=None, **kwargs):
+    def _f_conj_deriv(self, u_star: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = w / (1-u_star)
         if 'w' in kwargs:
             raise ValueError(Errors.value_error(
@@ -2511,7 +3272,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         np.copyto(out, 0., where=at_one)
         return out
     
-    def _f_conj_second_deriv(self, u_star, out=None, mask=None, **kwargs):
+    def _f_conj_second_deriv(self, u_star: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         #  out = w / (1-u_star)**2
         where = self._where(mask, u_star)
         wm = self.w
@@ -2530,7 +3291,7 @@ class KullbackLeibler(IntegralFunctionalBase):
         np.copyto(out, 0., where=at_one)
         return out
 
-    def _f_prox(self, v, tau, out=None, mask=None, **kwargs):
+    def _f_prox(self, v: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = -0.5 * (tau - v) + sqrt(0.25 * (tau - v)**2 + tau * w)
         where = self._where(mask, v)
         out = self._prepare_out(out, v)
@@ -2547,7 +3308,7 @@ class KullbackLeibler(IntegralFunctionalBase):
             self._free_scratch('_aux')
         return out
 
-    def _f_conj_prox(self, vstar, tau, out=None, mask=None, **kwargs):
+    def _f_conj_prox(self, vstar: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out =  0.5 * (1 + vstar) - sqrt(0.25 * (1 + vstar)**2 + tau * w - vstar)
         where = self._where(mask, vstar)
         out = self._prepare_out(out, vstar)
@@ -2570,31 +3331,43 @@ class KullbackLeibler(IntegralFunctionalBase):
 
 class RelativeEntropy(IntegralFunctionalBase):
     r"""Relative Entropy divergence define by
-
+    
     .. math::
         F_w(u) = KL(u,w) = \int (u(x)\ln \frac{u(x)}{w(x)}) \mathrm{d}x
-
+    
     Parameters
     ----------
-    domain : regpy.vecsps.MeasureSpaceFcts
+    domain: MeasureSpaceFcts
         Domain on which to define the Relative Entropy divergence
-    w : scalar, Vector, or None [default: None]
+    w: Scalar | ArrayLike | None [default: None]
         Fixed part of the second argument of the Relative Entropy divergence.
-        If neither ``w`` nor ``data`` is supplied, ``w`` defaults to 1. If
-        ``data`` is supplied and ``w`` is None, the fixed part defaults to 0.
-    data : Vector or None [default: None]
+        If neither ``w`` nor ``data`` is supplied, ``w`` If
+        ``data`` is supplied and ``w`` is None, the fixed part
+    constr_l: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    constr_u: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    lin_taylor_l: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    lin_taylor_u: float | ReadOnlyVector | None [default: None]
+        see IntegralFunctional
+    quad_taylor_l: float | ReadOnlyVector | None [default: None]
+        Lower threshold for a quadratic extension; None disables this extension.
+    quad_taylor_u: float | ReadOnlyVector | None [default: None]
+        Upper threshold for a quadratic extension; None disables this extension.
+    data: ReadOnlyVector | None [default: None]
         Data-dependent part of the second argument. If supplied, the effective
         reference is ``w + data`` and the instance is marked as a data
         functional.
-    constr_l,constr_u,lin_taylor_l, lin_taylor_u: None, scalar or in domain
-        see IntegralFunctional  
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
     """
 
-    def  __init__(self, domain, w=None,
-                  constr_l=None, constr_u=None, lin_taylor_l=None, lin_taylor_u=None,
-                  quad_taylor_l=None, quad_taylor_u=None, data=None,
-                  **kwargs
-                  ):
+    def  __init__(self, domain: MeasureSpaceFcts, w: Scalar | ArrayLike | None=None,
+                  constr_l: float | ReadOnlyVector | None=None, constr_u: float | ReadOnlyVector | None=None, lin_taylor_l: float | ReadOnlyVector | None=None, lin_taylor_u: float | ReadOnlyVector | None=None,
+                  quad_taylor_l: float | ReadOnlyVector | None=None, quad_taylor_u: float | ReadOnlyVector | None=None, data: ReadOnlyVector | None=None,
+                  **kwargs: Any
+                  ) -> None:
         self._w_is_default = w is None
         if w is None:
             w = 0. if data is not None else 1.
@@ -2633,7 +3406,14 @@ class RelativeEntropy(IntegralFunctionalBase):
 
     @property
     def is_strictly_convex(self) -> bool:
-        """Strict convexity without linear tails; constraints are allowed."""
+        r"""Strict convexity without linear tails; constraints are allowed.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return bool(
             True
             and self.lin_taylor_l is None
@@ -2642,10 +3422,16 @@ class RelativeEntropy(IntegralFunctionalBase):
 
     @property
     def conj_is_strictly_convex(self) -> bool:
-        """Strict convexity of the conjugate without primal hard constraints.
-
+        r"""Strict convexity of the conjugate without primal hard constraints.
+        
         Primal constraints can generate affine tails in the conjugate.
         Linear primal extensions instead restrict its essential domain.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
         """
         return bool(
             np.all(self.w > 0)
@@ -2654,13 +3440,28 @@ class RelativeEntropy(IntegralFunctionalBase):
         )
 
     @property
-    def w(self):
+    def w(self) -> np.ndarray:
+        r"""W.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         if self.is_data_func:
             return self._w + self.data
         return self._w
 
     @w.setter
-    def w(self, new_w):
+    def w(self, new_w: ReadOnlyVector) -> None:
+        r"""w -- the reference value or second (fixed) argument of KL. 
+        
+        Parameters
+        ----------
+        new_w: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        """
         if new_w in self.domain or (isinstance(new_w, (int,float,np.floating,np.integer))): 
             if new_w in self.domain:
                 candidate = new_w.copy()
@@ -2687,10 +3488,25 @@ class RelativeEntropy(IntegralFunctionalBase):
 
     @property
     def data(self) -> ReadOnlyVector:
+        r"""Data.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector
+            Read-only vector view.
+        """
         return self.domain.read_only(self._data)
 
     @data.setter
-    def data(self, new_data):
+    def data(self, new_data: ReadOnlyVector) -> None:
+        r"""Data.
+        
+        Parameters
+        ----------
+        new_data: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        """
         if new_data is None:
             del self.data
         elif new_data in self.domain:
@@ -2715,7 +3531,9 @@ class RelativeEntropy(IntegralFunctionalBase):
             ))
 
     @data.deleter
-    def data(self):
+    def data(self) -> None:
+        r"""Data.
+        """
         if self.is_data_func:
             if self._w_is_default:
                 self._w = np.ones(
@@ -2729,12 +3547,33 @@ class RelativeEntropy(IntegralFunctionalBase):
             self.is_data_func = False
             self._precompute_f_l(); self._precompute_f_u()
 
-    def as_data_func(self, data):
+    def as_data_func(self, data: ReadOnlyVector) -> Self:
+        r"""As data func.
+        
+        Parameters
+        ----------
+        data: ReadOnlyVector
+            Observed data.
+        
+        
+        Returns
+        -------
+        Self
+            Result described above.
+        """
         self.data = data
         return self
 
     @property
-    def Lipschitz(self):
+    def Lipschitz(self) -> float:
+        r"""Lipschitz.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         if self.constr_u is not None:
             return np.inf
         elif self._taylor_l is not None:
@@ -2743,7 +3582,15 @@ class RelativeEntropy(IntegralFunctionalBase):
             return np.inf
 
     @property
-    def convexity_param(self):
+    def convexity_param(self) -> float:
+        r"""Convexity param.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         if self.lin_taylor_u is not None or self.lin_taylor_l is not None:
             return 0.
         elif self.constr_u is not None or self.quad_taylor_u is not None:
@@ -2752,7 +3599,7 @@ class RelativeEntropy(IntegralFunctionalBase):
         else:
             return 0.
 
-    def _f(self, u, out=None, mask=None, **kwargs):
+    def _f(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = u * log(u / w)
         where = self._where(mask, u)
         out = self._prepare_out(out, u)
@@ -2774,7 +3621,7 @@ class RelativeEntropy(IntegralFunctionalBase):
                 self._free_scratch('_aux')
         return out
    
-    def _f_deriv(self, u, out=None, mask=None, **kwargs):
+    def _f_deriv(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = 1 + log(u / w)
         where = self._where(mask, u)
         out = self._prepare_out(out, u)
@@ -2786,14 +3633,14 @@ class RelativeEntropy(IntegralFunctionalBase):
         np.add(out, 1., out=out, where=where)
         return out
 
-    def _f_second_deriv(self, u, out=None, mask=None, **kwargs):
+    def _f_second_deriv(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = 1 / u
         where = self._where(mask, u)
         out = self._prepare_out(out, u)
         np.divide(1., u, out=out, where=where)
         return out
 
-    def _f_prox(self, v, tau, out=None, mask=None, **kwargs):
+    def _f_prox(self, v: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = tau * lambertW( (w / tau) * exp(v / tau - 1) )
         # For v >= thres * tau an overflow occurs in the exponential (for standard doubles thres ~ 710) or
         # in the subsequent multiplication and division.
@@ -2839,7 +3686,7 @@ class RelativeEntropy(IntegralFunctionalBase):
                 self._free_scratch('_aux')
         return out
 
-    def _f_conj_prox(self, vstar, tau, out=None, mask=None, **kwargs):
+    def _f_conj_prox(self, vstar: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = vstar - tau * f_prox(vstar / tau, 1 / tau)
         where = self._where(mask, vstar)
         out = self._prepare_out(out, vstar)
@@ -2859,7 +3706,7 @@ class RelativeEntropy(IntegralFunctionalBase):
                 self._free_scratch('_conj_prox_input')
         return out
 
-    def _f_conj(self, u_star, out=None, mask=None, **kwargs):
+    def _f_conj(self, u_star: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = w * (exp(u_star - 1))
         where = self._where(mask, u_star)
         out = self._prepare_out(out, u_star)
@@ -2868,20 +3715,37 @@ class RelativeEntropy(IntegralFunctionalBase):
         np.multiply(out, self.w, out=out, where=where)
         return out
 
-    def _f_conj_deriv(self, u_star, out=None, mask=None, **kwargs):
+    def _f_conj_deriv(self, u_star: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         return self._f_conj(u_star, out=out, mask=mask, **kwargs)
     
-    def _f_conj_second_deriv(self, u_star, out=None, mask=None, **kwargs):
+    def _f_conj_second_deriv(self, u_star: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         return self._f_conj(u_star, out=out, mask=mask, **kwargs)
 
-def Huber(domain, as_primal=True, sigma=1., **kwargs) -> Quadratic:
+def Huber(domain: MeasureSpaceFcts, as_primal: bool=True, sigma: float=1., **kwargs: Any) -> Quadratic:
     r"""Return the Huber functional as a Quadratic with linear tails.
-
+    
     Its pointwise value is x**2/2 for abs(x)<=sigma and
     sigma*abs(x)-sigma**2/2 otherwise. The signature and normalization
     match Huber_old. sigma may be a positive scalar or domain element.
     as_primal=False uses the reciprocal measure, as in the legacy class.
     Data shifts preserve the Quadratic type and translate the tail joins.
+    
+    Parameters
+    ----------
+    domain: MeasureSpaceFcts
+        Domain vector space.
+    as_primal: bool [default: True]
+        As primal.
+    sigma: float [default: 1.0]
+        Sigma.
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
+    
+    
+    Returns
+    -------
+    Quadratic
+        Constructed functional.
     """
     if not isinstance(domain, MeasureSpaceFcts):
         raise TypeError("Huber requires a MeasureSpaceFcts domain.")
@@ -2902,27 +3766,29 @@ def Huber(domain, as_primal=True, sigma=1., **kwargs) -> Quadratic:
 
 class Huber_old(IntegralFunctionalBase):
     r"""Huber functional 
-
+    
     .. math::
         F(x) = 1/2 |x|^2                &\quadif  |x|\leq \sigma \\
         F(x) = \sigma |x|-\sigma^2/2    &\quadif  |x|>\sigma
-
-
-    Parameters 
+    
+    
+    Parameters
     ----------
-    domain: regpy.vecsps.MeasureSpaceFcts
+    domain: MeasureSpaceFcts
         domain on which Huber functional is defined
-    sigma: float or domain [default: 1]
-        parameter in the Huber functional. 
-    as_primal: boolean [default:True]
+    as_primal: bool [default: True]
         If False, then the functional is initiated as conjugate of QuadraticIntv. Then the dual metric is used, 
         and precautions against an infinite recursion of conjugations are taken.
+    sigma: float [default: 1.0]
+        parameter in the Huber functional.
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
     """
     # Keep the historical constructor and attributes; use the integral
     # functional's native constraints so SemiSmoothNewton can remove them
     # on its private copy and evaluate the smooth quadratic everywhere.
 
-    def  __init__(self, domain, as_primal=True, sigma = 1., **kwargs):
+    def  __init__(self, domain: MeasureSpaceFcts, as_primal: bool=True, sigma: float = 1., **kwargs: Any) -> None:
         if not isinstance(domain,MeasureSpaceFcts): raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"Huber domain needs to be a MeasureSpaceFcts instance."))
         if not isinstance(sigma, (float,int)) and sigma not in domain:
             raise TypeError(Errors.type_error(f"Sigma in the HuberFunctional needs to be a scalar or element in the domain! Given:"+"\n\t "+f"sigma = {sigma}",self))
@@ -2947,7 +3813,7 @@ class Huber_old(IntegralFunctionalBase):
         self._abs_u = self.domain.zeros() 
         self._small = np.zeros(self.domain.shape,dtype=bool)
 
-    def _f(self, u, out=None, mask=None, **kwargs):
+    def _f(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = 1/2 * abs(u)**2                            if abs(u) <= sigma
         # out = sigma * abs(x) - 1/2 * sigma**2            else
         where = self._where(mask, u)
@@ -2967,7 +3833,7 @@ class Huber_old(IntegralFunctionalBase):
             self._free_scratch('_abs_u')
         return out
 
-    def _f_deriv(self, u, out=None, mask=None, **kwargs):
+    def _f_deriv(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = u                      if abs(u) <= sigma
         # out = sigma * sign(u)        else
         where = self._where(mask, u)
@@ -2976,7 +3842,7 @@ class Huber_old(IntegralFunctionalBase):
         np.minimum(out, self.sigma, out=out, where=where)
         return out
 
-    def _f_second_deriv(self, u, out=None, mask=None, **kwargs):
+    def _f_second_deriv(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = 1   if abs(u) <= sigma
         # out = 0   else
         where = self._where(mask, u)
@@ -2985,42 +3851,46 @@ class Huber_old(IntegralFunctionalBase):
         np.copyto(out, inside, where=where, casting='unsafe')
         return out
 
-    def _f_conj(self, ustar, out=None, mask=None, **kwargs):
+    def _f_conj(self, ustar: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         return self.conjugate._f(ustar, out=out, mask=mask, **kwargs)
    
-    def _f_conj_deriv(self, ustar, out=None, mask=None, **kwargs):
+    def _f_conj_deriv(self, ustar: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         return self.conjugate._f_deriv(ustar, out=out, mask=mask, **kwargs)
 
-    def _f_conj_second_deriv(self, ustar, out=None, mask=None, **kwargs):
+    def _f_conj_second_deriv(self, ustar: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         return self.conjugate._f_second_deriv(ustar, out=out, mask=mask, **kwargs)
 
-    def _f_conj_prox(self, ustar, tau, out=None, mask=None, **kwargs):
+    def _f_conj_prox(self, ustar: ReadOnlyVector, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         return self.conjugate._f_prox(ustar, tau, out=out, mask=mask, **kwargs)
 
 
 class QuadraticIntv(IntegralFunctionalBase):
     r"""Functional 
-
+    
     .. math::
         F(x) = 1/2 |x|^2    &\quadif |x|\leq \sigma(x) \\
         F(x) = \infty    &\quadif |x|>\sigma(x)
-
-
+    
+    
     Parameters
     ----------
-    regpy.vecsps.MeasureSpaceFcts
-        domain on which Huber functional is defined
-    sigma: float or domain [default: 1]
-        interval width. 
-    as_primal: boolean [default:True]
+    domain: MeasureSpaceFcts
+        Domain vector space.
+    as_primal: bool [default: True]
         If False, then the functional is initiated as conjugate of Huber. Then the dual metric is used, 
         and precautions against an infinite recursion are taken.
+    sigma: float [default: 1.0]
+        interval width.
+    eps: float [default: 1e-10]
+        Eps.
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
     """
     # Keep the historical constructor and attributes; use the integral
     # functional's native constraints so SemiSmoothNewton can remove them
     # on its private copy and evaluate the smooth quadratic everywhere.
 
-    def  __init__(self, domain, as_primal=True, sigma=1., eps=1e-10, **kwargs):
+    def  __init__(self, domain: MeasureSpaceFcts, as_primal: bool=True, sigma: float=1., eps: float=1e-10, **kwargs: Any) -> None:
         if not isinstance(domain,MeasureSpaceFcts): 
             raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticIntv domain needs to be a MeasureSpaceFcts instance."))
         if not isinstance(sigma, (float,int)) and sigma not in domain:
@@ -3044,7 +3914,7 @@ class QuadraticIntv(IntegralFunctionalBase):
             super().__init__(dual_domain, convexity_param=1,                                                     
                          **kwargs)   
 
-    def _f(self, u, out=None, mask=None, **kwargs):
+    def _f(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         # out = 0.5 * abs(u)**2    if abs(u)<=sigmaeps
         # out = np.inf             else
         where = self._where(mask, u)
@@ -3055,13 +3925,13 @@ class QuadraticIntv(IntegralFunctionalBase):
         np.copyto(out, np.inf, where=outside)
         return out
    
-    def _f_deriv(self, u, out=None, mask=None, **kwargs):
+    def _f_deriv(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, u)
         out = self._prepare_out(out, u)
         np.copyto(out, u, where=where)
         return out
 
-    def _f_prox(self, u, tau, out=None, mask=None, **kwargs):
+    def _f_prox(self, u: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, u)
         out = self._prepare_out(out, u)
         np.divide(u, 1. + tau, out=out, where=where)
@@ -3075,25 +3945,25 @@ class QuadraticIntv(IntegralFunctionalBase):
             self._free_scratch('_aux')
         return out
 
-    def _f_second_deriv(self, u, out=None, mask=None, **kwargs):
+    def _f_second_deriv(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, u)
         out = self._prepare_out(out, u)
         np.copyto(out, 1., where=where)
         return out
 
-    def _f_conj(self, ustar, out=None, mask=None, **kwargs):
+    def _f_conj(self, ustar: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         return self.conjugate._f(ustar, out=out, mask=mask, **kwargs)
    
-    def _f_conj_deriv(self, ustar, out=None, mask=None, **kwargs):
+    def _f_conj_deriv(self, ustar: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         return self.conjugate._f_deriv(ustar, out=out, mask=mask, **kwargs)
 
-    def _f_conj_second_deriv(self, ustar, out=None, mask=None, **kwargs):
+    def _f_conj_second_deriv(self, ustar: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         return self.conjugate._f_second_deriv(ustar, out=out, mask=mask, **kwargs)
 
-    def _f_conj_prox(self, ustar, tau, out=None, mask=None, **kwargs):
+    def _f_conj_prox(self, ustar: ReadOnlyVector, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         return self.conjugate._f_prox(ustar, tau, out=out, mask=mask, **kwargs)
     
-    def _ptw_dist_subdiff(self, vstar, x):
+    def _ptw_dist_subdiff(self, vstar: ReadOnlyVector, x: ReadOnlyVector) -> np.ndarray:
         diff = vstar.copy()
         diff -= self.subgradient(x)
         ubind = (x==self.sigma)
@@ -3105,28 +3975,29 @@ class QuadraticIntv(IntegralFunctionalBase):
 
 class QuadraticNonneg(IntegralFunctionalBase):
     r"""Functional 
-
+    
     .. math::
         F(x) = 1/2 |x|^2    &\quadif x\geq 0 \\
         F(x) = \infty       &\quadif  x<0
-
+    
     Parameters
     ----------
-    domain : regpy.vecsps.MeasureSpaceFcts
-        domain on which functional is defined 
-
+    domain: MeasureSpaceFcts
+        domain on which functional is defined
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
     """
     # Keep the historical constructor and attributes; use the integral
     # functional's native constraints so SemiSmoothNewton can remove them
     # on its private copy and evaluate the smooth quadratic everywhere.
 
-    def  __init__(self, domain, **kwargs):
+    def  __init__(self, domain: MeasureSpaceFcts, **kwargs: Any) -> None:
         super().__init__(domain,convexity_param = 1., nat_dom_l=0.,
                          methods =  {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'},
                          conj_methods =  {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'},
                          **kwargs)
 
-    def _f(self, u, out=None, mask=None, **kwargs):
+    def _f(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, u)
         out = self._prepare_out(out, u)
         negative = where & (u < 0)
@@ -3135,26 +4006,26 @@ class QuadraticNonneg(IntegralFunctionalBase):
         np.copyto(out, np.inf, where=negative)
         return out
 
-    def _f_deriv(self, u, out=None, mask=None, **kwargs):
+    def _f_deriv(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, u)
         out = self._prepare_out(out, u)
         np.copyto(out, u, where=where)
         return out
 
-    def _f_prox(self, u, tau, out=None, mask=None, **kwargs):
+    def _f_prox(self, u: np.ndarray, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, u)
         out = self._prepare_out(out, u)
         np.divide(u, 1. + tau, out=out, where=where)
         np.maximum(out, 0., out=out, where=where)
         return out
 
-    def _f_second_deriv(self, u, out=None, mask=None, **kwargs):
+    def _f_second_deriv(self, u: np.ndarray, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, u)
         out = self._prepare_out(out, u)
         np.copyto(out, 1., where=where)
         return out
 
-    def _f_conj(self, ustar, out=None, mask=None, **kwargs):
+    def _f_conj(self, ustar: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, ustar)
         out = self._prepare_out(out, ustar)
         negative = where & (ustar < 0)
@@ -3163,21 +4034,21 @@ class QuadraticNonneg(IntegralFunctionalBase):
         np.copyto(out, 0., where=negative)
         return out
 
-    def _f_conj_deriv(self, ustar, out=None, mask=None, **kwargs):
+    def _f_conj_deriv(self, ustar: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, ustar)
         out = self._prepare_out(out, ustar)
         np.copyto(out, ustar, where=where)
         np.copyto(out, 0., where=where & (ustar < 0))
         return out
 
-    def _f_conj_second_deriv(self, ustar, out=None, mask=None, **kwargs):
+    def _f_conj_second_deriv(self, ustar: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, ustar)
         out = self._prepare_out(out, ustar)
         nonnegative = ustar >= 0
         np.copyto(out, nonnegative, where=where, casting='unsafe')
         return out
 
-    def _f_conj_prox(self, ustar, tau, out=None, mask=None, **kwargs):
+    def _f_conj_prox(self, ustar: ReadOnlyVector, tau: float, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         where = self._where(mask, ustar)
         out = self._prepare_out(out, ustar)
         np.copyto(out, ustar, where=where)
@@ -3185,11 +4056,24 @@ class QuadraticNonneg(IntegralFunctionalBase):
         np.divide(ustar, 1. + tau, out=out, where=positive)
         return out
     
-    def _ptw_dist_subdiff(self, vstar, x):
-        """Dual residual to the subdifferential; integrated by dist_subdiff.
-
+    def _ptw_dist_subdiff(self, vstar: ReadOnlyVector, x: ReadOnlyVector) -> np.ndarray:
+        r"""Dual residual to the subdifferential; integrated by dist_subdiff.
+        
         At x>0 the subgradient is measure*x. At x=0 the
         subdifferential is the negative half-line. Negative x is infeasible.
+        
+        Parameters
+        ----------
+        vstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
         """
         if np.any(x < 0):
             raise NotInEssentialDomainError(
@@ -3198,40 +4082,58 @@ class QuadraticNonneg(IntegralFunctionalBase):
         residual = vstar - self.measure * x
         return np.where(x == 0, np.maximum(residual, 0.), residual)
 
-    def _conj_ptw_dist_subdiff(self, v, xstar, **kwargs):
-        """The conjugate is differentiable, with gradient max(xstar/w, 0)."""
+    def _conj_ptw_dist_subdiff(self, v: ReadOnlyVector, xstar: ReadOnlyVector, **kwargs: Any) -> np.ndarray:
+        r"""The conjugate is differentiable, with gradient max(xstar/w, 0).
+        
+        Parameters
+        ----------
+        v: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        xstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         return v - np.maximum(xstar / self.measure, 0.)
 
 
 def QuadraticBilateralConstraints(
-    domain: MeasureSpaceFcts, lb=None, ub=None, x0=None, alpha: float = 1.,
-    **kwargs,
+    domain: MeasureSpaceFcts, lb: float | ReadOnlyVector | None=None, ub: float | ReadOnlyVector | None=None, x0: ReadOnlyVector | None=None, alpha: float = 1.,
+    **kwargs: Any,
 ) -> Quadratic:
-    r""" Returns `Functional` defined by 
-
+    r"""Returns `Functional` defined by 
+    
     .. math::
         F(x) = \frac{\alpha}{2}\|x-x_0\|^2  &\quadif lb\leq x\leq ub \\
         F(x) = np.inf &\quadelse
-
-
+    
+    
     Parameters
     ----------
-    domain: regpy.vecsps.MeasureSpaceFcts
+    domain: MeasureSpaceFcts
         domain on which functional is defined
-    lb: scalar or domain element, optional
+    lb: float | ReadOnlyVector | None [default: None]
         lower bound, default:0
-    ub: scalar or domain element, optional
+    ub: float | ReadOnlyVector | None [default: None]
         upper bound, default:1
-    x0: scalar or domain element, optional
-        reference value default 0.5*(lb+ub)
-    alpha: float [default: 1]
+    x0: ReadOnlyVector | None [default: None]
+        reference value.5*(lb+ub)
+    alpha: float [default: 1.0]
         regularization parameter
-
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
+    
     Returns
     -------
     Quadratic
         Quadratic integral functional with bilateral constraints.
-
+    
     Notes
     -----
     Returns a Quadratic instance with coefficients a=alpha, b=-alpha*x0,
@@ -3278,25 +4180,25 @@ def QuadraticBilateralConstraints(
     functional.x0, functional.alpha = x0, alpha
     return functional
 
-def QuadraticLowerBound(domain, lb=None, x0=None, a=1.) -> Quadratic:
-    r""" Returns `Functional` defined by 
-
+def QuadraticLowerBound(domain: MeasureSpaceFcts, lb: float | ReadOnlyVector | None=None, x0: ReadOnlyVector | None=None, a: float | int=1.) -> Quadratic:
+    r"""Returns `Functional` defined by 
+    
     .. math::
         F(x) = \frac{a}{2}\|x-x_0\|^2 &\quad\text{if } lb\leq x \\
         F(x) =  \inf  &\quad\text{else }
-
-
+    
+    
     Parameters
     ----------
-    domain: regpy.vecsps.MeasureSpaceFcts
+    domain: MeasureSpaceFcts
         domain on which the functional is defined
-    lb: domain or float [default: None]
+    lb: float | ReadOnlyVector | None [default: None]
         lower bound (zero in the default case)
-    x0: domain or float [default: None]
+    x0: ReadOnlyVector | None [default: None]
         reference value (zero in the default case)
-    a : float or int
+    a: float | int [default: 1.0]
         scaling factor
-
+    
     Returns
     -------
     Quadratic
@@ -3328,32 +4230,32 @@ def QuadraticLowerBound(domain, lb=None, x0=None, a=1.) -> Quadratic:
 
 class L1Generic(Functional):
     r"""Generic :math:`L ^1` Functional. Proximal implemented for default :math:`L^2` as `h_domain`.
-
+    
     Parameters
     ----------
-    domain : regpy.vecsps.NumPyVectorSpace
+    domain: MeasureSpaceFcts
         Domain on which to define the generic L1.
     """
-    def __init__(self, domain):
+    def __init__(self, domain: MeasureSpaceFcts) -> None:
         if not isinstance(domain,NumPyVectorSpace):
             raise TypeError(Errors.not_instance(domain,NumPyVectorSpace,"To construct a L1Generic functional you need a NumPyVectorSpace"))
         super().__init__(domain,
                          methods = {'eval','subgradient','hessian','proximal'})
 
-    def _eval(self, x):
+    def _eval(self, x: ReadOnlyVector) -> float:
         return np.sum(np.abs(x))
 
-    def _subgradient(self, x, out=None, **subgradient_par):
+    def _subgradient(self, x: ReadOnlyVector, out: Vector | None=None, **subgradient_par: Any) -> Vector:
         if out is None:
             out = np.empty_like(x)
         np.sign(x, out=out)
         return out
 
-    def _hessian(self, x):
+    def _hessian(self, x: ReadOnlyVector) -> Operator:
         # Even approximate Hessians don't work here.
         raise NotImplementedError
 
-    def _proximal(self, x, tau, out=None, **proximal_par):
+    def _proximal(self, x: ReadOnlyVector, tau: float, out: Vector | None=None, **proximal_par: Any) -> Vector:
         if out is None:
             out = np.empty_like(x)
             source = x

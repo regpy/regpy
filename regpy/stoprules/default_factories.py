@@ -4,6 +4,14 @@ All factories accept (setting, params). params may contain solver_class for
 checking required solver accessors before constructing a rule. The selection
 checks advertised capabilities, not whether a gap is finite at every iterate.
 """
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any, Callable
+    from regpy.functionals.base import Functional
+    from regpy.solvers.setting import Setting
+    from regpy.stoprules.general import StopRule
 from .general import CountIterations_factory
 from .parameter_choice_rules import Discrepancy_factory
 from .inner_stoprules import (
@@ -15,20 +23,33 @@ __all__ = ['default_parameter_choice_rule', 'default_convex_stoprule',
            'default_nonconvex_stoprule', 'resolve_stoprule_factory']
 
 
-def _has(functional, *methods):
+def _has(functional: Functional, *methods: str) -> bool:
     return all(name in getattr(functional, 'methods', ()) for name in methods)
 
 
-def _solver_has(params, name):
+def _solver_has(params: dict[str, Any], name: str) -> bool:
     solver_class = params.get('solver_class')
     return solver_class is None or callable(getattr(solver_class, name, None))
 
 
-def default_parameter_choice_rule(setting, params):
-    """Use discrepancy with available positive absolute noise, else only a cap.
-
+def default_parameter_choice_rule(setting: Setting, params: dict[str, Any]) -> StopRule:
+    r"""Use discrepancy with available positive absolute noise, else only a cap.
+    
     A codomain-free setting always uses the cap. Discrepancy also requires
     observed data, either in the setting or in the supplied rule parameters.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    params: dict[str, Any]
+        Options for params.
+    
+    
+    Returns
+    -------
+    StopRule
+        Result described above.
     """
     options = params.get('rule_params', {})
     noise = options.get('noiselevel', params.get('absolute_noise_level',
@@ -39,19 +60,32 @@ def default_parameter_choice_rule(setting, params):
     return CountIterations_factory(setting, params)
 
 
-def default_convex_stoprule(setting, params):
-    """Use an evaluable Fenchel gap, otherwise relative solution change.
-
+def default_convex_stoprule(setting: Setting, params: dict[str, Any]) -> StopRule:
+    r"""Use an evaluable Fenchel gap, otherwise relative solution change.
+    
     Check the functionals actually used by Setting.duality_gap. For a dual
     setting with a primal accessor, this is the original primal setting:
     the supplied tuple is an original dual pair and the missing primal pair
     is reconstructed using the original penalty's conjugate subgradient.
     No transformed double conjugates or subgradients are required on that path.
-
+    
     For a standalone primal setting, two supplied pairs need no reconstruction;
     one supplied pair needs the appropriate subgradient. Accessor availability
     is checked on solver_class when supplied. This checks advertised methods,
     not finiteness of the gap or the values returned by solver accessors.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    params: dict[str, Any]
+        Options for params.
+    
+    
+    Returns
+    -------
+    StopRule
+        Result described above.
     """
     applicable = setting.is_tikhonov and setting.is_convex and not setting.codomain_free
     if applicable:
@@ -79,12 +113,25 @@ def default_convex_stoprule(setting, params):
     return factory(setting, params)
 
 
-def default_nonconvex_stoprule(setting, params):
-    """Use optimality-condition violation when supported, else relative change.
-
+def default_nonconvex_stoprule(setting: Setting, params: dict[str, Any]) -> StopRule:
+    r"""Use optimality-condition violation when supported, else relative change.
+    
     Require a nonconvex Tikhonov setting, explicit codomain, the fidelity's
     subgradient, the penalty's dist_subdiff, and the solver's primal accessor.
     The operator must support linearization as required by the Setting API.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    params: dict[str, Any]
+        Options for params.
+    
+    
+    Returns
+    -------
+    StopRule
+        Result described above.
     """
     applicable = (setting.is_tikhonov and not setting.is_convex
                   and not setting.codomain_free
@@ -96,12 +143,23 @@ def default_nonconvex_stoprule(setting, params):
     return factory(setting, params)
 
 
-def resolve_stoprule_factory(factory):
-    """Resolve a callable, a public factory name, or its StopRule class name.
-
+def resolve_stoprule_factory(factory: str | Callable[[Setting, dict[str, Any]], StopRule]) -> Callable[[Setting, dict[str, Any]], StopRule]:
+    r"""Resolve a callable, a public factory name, or its StopRule class name.
+    
     Only factories explicitly exported by these modules are accepted; names
     are not evaluated as Python code. Examples: 'Discrepancy',
     'Discrepancy_factory', 'default_convex_stoprule'.
+    
+    Parameters
+    ----------
+    factory: str | Callable[[Setting, dict[str, Any]], StopRule]
+        Factory.
+    
+    
+    Returns
+    -------
+    Callable[[Setting, dict[str, Any]], StopRule]
+        Result described above.
     """
     if callable(factory):
         return factory

@@ -102,6 +102,7 @@ Optional dependencies
 - `sphinx <https://www.sphinx-doc.org/en/master/>`_, for generating the documentation
   (additional requirements are listed in ``doc/sphinx/requirements.txt``)
 """
+from __future__ import annotations
 from regpy import util, stoprules, vecsps, operators, functionals, hilbert, solvers
 
 __all__ = ["util","stoprules","vecsps","operators","functionals","hilbert","solvers"]

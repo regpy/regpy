@@ -14,6 +14,7 @@ from regpy.util import *
 
 Moreover the general testing methods `test_operator` and `test_functional` are available.
 """
+from __future__ import annotations
 
 from .general import *
 from .operator_tests import test_operator, test_derivative,test_adjoint

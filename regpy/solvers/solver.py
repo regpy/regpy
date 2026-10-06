@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from regpy.solvers.setting import Setting
+
 from collections.abc import Callable, Generator
 
 import numpy as np
@@ -15,39 +20,42 @@ if TYPE_CHECKING:
     from regpy.operators import Operator
     from regpy.functionals import Functional
     from regpy.hilbert import HilbertSpace
-    from .setting import Setting
 
 __all__ = ["Solver", "RegSolver", "CombinedSolver"]
 
 class Solver:
-    r"""Abstract base class for solvers. Solvers do not implement loops themselves, but are driven by
-    repeatedly calling the `next` method. They expose the current iterate and its value as attributes
+    r"""Abstract base class for iterative solvers. 
+    Solvers typically implement iterative methods for solving operator equations or optimization problems involving an operator. However, the operator is not part of the base class interface, allowing solvers to be used in a variety of contexts. 
+
+    Solvers do not implement loops themselves, but are driven by
+    repeatedly calling the `next` method. They expose the current iterate and its value under the operator as attributes
     `x` and `y`, and can be iterated over, yielding the `(x, y)` tuple on every iteration (which
     may or may not be the same arrays as before, modified in-place).
-
+    
+    The convenience methods ``run``, ``while_`` and ``until`` run the solver with a `regpy.stoprules.StopRule`. The latter two allow for monitoring, plotting, etc, of the iterates by the caller. 
+    
     Each call to ``iter(solver)`` creates a generator driving the same mutable
     solver state; it does not restart the solver. The solver is iterable but
     does not itself implement ``__next__``. Use ``solver.next()`` for a single
     step or ``next(iter(solver))`` to obtain a pair after a step.
-
+    
     Yielded vectors are read-only views, not copies. Solver updates may
     still change their contents. Copy them when retaining snapshots of the
-    iteration history. Both components may be ``None``.
-
-    Convenience methods run the solver with a `regpy.stoprules.StopRule`.
+    iteration history. Either of the components may be ``None``.
+    
 
     Subclasses should override the method `_next(self)` to perform a single iteration where the values of 
     the attributes `x` and `y` are updated. The main difference to `next` is that `_next` does not have a
     return value. If the solver converged, `converge` should be called, afterwards `_next` will never be
     called again. Most solvers will probably never converge on their own, but rely on the caller or a
     `regpy.stoprules.StopRule` for termination.
-
+    
     Parameters
     ----------
-    x : Vector | None [default: None]
-        Initial argument for iteration. Defaults to None.
-    y : Vector | None [default: None]
-        Initial value at current iterate. Defaults to None.
+    x: Vector | None [default: None]
+        Initial argument for iteration.
+    y: Vector | None [default: None]
+        Initial value of the operator at the current iterate.
     """
 
     log = ClassLogger()
@@ -58,31 +66,37 @@ class Solver:
         self.x: Vector | None = x
         """The current iterate."""
         self.y: Vector | None = y
-        """The value at the current iterate. May be needed by stopping rules, but callers should
+        """The value of the operator at the current iterate. May be needed by stopping rules, but callers should
         handle the case when it is not available."""
         self.__converged: bool = False
         self.iteration_step_nr: int = 0
         """Current number of iterations performed."""
 
     def converge(self) -> None:
-        """Mark the solver as converged. This is intended to be used by child classes
+        r"""Mark the solver as converged. This is intended to be used by child classes
         implementing the `_next` method.
         """
         self.__converged = True
 
     def is_converged(self) -> bool:
-        """Return whether :meth:`converge` has been called.
-
+        r"""Return whether :meth:`converge` has been called.
+        
         An external stopping rule does not by itself set this flag.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
         """
         return self.__converged
 
     def next(self) -> bool:
         r"""Perform a single iteration.
-
+        
         Returns
         -------
-        boolean
+        bool
             False if the solver already converged and no step was performed.
             True otherwise.
         """
@@ -95,7 +109,7 @@ class Solver:
     def _next(self) -> None:
         r"""Perform a single iteration. This is an abstract method called from the public method
         `next`. Child classes should override it.
-
+        
         The main difference to `next` is that `_next` does not have a return value. If the solver
         converged, `converge` should be called.
         """
@@ -104,16 +118,37 @@ class Solver:
     def _read_only_iterate(
         self,
     ) -> tuple[ReadOnlyVector | None, ReadOnlyVector | None]:
-        """Expose the current pair without making solver buffers read-only.
-
+        r"""Expose the current pair without making solver buffers read-only.
+        
         Operator-based solvers use their vector spaces' ``read_only`` API.
         Plain solvers support NumPy arrays directly. 
         For solver without an operator using non-NumPy vectors the iterates 
         are returned as writable vectors (at the risk that they are accidentally modified).        
+        
+        
+        Returns
+        -------
+        tuple[ReadOnlyVector | None, ReadOnlyVector | None]
+            Result described above.
         """
         op = getattr(self, "op", None)
 
-        def view(value: Vector | None, component: str) -> ReadOnlyVector | None:
+        def view(value: ReadOnlyVector | None, component: str) -> ReadOnlyVector | None:
+            r"""View.
+            
+            Parameters
+            ----------
+            value: ReadOnlyVector | None
+                Input vector; its coefficients are only read.
+            component: str
+                Component.
+            
+            
+            Returns
+            -------
+            ReadOnlyVector | None
+                Result described above.
+            """
             if value is None:
                 return None
             if op is not None:
@@ -132,11 +167,11 @@ class Solver:
 
     def __iter__(self) -> Generator[tuple[ReadOnlyVector | None, ReadOnlyVector | None], None, None]:
         r"""Generate pairs after successive solver steps, excluding the initial pair.
-
+        
         Execution starts when the generator is advanced. It ends when
         :meth:`next` returns ``False``. A step that marks convergence still
         yields its resulting pair as read-only views. No vector copies are made.
-
+        
         Yields
         ------
         tuple[ReadOnlyVector | None, ReadOnlyVector | None]
@@ -152,7 +187,23 @@ class Solver:
         *,
         while_type: bool,
     ) -> StopRule:
-        """Return ``stoprule`` augmented by an iteration limit."""
+        r"""Return ``stoprule`` augmented by an iteration limit.
+        
+        Parameters
+        ----------
+        stoprule: StopRule | None
+            Stoprule.
+        max_it: int | None
+            Maximum number of iterations.
+        while_type: bool
+            While type.
+        
+        
+        Returns
+        -------
+        StopRule
+            Result described above.
+        """
         if stoprule is None:
             stoprule = NoneRule()
         elif not isinstance(stoprule, StopRule):
@@ -187,14 +238,14 @@ class Solver:
         max_it: int | None = None,
     ) -> Generator[tuple[ReadOnlyVector | None, ReadOnlyVector | None], None, None]:
         r"""Generate current iterates under control of a stopping rule.
-
+        
         A typical use is:
-
+        
         for x,y in mysolver.while_(mystoprule,max_it=100):
             plot x,y
             save x,y
             etc.
-
+        
         The rule is checked before each attempted step, including at the
         initial state. Every completed step is yielded before the next rule
         check. An initially satisfied rule yields nothing. Calling this method
@@ -202,23 +253,23 @@ class Solver:
         when it is advanced. 
         Yielded vectors are read-only views, not snapshots to prevent accidental 
         modifications by the user.
-
+        
         Parameters
         ----------
-        stoprule : regpy.stoprules.StopRule, optional
+        stoprule: StopRule | None [default: None]
             The stoprule to be used. If omitted, stopping will only be
             based on the return value of `next` and on ``max_it``.
-        max_it : int or None, optional
+        max_it: int | None [default: None]
             Maximum number of iterations. If provided, a
             :class:`regpy.stoprules.CountIterations` rule is combined with
-            ``stoprule``. Must be non-negative. Defaults to ``None``.
-
+            ``stoprule``. Must be non-negative.
+        
         Yields
         ------
         tuple[ReadOnlyVector | None, ReadOnlyVector | None]
             The current ``(x, y)`` pair after a step. The stopping rule's best
             iterate is not substituted here; use :meth:`run` to select it.
-
+        
         Raises
         ------
         TypeError
@@ -243,7 +294,7 @@ class Solver:
         max_it: int | None = None,
     ) -> Generator[tuple[ReadOnlyVector | None, ReadOnlyVector | None], None, None]:
         r"""Generate current iterates under control of a stopping rule.
-
+        
         One step is attempted and the current pair is yielded before the
         first stopping-rule check. If already converged, the solver performs
         no step but still yields its current pair once. Subsequent steps are
@@ -252,23 +303,23 @@ class Solver:
         no meaningful sent values and returns no final value. Vectors are
         yielded as read-only views, not snapshots if possible to prevent accidental 
         modifications by the user.
-
+        
         Parameters
         ----------
-        stoprule : regpy.stoprules.StopRule, optional
+        stoprule: StopRule | None [default: None]
             The stoprule to be used. If omitted, stopping will only be
             based on the return value of `next` and on ``max_it``.
-        max_it : int or None, optional
+        max_it: int | None [default: None]
             Maximum number of iterations. If provided, a
             :class:`regpy.stoprules.CountIterations` rule is combined with
-            ``stoprule``. Must be non-negative. Defaults to ``None``.
-
+            ``stoprule``. Must be non-negative.
+        
         Yields
         ------
         tuple[ReadOnlyVector | None, ReadOnlyVector | None]
             The current ``(x, y)`` pair after a step. The stopping rule's best
             iterate is not substituted here; use :meth:`run` to select it.
-
+        
         Raises
         ------
         TypeError
@@ -299,26 +350,27 @@ class Solver:
         self,
         stoprule: StopRule | None = None,
         max_it: int | None = None,
-    ) -> tuple[Vector | None, Vector | None]:
+    ) -> tuple[ReadOnlyVector | None, ReadOnlyVector | None] | ReadOnlyVector:
         r"""Run the solver with the given stoprule.
-
+        
         Parameters
         ----------
-        stoprule : regpy.stoprules.StopRule, optional
+        stoprule: StopRule | None [default: None]
             The stoprule to be used. If omitted, stopping will only be based
             on convergence of the solver or ``max_it``.
-        max_it : int or None, optional
+        max_it: int | None [default: None]
             Maximum number of iterations. If provided, a
             :class:`regpy.stoprules.CountIterations` rule is combined with
-            ``stoprule``. Must be non-negative. Defaults to ``None``.
-
+            ``stoprule``. Must be non-negative.
+        
         Returns
         -------
-        tuple[Vector | None, Vector | None]
-            The pair selected by ``stoprule.best_iterate()``, or the current
-            pair if no best iterate is available. No copies are made. With
+        tuple[ReadOnlyVector | None, ReadOnlyVector | None] | ReadOnlyVector
+            The result selected by ``stoprule.best_iterate()``, or the current
+            pair if no best iterate is available. Parameter-choice rules may
+            return a solution vector alone. Treat returned vectors as read-only. No copies are made. With
             zero permitted steps the initial state can be returned.
-
+        
         Raises
         ------
         TypeError
@@ -341,21 +393,21 @@ class Solver:
 
 class RegSolver(Solver):
     r"""Base class for solvers operating on a regularization setting.
-
+    
     The import of :class:`regpy.solvers.setting.Setting` is intentionally
     deferred until initialization. This keeps ``solver`` independent while
     allowing ``setting`` and concrete solver modules to import ``RegSolver``
     without creating a circular module import.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.setting.Setting
+    setting: Setting
         Setting used by the solver.
-    x : Vector or None [default: None]
+    x: Vector | None [default: None]
         Initial domain iterate.
-    y : Vector or None [default: None]
+    y: Vector | None [default: None]
         Value at the initial iterate, if available.
-    is_primal : bool, optional
+    is_primal: bool [default: True]
         Label current coordinates as primal (True, default) or dual (False).
     """
 
@@ -384,43 +436,56 @@ class RegSolver(Solver):
 
     @property
     def is_primal(self) -> bool:
-        """Whether the current iterate uses original primal coordinates.
-
+        r"""Whether the current iterate uses original primal coordinates.
+        
         False denotes dual coordinates. Hybrid solvers may change this flag
         at a stage transition; setting it does not convert any vectors.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
         """
         return self._is_primal
 
     @is_primal.setter
     def is_primal(self, value: bool) -> None:
+        r"""Is primal.
+        
+        Parameters
+        ----------
+        value: bool
+            Value.
+        """
         if not isinstance(value, bool):
             raise TypeError("is_primal must be a bool.")
         self._is_primal = value
 
     def runWithDP(
         self,
-        data: Vector,
+        data: ReadOnlyVector,
         delta: float = 0,
         tau: float = 2.1,
         max_its: int = 1000,
     ) -> tuple[Vector | None, Vector | None]:
         r"""Run the solver with Morozov's discrepancy principle.
-
+        
         Requires an explicit codomain Hilbert space. The discrepancy rule is
         combined with an iteration cap; :meth:`run` returns the selected pair.
         A warning is logged if the active rule is not the discrepancy rule.
-
+        
         Parameters
         ----------
-        data : Vector
+        data: ReadOnlyVector
             Observed data used to measure the residual in ``h_codomain``.
-        delta : float, optional
-            Noise-level bound. Defaults to zero.
-        tau : float, optional
-            Discrepancy multiplier. Defaults to 2.1.
-        max_its : int, optional
-            Iteration cap. Defaults to 1000.
-
+        delta: float [default: 0]
+            Noise-level bound.
+        tau: float [default: 2.1]
+            Discrepancy multiplier.1.
+        max_its: int [default: 1000]
+            Iteration cap.
+        
         Returns
         -------
         tuple[Vector | None, Vector | None]
@@ -446,14 +511,14 @@ class RegSolver(Solver):
         return reco, reco_data
 
     def compute_dual(self) -> None:
-        """Complete and store primal and dual tuples for a Tikhonov setting.
-
+        r"""Complete and store primal and dual tuples for a Tikhonov setting.
+        
         Uses ``(self.x, self.y)`` and an existing ``self.dual`` tuple (or
         ``None``). Assigns the completed tuples to ``self.primal`` and
         ``self.dual``; these attributes are data, not accessor methods.
         Subclasses using callable primal/dual accessors should not use this
         helper without adapting it.
-
+        
         Raises
         ------
         RuntimeError
@@ -470,32 +535,32 @@ class RegSolver(Solver):
     
 
 class CombinedSolver(RegSolver):
-    """Run two solvers successively, selecting a warm start with a stopping rule.
-
+    r"""Run two solvers successively, selecting a warm start with a stopping rule.
+    
     Parameters
     ----------
-    solver1 : RegSolver
+    solver1: RegSolver
         Initialized first solver. Its current state is the combined solver's
         initial state; it is not restarted. Do not drive it independently while
         using this wrapper.
-    solver2 : Callable[..., RegSolver]
+    solver2: Callable[..., RegSolver]
         Factory called exactly once as ``solver2(init=x)`` when switching.
         For example, ``lambda *, init: SemiSmoothNewton(setting, init=init)``.
         It must return a new solver for the same setting and coordinates.
         A constructed solver instance is not accepted.
-    stoprule : StopRule or None, optional
+    stoprule: StopRule | None [default: None]
         Rule controlling the first phase. An independent, reset copy is used
-        and exposed as ``stoprule``. Defaults to ``CountIterations(10)``.
+        and exposed as ``stoprule``.
         It is checked at solver1's initial state and after each completed step.
         Natural convergence of solver1 also starts the second phase.
-
+    
     Notes
     -----
     The transition calls ``best_iterate()`` once and passes a copy of its
     selected x to the factory. If no best iterate is available, solver1's
     current x is used. Both pair-valued and vector-valued selections are
     supported. A missing solution vector raises ``ValueError``.
-
+    
     The inherited iteration drivers yield read-only views. As for other
     solvers, the initial state of solver1 is available through ``x`` and ``y``
     but is not yielded by ``iter`` or ``while_``. Every subsequent first-phase
@@ -503,13 +568,13 @@ class CombinedSolver(RegSolver):
     The transition counts as one combined iteration, even if solver2's initial
     state equals the warm start. An exterior rule can therefore stop at each
     of these states; stopping before the transition avoids constructing solver2.
-
+    
     ``iteration_step_nr`` counts combined steps, independently of the child
     counters. Missing public attributes (including primal/dual accessors and
     ``deriv``, when available) are delegated to ``active_solver``. Both children
     must represent the same setting so external stopping histories remain
     comparable. The wrapper does not restart either child or their counters.
-
+    
     Examples
     --------
     >>> combined = CombinedSolver(
@@ -547,17 +612,43 @@ class CombinedSolver(RegSolver):
 
     @property
     def is_primal(self) -> bool:
-        """Coordinate label of the currently active child solver."""
+        r"""Coordinate label of the currently active child solver.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.active_solver.is_primal
 
-    def __getattr__(self, name: str):
-        """Expose the active child's public interfaces without stale copies."""
+    def __getattr__(self, name: str) -> Any:
+        r"""Expose the active child's public interfaces without stale copies.
+        
+        Parameters
+        ----------
+        name: str
+            Name.
+        
+        
+        Returns
+        -------
+        Any
+            Result described above.
+        """
         if name.startswith('_'):
             raise AttributeError(name)
         return getattr(self.active_solver, name)
 
     def next(self) -> bool:
-        """Advance a child or expose the second child's initial state once."""
+        r"""Advance a child or expose the second child's initial state once.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         if self.is_converged():
             return False
         if self.solver2 is None:

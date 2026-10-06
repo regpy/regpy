@@ -1,5 +1,12 @@
 r"""Concrete and abstract Hilbert spaces on vector spaces.
 """
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any, Callable
+    from regpy.vecsps.base import ReadOnlyVector, VectorSpaceBase
+    from regpy.hilbert.base import AbstractSpace, HilbertSpace, MaskedHilbertSpace
 
 import logging
 
@@ -15,12 +22,25 @@ from .surface import *
 
 __all__ = ["L2", "Sobolev","Hm","Hm0","L2Boundary","SobolevBoundary","SobolevSphereSHBasis"]
 
-def as_hilbert_space(h, vecsp):
+def as_hilbert_space(h: HilbertSpace | Operator| Callabel|None, vecsp: VectorSpaceBase) -> HilbertSpace | None:
     r"""Convert h to HilbertSpace instance on vecsp.
-
+    
     - If h is an Operator, it's wrapped in a GramHilbertSpace.
     - If h is callable, e.g. an AbstractSpace, it is called on vecsp to
       construct the concrete space.
+    
+    Parameters
+    ----------
+    h: HilbertSpace | Operator| Callabel| None
+        The object definiing the Hilbert space. 
+    vecsp: VectorSpaceBase
+        Underlying vector space.
+    
+    
+    Returns
+    -------
+    HilbertSpace
+        Result described above.
     """
     if h is None:
         return None
@@ -55,47 +75,72 @@ SobolevBoundary = AbstractSpace('SobolevBoundary')
 r"""Sobolev `AbstractSpace` on a boundary. Mostly for use with NGSolve."""
 
 
-def componentwise(dispatcher, cls=DirectSum):
+def componentwise(dispatcher: AbstractSpace, cls=DirectSum) -> Callable[[VectorSpaceBase], HilbertSpace]:
     r"""Return a callable that iterates over the components of some vector space, constructing a
     `HilbertSpace` on each component, and joining the result. Intended to be used like e.g.
-
+    
         L2.register(vecsps.DirectSum, componentwise(L2))
-
+    
     to register a generic component-wise implementation of `L2` on `regpy.vecsps.DirectSum`
     vector spaces. Any vector space that allows iterating over components using Python's
     iterator protocol can be used, but `regpy.vecsps.DirectSum` is the only example of that right
     now.
-
+    
     Parameters
     ----------
-    dispatcher : callable
+    dispatcher: AbstractSpace
         The callable, most likely an `AbstractSpace`, to be applied in each component
         vector space to construct the `HilbertSpace` instances.
-    cls : callable, optional
-        The callable, most likely a `HilbertSpace` subclass, to combine the individual
-        `HilbertSpace` instances. Will be called with all spaces as arguments. Default: `DirectSum`.
-
+    
     Returns
     -------
-    callable
+    Callable[[VectorSpaceBase], HilbertSpace]
         A callable that can be used to register an `AbstractSpace` implementation on
         direct sums.
     """
-    def factory(vecsp, **kwargs):
+    def factory(vecsp: VectorSpaceBase, **kwargs: Any) -> HilbertSpace:
+        r"""Factory.
+        
+        Parameters
+        ----------
+        vecsp: VectorSpaceBase
+            Underlying vector space.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        HilbertSpace
+            Result described above.
+        """
         return cls(*(dispatcher(s, **kwargs) for s in vecsp), vecsp=vecsp)
     return factory
 
 
 
 
-def _masked_l2(vecsp, **kwargs):
-    """Restrict the full space's L2 geometry; kwargs describe that full geometry.
-
+def _masked_l2(vecsp: VectorSpaceBase, **kwargs: Any) -> MaskedHilbertSpace:
+    r"""Restrict the full space's L2 geometry; kwargs describe that full geometry.
+    
     In particular, weights have the shape of the full space, not the masked
     coefficient vector. For another chosen full-space geometry, construct
     MaskedHilbertSpace explicitly. Automatic registration requires a Gram
     operator recognized by the explicit diagonal-inverse implementation;
     no numerical or general matrix-diagonality test is performed.
+    
+    Parameters
+    ----------
+    vecsp: VectorSpaceBase
+        Underlying vector space.
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
+    
+    
+    Returns
+    -------
+    MaskedHilbertSpace
+        Result described above.
     """
     full_hilbert = L2(vecsp.get_full_space(), **kwargs)
     if MaskedHilbertSpace._coordinate_diagonal(full_hilbert.gram) is None:
@@ -109,11 +154,11 @@ def _masked_l2(vecsp, **kwargs):
     return MaskedHilbertSpace(full_hilbert, vecsp)
 
 
-def _register_spaces():
+def _register_spaces() -> None:
     r"""Auxiliary method to register abstract spaces for various vector spaces. Using the decorator
     method described in `AbstractSpace` does not work due to circular depenencies when
     loading modules.
-
+    
     This is called from the `regpy` top-level module once, and can be ignored otherwise.
     """
 

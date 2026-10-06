@@ -7,6 +7,18 @@ Operators are using such spaces are implemented in the `regpy.operators.ngsolve`
 and Functionals defined on such spaces can be found in `regpy.hilbert.ngsolve` and `regpy.functionals.ngsolve`
 respectively. 
 """
+from __future__ import annotations
+
+from typing import Literal, overload
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from typing_extensions import Self
+    from numpy.typing import ArrayLike
+    from regpy.vecsps.base import Vector
+    from regpy.functionals.base import Functional
+    from regpy._typing import Mask
 
 __all__ = ['NgsBaseVector','NgsVectorSpace',"NgsVectorSpaceWithInnerProduct"]
 
@@ -38,14 +50,30 @@ class NgsBaseVector:
 
     log = ClassLogger()
 
-    def copy(self):
+    def copy(self) -> Self:
+        r"""Copy.
+        
+        
+        Returns
+        -------
+        Self
+            Result described above.
+        """
         return copy(self)
     
     @property
-    def is_complex_dtype(self):
+    def is_complex_dtype(self) -> bool:
+        r"""Is complex dtype.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.vec.is_complex
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.read_only, (bool, np.bool_)):
             raise TypeError(
                 f"read_only must be boolean. Got {type(self.read_only)}."
@@ -80,7 +108,15 @@ class NgsBaseVector:
                 f"Cannot perform {operation} on a read-only NgsBaseVector."
             )
 
-    def conj(self):
+    def conj(self) -> Functional:
+        r"""Conj.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
         if self.is_dynamic:
             self.log.debug("To make a conjugate of a Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
@@ -93,7 +129,20 @@ class NgsBaseVector:
             return self.copy()
     
     @property
-    def real(self, convert2real_vec = True):
+    def real(self, convert2real_vec: bool = True) -> NgsBaseVector | Vector:
+        r"""Real part.
+        
+        Parameters
+        ----------
+        convert2real_vec: bool [default: True]
+            Convert2real vec.
+        
+        
+        Returns
+        -------
+        NgsBaseVector | Vector
+            Result described above.
+        """
         if self.is_dynamic:
             self.log.debug("To make a real of a Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
@@ -110,7 +159,20 @@ class NgsBaseVector:
         return self.copy()
     
     @property
-    def imag(self, convert2real_vec = True):
+    def imag(self, convert2real_vec: bool = True) -> NgsBaseVector:
+        r"""Imagqinary part.
+        
+        Parameters
+        ----------
+        convert2real_vec: bool [default: True]
+            Convert2real vec.
+        
+        
+        Returns
+        -------
+        NgsBaseVector
+            Result described above.
+        """
         if self.is_dynamic:
             self.log.debug("To make a imag of a Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
@@ -129,7 +191,15 @@ class NgsBaseVector:
         z.FV().NumPy()[:] = 0
         return NgsBaseVector(z)
     
-    def to_imag(self):
+    def to_imag(self) -> Self | NgsBaseVector:
+        r"""To imag.
+        
+        
+        Returns
+        -------
+        Self | NgsBaseVector
+            Result described above.
+        """
         if self.is_complex:
             return self
         else:
@@ -141,7 +211,7 @@ class NgsBaseVector:
             z.FV().NumPy()[:] = self.vec.FV().NumPy() + 1j*0
             return NgsBaseVector(z)
 
-    def __iadd__(self,other):
+    def __iadd__(self,other: ReadOnlyVector | Scalar) -> Self:
         self._require_writable("in-place addition")
         if not isinstance(other,NgsBaseVector) or other.size != self.size:
             raise ValueError(Errors.value_error("Adding NgsBaseVector only supported for NgsBaseVector of identical size!"))
@@ -154,7 +224,7 @@ class NgsBaseVector:
             self.vec += other.vec
         return self
 
-    def __isub__(self,other):
+    def __isub__(self,other: ReadOnlyVector | Scalar) -> Self:
         self._require_writable("in-place subtraction")
         if not isinstance(other,NgsBaseVector) or other.size != self.size:
             raise ValueError(Errors.value_error("Subtracting NgsBaseVector only supported for NgsBaseVector of identical size!"))
@@ -167,7 +237,7 @@ class NgsBaseVector:
             self.vec -= other.vec
         return self
     
-    def __imul__(self,other):
+    def __imul__(self,other: ReadOnlyVector | Scalar) -> Self:
         self._require_writable("in-place multiplication")
         if self.is_dynamic:
             self.log.debug("To have in-place multiplication of a Dynamic VectorExpression it has to be evaluated")
@@ -178,7 +248,7 @@ class NgsBaseVector:
         self.vec.data *= other
         return self
     
-    def __itruediv__(self,other):
+    def __itruediv__(self,other: ReadOnlyVector | Scalar) -> Self:
         self._require_writable("in-place division")
         if self.is_dynamic:
             self.log.debug("To have in-place division of a Dynamic VectorExpression it has to be evaluated")
@@ -189,7 +259,7 @@ class NgsBaseVector:
         self.vec.data /= other
         return self
     
-    def __add__(self,other):
+    def __add__(self,other: ReadOnlyVector | Scalar) -> NgsBaseVector:
         if not isinstance(other,NgsBaseVector) or other.size != self.size:
             raise ValueError(Errors.value_error("Adding NgsBaseVector only supported for NgsBaseVector of identical size!"))
         if self.is_complex and not other.is_complex:
@@ -199,19 +269,19 @@ class NgsBaseVector:
             return self + other.real
         return NgsBaseVector(self.vec + other.vec)
     
-    def __radd__(self,other):
+    def __radd__(self,other: ReadOnlyVector | Scalar) -> NgsBaseVector:
         return self + other
     
-    def __sub__(self,other):
+    def __sub__(self,other: ReadOnlyVector | Scalar) -> NgsBaseVector:
         return self + (-1*other)
     
-    def __rsub__(self,other):
+    def __rsub__(self,other: ReadOnlyVector | Scalar) -> NgsBaseVector:
         return (-1*self) + other
     
-    def __neg__(self):
+    def __neg__(self) -> NgsBaseVector:
         return -1*self
     
-    def __mul__(self,other):
+    def __mul__(self,other: ReadOnlyVector | Scalar) -> NgsBaseVector:
         from regpy.operators.base import Operator,PtwMultiplication
         if isinstance(other,float) or isinstance(other,int) or isinstance(other,complex):
             return NgsBaseVector(other * self.vec)
@@ -220,15 +290,15 @@ class NgsBaseVector:
         else:
             raise NotImplementedError(Errors.generic_message(f"Multiplication of TupleVector with {type(other)} is not defined. It has to be either a number eg float, int or complex or an Operator."))
         
-    def __rmul__(self,other):
+    def __rmul__(self,other: ReadOnlyVector | Scalar) -> NgsBaseVector:
         return self * other
 
-    def __truediv__(self,other):
+    def __truediv__(self,other: ReadOnlyVector | Scalar) -> NgsBaseVector:
         if not isinstance(other,(float,int,complex)):
             raise ValueError(Errors.value_error("Dividing NgsBaseVector only supported for scalars (int, float, or complex)!"))
         return NgsBaseVector((1/other)*self.vec)
     
-    def __getitem__(self,i):
+    def __getitem__(self,i: int) -> Scalar | NgsBaseVector:
         if self.is_dynamic:
             self.log.debug("To get items the Dynamic VectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
@@ -242,7 +312,7 @@ class NgsBaseVector:
         else:
             return NgsBaseVector(self.vec[i])
     
-    def __setitem__(self,i,val):
+    def __setitem__(self,i: int,val: Scalar | ReadOnlyVector) -> None:
         self._require_writable("item assignment")
         if self.is_dynamic:
             self.log.debug("To set items the DynamicVectorExpression it has to be evaluated")
@@ -256,14 +326,22 @@ class NgsBaseVector:
             except TypeError:
                 raise TypeError(Errors.type_error(f"Not able to set {val} to NgsBaseVector. It has to be either an NgsBaseVector of same size or Something compatible to set to an ngsolve.la.BaseVector."))
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Any]:
         if self.is_dynamic:
             self.log.debug("To iterate the DynamicVectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
             self.is_dynamic = False
         return self.vec
 
-    def iter_basis(self):
+    def iter_basis(self) -> Iterator[ReadOnlyVector]:
+        r"""Iter basis.
+        
+        
+        Yields
+        ------
+        ReadOnlyVector
+            Result described above.
+        """
         v = NgsBaseVector(self.vec.CreateVector())
         for i in range(self.size):
             v[i] = 1 
@@ -273,29 +351,29 @@ class NgsBaseVector:
                 yield v
             v[i] = 0                
 
-    def __and__(self,x,y):
+    def __and__(self,x: ReadOnlyVector,y: ReadOnlyVector) -> Iterator[bool]:
         if not isinstance(y,NgsBaseVector) or y.size != x.size:
             raise ValueError(Errors.value_error("Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
         return (x_i == y_i for x_i,y_i in zip(x,y))
     
-    def __or__(self,x,y):
+    def __or__(self,x: ReadOnlyVector,y: ReadOnlyVector) -> Iterator[bool]:
         if not isinstance(y,NgsBaseVector) or y.size != x.size:
             raise ValueError(Errors.value_error("Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
         return (x_i != y_i for x_i,y_i in zip(x,y))
 
-    def __xor__(self,x,y):
+    def __xor__(self,x: ReadOnlyVector,y: ReadOnlyVector) -> Iterator[bool]:
         if not isinstance(y,NgsBaseVector) or y.size != x.size:
             raise ValueError(Errors.value_error("Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
         return (x_i != y_i for x_i,y_i in zip(x,y))
     
-    def __copy__(self):
+    def __copy__(self) -> Self:
         if self.is_dynamic:
             self.log.debug("To copy the DynamicVectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
             self.is_dynamic = False
         return NgsBaseVector(self.vec.Copy())
     
-    def __deepcopy__(self, memo):
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
         if self.is_dynamic:
             self.log.debug("To copy the DynamicVectorExpression it has to be evaluated")
             self.vec = self.vec.Evaluate()
@@ -305,16 +383,19 @@ class NgsBaseVector:
 
 class NgsVectorSpace(MaskableVectorSpace):
     r"""A vector space wrapping an `ngsolve.FESpace`.
-
+    
     Parameters
     ----------
-    fes : ngsolve.FESpace
-       The wrapped NGSolve vector space.
-    bdr : 
+    fes: ngs.FESpace
+        The wrapped NGSolve vector space.
+    bdr: str | None [default: None]
         Boundary of the NGSolve vector space.
+    as_real_space: bool [default: True]
+        Whether to use real scalars. With complex storage, True treats the
+        space as real and counts real and imaginary coordinates separately.
     """
 
-    def __init__(self, fes, bdr=None, as_real_space=True):
+    def __init__(self, fes: ngs.FESpace, bdr: str | None=None, as_real_space: bool=True) -> None:
         if not isinstance(fes, ngs.FESpace):
             raise TypeError(Errors.not_instance(fes,ngs.FESpace))
         self.fes = fes
@@ -366,14 +447,64 @@ class NgsVectorSpace(MaskableVectorSpace):
         self._no_pickle = {*self._no_pickle,"fes"}
         self.mass_matrix_cholesky = None
 
-    def zeros(self, read_only: bool = False):
+    @overload
+    def zeros(self, read_only: Literal[False]=False) -> NgsBaseVector:
+        ...
+
+    @overload
+    def zeros(self, read_only: Literal[True]) -> ReadOnlyVector:
+        ...
+
+    @overload
+    def zeros(self, read_only: bool) -> NgsBaseVector | ReadOnlyVector:
+        ...
+
+    def zeros(self, read_only: bool = False) -> Vector | ReadOnlyVector:
+        r"""Create a vector whose coefficients are zero.
+        
+        Parameters
+        ----------
+        read_only: bool [default: False]
+            Whether to return a read-only view.
+        
+        
+        Returns
+        -------
+        Vector | ReadOnlyVector
+            Result described above.
+        """
         read_only = self._validate_read_only_flag(read_only)
         vec = self._gfu_fes.vec.CreateVector()
         vec.FV().NumPy()[:] = 0
         result = NgsBaseVector(vec, make_copy=False)
         return self.read_only(result) if read_only else result
     
-    def ones(self, read_only: bool = False):
+    @overload
+    def ones(self, read_only: Literal[False]=False) -> NgsBaseVector:
+        ...
+
+    @overload
+    def ones(self, read_only: Literal[True]) -> ReadOnlyVector:
+        ...
+
+    @overload
+    def ones(self, read_only: bool) -> NgsBaseVector | ReadOnlyVector:
+        ...
+
+    def ones(self, read_only: bool = False) -> Vector | ReadOnlyVector:
+        r"""Create a vector whose coefficients are one.
+        
+        Parameters
+        ----------
+        read_only: bool [default: False]
+            Whether to return a read-only view.
+        
+        
+        Returns
+        -------
+        Vector | ReadOnlyVector
+            Result described above.
+        """
         read_only = self._validate_read_only_flag(read_only)
         if self.codim == 1:
             self._gfu_fes.Set(1)
@@ -384,8 +515,20 @@ class NgsVectorSpace(MaskableVectorSpace):
         result = NgsBaseVector(self._gfu_fes.vec, make_copy=True)
         return self.read_only(result) if read_only else result
 
-    def read_only(self, x: NgsBaseVector) -> NgsBaseVector:
-        """Return a read-only wrapper sharing the underlying NGSolve vector."""
+    def read_only(self, x: NgsBaseVector) -> ReadOnlyVector:
+        r"""Return a read-only wrapper sharing the underlying NGSolve vector.
+        
+        Parameters
+        ----------
+        x: NgsBaseVector
+            X.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector
+            Read-only vector view.
+        """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(
                 x, self, vec_name="vector",
@@ -395,10 +538,37 @@ class NgsVectorSpace(MaskableVectorSpace):
             return x
         return NgsBaseVector(x.vec, make_copy=False, read_only=True)
     
-    def empty(self):
+    def empty(self) -> Vector:
+        r"""Allocate a writable vector with uninitialized coefficients.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         return self.zeros()
     
-    def rand(self,distribution = "uniform", use_space_sampling = False, mass_matrix_weighting = True, **kwargs):
+    def rand(self,distribution: str = "uniform", use_space_sampling: bool = False, mass_matrix_weighting: bool = True, **kwargs: Any) -> Vector:
+        r"""Rand.
+        
+        Parameters
+        ----------
+        distribution: str [default: 'uniform']
+            Distribution.
+        use_space_sampling: bool [default: False]
+            Use space sampling.
+        mass_matrix_weighting: bool [default: True]
+            Mass matrix weighting.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         if use_space_sampling:
             # Computes random samples in the fes via
             # mass matrix half power scaling
@@ -407,7 +577,7 @@ class NgsVectorSpace(MaskableVectorSpace):
             # Can be disabled by setting mass_matrix_weighting to False,
             # but this does not create e.g. correct normal distributions
             
-            def draw():
+            def draw() -> None:
                 samp = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
                 if self.is_complex and not is_complex_dtype(samp.dtype):
                     samp = samp + 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
@@ -461,7 +631,24 @@ class NgsVectorSpace(MaskableVectorSpace):
             return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
 
     
-    def poisson(self,x, n = 1, tol = 3e-15):
+    def poisson(self,x: ReadOnlyVector, n: int = 1, tol: float = 3e-15) -> Vector:
+        r"""Poisson.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        n: int [default: 1]
+            N.
+        tol: float [default: 3e-15]
+            Tolerance for the stopping or comparison criterion.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         if x.is_complex:
             raise NotImplemented(Errors.generic_message(f"Poisson sampling for the NgsVectorSpace {self} is not defined since it is complex."))
         if self.is_complex:
@@ -479,7 +666,7 @@ class NgsVectorSpace(MaskableVectorSpace):
             self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
             return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
 
-    def __contains__(self,x):
+    def __contains__(self,x: ReadOnlyVector) -> bool:
         if not isinstance(x,NgsBaseVector):
             return False
         elif x.size != self.fes.ndof:
@@ -489,10 +676,36 @@ class NgsVectorSpace(MaskableVectorSpace):
         else:
             return True
         
-    def vdot(self, x, y):
+    def vdot(self, x: ReadOnlyVector, y: ReadOnlyVector) -> Scalar:
+        r"""Vdot.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Scalar
+            Computed scalar value.
+        """
         return ngs.InnerProduct(y.vec,x.vec)
 
-    def copyto(self, x, y, where=None):
+    def copyto(self, x: Vector, y: ReadOnlyVector, where: Mask | None=None) -> None:
+        r"""Copy coefficients into an existing writable vector.
+        
+        Parameters
+        ----------
+        x: Vector
+            Writable vector used by this operation.
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        where: Mask | None [default: None]
+            Mask selecting the coordinates to write; None selects all coordinates.
+        """
         if where is not None:
             return MaskableVectorSpace.copyto(self, x, y, where=where)
         r"""Copy ``y`` into the existing :class:`NgsBaseVector` ``x``.
@@ -523,7 +736,18 @@ class NgsVectorSpace(MaskableVectorSpace):
             x.is_dynamic = False
         x.vec.data = y.vec
 
-    def fill(self, x, value, where=None) -> None:
+    def fill(self, x: Vector, value: Scalar, where: Mask | None=None) -> None:
+        r"""Fill selected coefficients of a writable vector with a scalar.
+        
+        Parameters
+        ----------
+        x: Vector
+            Writable vector used by this operation.
+        value: Scalar
+            Value.
+        where: Mask | None [default: None]
+            Mask selecting the coordinates to write; None selects all coordinates.
+        """
         if where is not None:
             return MaskableVectorSpace.fill(self, x, value, where=where)
         r"""Fill an existing :class:`NgsBaseVector` with ``value``."""
@@ -542,7 +766,19 @@ class NgsVectorSpace(MaskableVectorSpace):
         x.vec.FV().NumPy().fill(value)
 
     def _iter_native_coefficients(self, x: ReadOnlyVector) -> Iterator[Scalar]:
-        """Iterate over the native real or complex NGSolve coefficients."""
+        r"""Iterate over the native real or complex NGSolve coefficients.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Iterator[Scalar]
+            Result described above.
+        """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(
                 x,
@@ -558,7 +794,15 @@ class NgsVectorSpace(MaskableVectorSpace):
         x: NgsBaseVector,
         coefficients: Iterable[Scalar],
     ) -> None:
-        """Overwrite an NGSolve vector from native coefficients."""
+        r"""Overwrite an NGSolve vector from native coefficients.
+        
+        Parameters
+        ----------
+        x: NgsBaseVector
+            X.
+        coefficients: Iterable[Scalar]
+            Coefficients.
+        """
         if x not in self:
             raise ValueError(Errors.not_in_vecsp(
                 x,
@@ -597,24 +841,24 @@ class NgsVectorSpace(MaskableVectorSpace):
             f"Expected {self._native_dimension} coefficients, but received more."
         ))
     
-    def complex_space(self):
-        """Compute the corresponding complex vector space by creating a complex fes from the input of the old one.
-
+    def complex_space(self) -> VectorSpaceBase:
+        r"""Compute the corresponding complex vector space by creating a complex fes from the input of the old one.
+        
         Returns
         -------
-        regpy.vecsps.NgsVectorSpace
+        VectorSpaceBase
             The complex space corresponding to this vector space.
         """
         if self.is_complex:
             return copy(self)
         return NgsVectorSpace(type(self.fes)(self.fes.mesh,order=self.fes.globalorder,bdr=self.bdr,complex=True),bdr=self.bdr)
 
-    def real_space(self):
-        """Compute the corresponding real vector space by creating a real fes from the input of the old one.
-
+    def real_space(self) -> VectorSpaceBase:
+        r"""Compute the corresponding real vector space by creating a real fes from the input of the old one.
+        
         Returns
         -------
-        regpy.vecsps.NgsVectorSpace
+        VectorSpaceBase
             The real space corresponding to this vector space.
         """
         if not self.is_complex:
@@ -622,8 +866,20 @@ class NgsVectorSpace(MaskableVectorSpace):
         return NgsVectorSpace(type(self.fes)(self.fes.mesh,order=self.fes.globalorder,dirichlet=self.bdr,complex=False),bdr=self.bdr)
     
 
-    def flatten(self, x):
-        """Contiguous coefficient coordinates; real/imag are interleaved."""
+    def flatten(self, x: ReadOnlyVector) -> np.ndarray:
+        r"""Contiguous coefficient coordinates; real/imag are interleaved.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         if x not in self:
             raise ValueError("Vector outside NgsVectorSpace.")
         vector = x.vec.Evaluate() if x.is_dynamic else x.vec
@@ -633,7 +889,20 @@ class NgsVectorSpace(MaskableVectorSpace):
         return values.copy()
 
 
-    def fromflat(self, x):
+    def fromflat(self, x: ReadOnlyVector) -> Vector:
+        r"""Fromflat.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         return super().fromflat(x)
 
 
@@ -644,12 +913,18 @@ class NgsVectorSpace(MaskableVectorSpace):
         return self.fes == other.fes and self.as_real_space == other.as_real_space
     
     
-    def iter_basis(self):
+    def iter_basis(self) -> Iterator[ReadOnlyVector]:
         r"""Generator iterating over the standard basis of the vector space. For efficiency,
         the same array is returned in each step, and subsequently modified in-place. If you need
         the array longer than that, perform a copy. In case of complex a vector space after each
         each array modified in its place with a real one it returns the same vector with \(1i\)
         in its place.   
+        
+        
+        Yields
+        ------
+        ReadOnlyVector
+            Result described above.
         """
         elm = self.zeros()
         for idx in range(self.shape[0]):
@@ -665,13 +940,47 @@ class NgsVectorSpace(MaskableVectorSpace):
     
 
     @property
-    def ndim(self):
+    def ndim(self) -> int:
+        r"""Ndim.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         return 1
 
-    def compatible(self, other):
+    def compatible(self, other: object) -> bool:
+        r"""Compatible.
+        
+        Parameters
+        ----------
+        other: object
+            Other.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self == other
 
-    def is_on_boundary(self,x):
+    def is_on_boundary(self,x: ReadOnlyVector) -> bool:
+        r"""Is on boundary.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         if self.bdr is None:
             return False
         t = x.vec.CreateVector()
@@ -679,15 +988,45 @@ class NgsVectorSpace(MaskableVectorSpace):
         ngs.Projector(self.fes.FreeDofs(), range=True).Project(t)
         return np.all(t.FV().NumPy() == 0)
     
-    def to_gf(self, x):
+    def to_gf(self, x: Vector) -> ngs.GridFunction:
         # This Workaround to connect the GridFunction to the Vector can be replaced by 
         # creating GridFunction with existing Vector. Feature was added after ngs version 6.2.2506!
+        r"""To gf.
+        
+        Parameters
+        ----------
+        x: Vector
+            Writable vector used by this operation.
+        
+        
+        Returns
+        -------
+        ngs.GridFunction
+            Result described above.
+        """
         gf = ngs.GridFunction(self.fes)
         gf.vec.data = x.vec
         x.vec = gf.vec
         return gf
     
-    def from_ngs(self, ngs_elem, definedon : ngs.comp.Region|None = None, copy = False):
+    def from_ngs(self, ngs_elem: ngs.BaseVector | ngs.GridFunction, definedon : ngs.comp.Region|None = None, copy: bool = False) -> NgsBaseVector:
+        r"""From ngs.
+        
+        Parameters
+        ----------
+        ngs_elem: ngs.BaseVector | ngs.GridFunction
+            Ngs elem.
+        definedon: ngs.comp.Region | None [default: None]
+            Definedon.
+        copy: bool [default: False]
+            Copy.
+        
+        
+        Returns
+        -------
+        NgsBaseVector
+            Result described above.
+        """
         if isinstance(ngs_elem,ngs.comp.GridFunction):
             if ngs_elem.space != self.fes:
                 self._gfu_fes.Set(ngs_elem)
@@ -703,12 +1042,14 @@ class NgsVectorSpace(MaskableVectorSpace):
             self._gfu_fes.Set(ngs_elem,definedon=definedon)
             return NgsBaseVector(self._gfu_fes.vec,make_copy = True)
             
-    def create_mass_matrix_cholesky(self):
+    def create_mass_matrix_cholesky(self) -> None:
         # Builds the cholesky decomposition
         # mass = LL^T
         # The output factor self.mass_matrix_cholesky corresponds to L (not L^T)
         # Warning: Current method is a hack based on scipy spLU. However,
         # correct implementation would require access to scikit.sparse.cholmod.
+        r"""Create mass matrix cholesky.
+        """
         if self.mass_matrix_cholesky is not None:
             return
         mass = ngs.BilinearForm(self.fes)
@@ -753,16 +1094,18 @@ class NgsVectorSpace(MaskableVectorSpace):
 class NgsVectorSpaceWithInnerProduct(NgsVectorSpace):
     r"""A vector space wrapping an `ngsolve.FESpace`. That defines the inner Product 
     to include the mass matrix allowing to have easier adjoint operators.
-
+    
     Parameters
     ----------
-    fes : ngsolve.FESpace
-       The wrapped NGSolve vector space.
-    bdr : 
+    fes: ngs.FESpace
+        The wrapped NGSolve vector space.
+    bdr: str | None [default: None]
         Boundary of the NGSolve vector space.
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
     """
 
-    def __init__(self, fes, bdr=None, **kwargs):
+    def __init__(self, fes: ngs.FESpace, bdr: str | None=None, **kwargs: Any) -> None:
         if not isinstance(fes, (ngs.L2,ngs.H1,ngs.VectorH1)):
             raise ValueError("The given FES is neither an H1 nor VectorH1 space of ngsolve")
         
@@ -781,34 +1124,89 @@ class NgsVectorSpaceWithInnerProduct(NgsVectorSpace):
         self.mass_vec = self.empty().vec.CreateVector()
         self._no_pickle = {*self._no_pickle,"mass"}
 
-    def vdot(self, x, y):
+    def vdot(self, x: ReadOnlyVector, y: ReadOnlyVector) -> Scalar:
+        r"""Vdot.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Scalar
+            Computed scalar value.
+        """
         self.mass_vec.data = self.mass * x.vec
         return ngs.InnerProduct(y.vec,self.mass_vec)
     
     @property
-    def bonus_intorder(self):
+    def bonus_intorder(self) -> int:
+        r"""Bonus intorder.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         return self._bonus_intorder
     
     @bonus_intorder.setter
-    def bonus_intorder(self, value):
+    def bonus_intorder(self, value: Scalar | ArrayLike) -> None:
+        r"""Bonus intorder.
+        
+        Parameters
+        ----------
+        value: Scalar | ArrayLike
+            Value.
+        """
         self._bonus_intorder = value
         self.mass = self.compute_mass()
 
     @bonus_intorder.deleter
-    def bonus_intorder(self):
+    def bonus_intorder(self) -> None:
+        r"""Bonus intorder.
+        """
         self._bonus_intorder = 0
         self.mass = self.compute_mass()
 
     @property
-    def definedon(self):
+    def definedon(self) -> ngs.Region | None:
+        r"""Definedon.
+        
+        
+        Returns
+        -------
+        ngs.Region | None
+            Result described above.
+        """
         return self._definedon
     
     @definedon.setter
-    def definedon(self, value):
+    def definedon(self, value: Scalar | ArrayLike) -> None:
+        r"""Definedon.
+        
+        Parameters
+        ----------
+        value: Scalar | ArrayLike
+            Value.
+        """
         self._definedon = value
         self.mass = self.compute_mass()
     
-    def compute_mass(self):
+    def compute_mass(self) -> ngs.BaseMatrix:
+        r"""Compute mass.
+        
+        
+        Returns
+        -------
+        ngs.BaseMatrix
+            Result described above.
+        """
         u, v = self.fes.TnT()
         mass_bf = ngs.BilinearForm(self.fes)
         mass_bf += u*v*ngs.dx(definedon = self.definedon, bonus_intorder = self.bonus_intorder)

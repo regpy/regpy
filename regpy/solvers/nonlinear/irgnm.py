@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from math import sqrt,isqrt
 from copy import copy
 
@@ -22,10 +25,25 @@ def _regularization_parameter_iterator(
     regpar: float,
     regpar_step: float,
 ) -> Iterator[float]:
-    """Create the regularization-parameter iterator.
-
+    r"""Create the regularization-parameter iterator.
+    
     ``regpar`` and ``regpar_step`` retain their historical meaning when no
     explicit iterator is supplied.
+    
+    Parameters
+    ----------
+    regpars: Iterable[float] | None
+        Regpars.
+    regpar: float
+        Regularization parameter.
+    regpar_step: float
+        Regpar step.
+    
+    
+    Returns
+    -------
+    Iterator[float]
+        Result described above.
     """
     if regpars is None:
         return iter((regpar * (regpar_step) ** Naturals()))
@@ -41,7 +59,19 @@ def _regularization_parameter_iterator(
 def _next_regularization_parameter(
     regpar_iterator: Iterator[float],
 ) -> float:
-    """Read and validate one regularization parameter."""
+    r"""Read and validate one regularization parameter.
+    
+    Parameters
+    ----------
+    regpar_iterator: Iterator[float]
+        Regpar iterator.
+    
+    
+    Returns
+    -------
+    float
+        Computed scalar value.
+    """
     value = next(regpar_iterator)
     if not isinstance(value, Real) or value <= 0:
         raise ValueError(Errors.value_error(
@@ -55,7 +85,21 @@ def _inner_cg_parameters(
     cg_pars: dict | None,
     codomain_free: bool,
 ) -> dict:
-    """Return independent, compatible parameters for an inner CG solve."""
+    r"""Return independent, compatible parameters for an inner CG solve.
+    
+    Parameters
+    ----------
+    cg_pars: dict | None
+        Options for cg pars.
+    codomain_free: bool
+        Codomain free.
+    
+    
+    Returns
+    -------
+    dict
+        Result described above.
+    """
     if cg_pars is None:
         pars = {'reltolx': 1 / 3, 'all_tol_criteria': False}
         if not codomain_free:
@@ -104,7 +148,24 @@ def _run_inner_cg(
     reference: ReadOnlyVector,
     stoprule: CountIterations,
 ) -> tuple[Vector, Vector | None]:
-    """Solve one linearized Tikhonov problem."""
+    r"""Solve one linearized Tikhonov problem.
+    
+    Parameters
+    ----------
+    solver: RegSolver
+        Solver.
+    reference: ReadOnlyVector
+        Input vector; its coefficients are only read.
+    stoprule: CountIterations
+        Stoprule.
+    
+    
+    Returns
+    -------
+    tuple[Vector, Vector | None]
+        The first vector is the inimizers of the Tikhonov functional. In the codomain_free case
+        the second vector is None, otherwise it is the operator image of the first. 
+    """
     cg_pars = dict(solver.cg_pars)
     cg_pars.setdefault(
         'logging_level', solver.inner_it_logging_level
@@ -119,51 +180,51 @@ def _run_inner_cg(
 
 class IrgnmCG(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
-
+    
     .. math::
         \Vert T(x_{n}) + T'[x_n] h - data\Vert^{2}
         + regpar_{n} \cdot \Vert x_{n} + h - init\Vert^{2}
-
+    
     where :math:`T` is a Fréchet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
     By default, :math:`regpar_n` is a decreasing geometric sequence of
     regularization parameters. An arbitrary iterable can be supplied instead.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem.
-    data : Vector or ObsDataT or None [default: None]
+    data: Vector | ObsDataT | None [default: None]
         The measured data. If it is None it is taken from the setting. For a
         codomain-free setting it may be any object accepted by
         :meth:`Operator.adjoint_data`.
-    regpar : float [default: 1.0]
+    regpar: float [default: 1.0]
         The initial regularization parameter. Must be positive.
-    regpar_step : float [default: 2 / 3]
+    regpar_step: float [default: 2 / 3]
         The factor by which to reduce ``regpar`` in each iteration when
         ``regpars`` is not supplied.
-    init : Vector or None [default: None]
+    init: ReadOnlyVector | None [default: None]
         Initial guess. In the default case, it is taken from the setting.
-    cg_pars : dict or None [default: None]
+    cg_pars: dict | None [default: None]
         Parameters for the inner
         :class:`~regpy.solvers.linear.tikhonov.TikhonovCG` or, in the
         codomain-free case,
         :class:`~regpy.solvers.linear.tikhonov.Lavrentiev` solver. ``regpar``
         and ``update_setting`` are not accepted.
-    cgstop : int or None [default: 1000]
+    cgstop: int | None [default: 1000]
         Maximum number of inner CG iterations.
-    inner_it_logging_level : int or str [default: "WARNING"]
+    inner_it_logging_level: int | str [default: 'WARNING']
         Logging level for inner iterations.
-    simplified_op : regpy.operators.Operator or None [default: None]
+    simplified_op: Operator | None [default: None]
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. This option is
         unavailable for codomain-free settings.
-    logging_level : int or str [default: "INFO"]
+    logging_level: int | str [default: 'INFO']
         Logging level.
-    regpars : iterable of float or None [default: None]
+    regpars: Iterable[float] | None [default: None]
         Regularization parameters for the outer iterations. If omitted, a
         sequence ``regpar * regpar_step**Naturals()`` is used. If supplied, ``regpar`` and ``regpar_step``
         are ignored. Iteration ends after the last supplied parameter.
-
+    
     Notes
     -----
     In the codomain-free case the normal-equation right-hand side is formed
@@ -175,7 +236,7 @@ class IrgnmCG(RegSolver):
                 self, setting:Setting,
                 data:Vector | ObsDataT | None=None,
                 regpar:float=1., regpar_step:float=2 / 3,
-                init:Vector | None=None,
+                init:ReadOnlyVector | None=None,
                 cg_pars:dict | None=None,
                 cgstop:int | None=1000,
                 inner_it_logging_level:int | str = "WARNING",
@@ -239,7 +300,7 @@ class IrgnmCG(RegSolver):
         self.inner_it_logging_level = inner_it_logging_level
         self._nr_inner_steps = 0
 
-    def _next(self):
+    def _next(self) -> None:
         if self.cgstop is not None:
             stoprule = CountIterations(self.cgstop)
         else:
@@ -273,7 +334,15 @@ class IrgnmCG(RegSolver):
         except StopIteration:
             self.converge()
     
-    def nr_inner_its(self):
+    def nr_inner_its(self) -> int:
+        r"""Nr inner its.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         return self._nr_inner_steps
 
     @staticmethod
@@ -281,9 +350,27 @@ class IrgnmCG(RegSolver):
         setting: Setting,
         op_norm: float | None = None,
         user_data: Vector | ObsDataT | None = None,
-        user_init: Vector | None = None,
+        user_init: ReadOnlyVector | None = None,
     ) -> tuple[dict, dict]:
-        """Check whether IRGNM-CG can be used for ``setting``."""
+        r"""Check whether IRGNM-CG can be used for ``setting``.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        user_data: Vector | ObsDataT | None [default: None]
+            Writable vector used by this operation.
+        user_init: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+             The first dictionary contains applicability information, the second is empty here. 
+        """
         out, par = check_Hilbert_applicability(
             setting,
             op_norm=op_norm,
@@ -296,51 +383,51 @@ class IrgnmCG(RegSolver):
 
 class LevenbergMarquardt(RegSolver):
     r"""The Levenberg-Marquardt method. In each iteration, minimizes
-
+    
     .. math::
         \Vert T(x_{n}) + T'[x_n] h - data\Vert^{2}
         + regpar_{n} \cdot \Vert h\Vert^{2}
-
+    
     where :math:`T` is a Fréchet-differentiable operator, using `regpy.solvers.linear.tikhonov.TikhonovCG`.
     By default, :math:`regpar_n` is a decreasing geometric sequence of
     regularization parameters. An arbitrary iterable can be supplied instead.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem.
-    data : Vector or ObsDataT or None [default: None]
+    data: Vector | ObsDataT | None [default: None]
         The measured data. If it is None it is taken from the setting. For a
         codomain-free setting it may be any object accepted by
         :meth:`Operator.adjoint_data`.
-    regpar : float [default: 1.0]
+    regpar: float [default: 1.0]
         The initial regularization parameter. Must be positive.
-    regpar_step : float [default: 2 / 3]
+    regpar_step: float [default: 2 / 3]
         The factor by which to reduce ``regpar`` in each iteration when
         ``regpars`` is not supplied.
-    init : Vector or None [default: None]
+    init: ReadOnlyVector | None [default: None]
         Initial guess. In the default case, it is taken from the setting.
-    cg_pars : dict or None [default: None]
+    cg_pars: dict | None [default: None]
         Parameters for the inner
         :class:`~regpy.solvers.linear.tikhonov.TikhonovCG` or, in the
         codomain-free case,
         :class:`~regpy.solvers.linear.tikhonov.Lavrentiev` solver. ``regpar``
         and ``update_setting`` are not accepted.
-    cgstop : int or None [default: 1000]
+    cgstop: int | None [default: 1000]
         Maximum number of inner CG iterations.
-    inner_it_logging_level : int or str [default: "WARNING"]
+    inner_it_logging_level: int | str [default: 'WARNING']
         Logging level for inner iterations.
-    simplified_op : regpy.operators.Operator or None [default: None]
+    simplified_op: Operator | None [default: None]
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. This option is
         unavailable for codomain-free settings.
-    logging_level : int or str [default: "INFO"]
+    logging_level: int | str [default: 'INFO']
         Logging level.
-    regpars : iterable of float or None [default: None]
+    regpars: Iterable[float] | None [default: None]
         Regularization parameters for the outer iterations. If omitted, a
         sequence ``regpar * regpar_step**Naturals()`` is used. If supplied, ``regpar`` and ``regpar_step``
         are ignored. Iteration ends after the last supplied parameter.
-
+    
     Notes
     -----
     In the codomain-free case the normal-equation right-hand side is formed
@@ -352,7 +439,7 @@ class LevenbergMarquardt(RegSolver):
                self, setting:Setting,
                 data:Vector | ObsDataT | None=None,
                 regpar:float=1., regpar_step:float=2 / 3,
-                init:Vector | None=None,
+                init:ReadOnlyVector | None=None,
                 cg_pars:dict | None=None,
                 cgstop:int | None=1000,
                 inner_it_logging_level:int | str = "WARNING",
@@ -420,7 +507,7 @@ class LevenbergMarquardt(RegSolver):
         self.inner_it_logging_level = inner_it_logging_level
         self._nr_inner_steps = 0
 
-    def _next(self):
+    def _next(self) -> None:
         if self.cgstop is not None:
             stoprule = CountIterations(self.cgstop)
         else:
@@ -452,7 +539,15 @@ class LevenbergMarquardt(RegSolver):
         except StopIteration:
             self.converge()
     
-    def nr_inner_its(self):
+    def nr_inner_its(self) -> int:
+        r"""Nr inner its.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         return self._nr_inner_steps
 
     check_applicability = staticmethod(IrgnmCG.check_applicability)
@@ -465,76 +560,76 @@ from regpy.vecsps import UniformGridFcts
         
 class IrgnmCGPrec(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
-
+    
     .. math::
         \Vert F(x_n) + F'[x_n] h - data\Vert^2 + \text{regpar}_n  \Vert x_n + h - init\Vert^2
-
+    
     where :math:`F` is a Fréchet-differentiable operator, by solving in every iteration step the problem
     
     .. math::
         \underset{Mh = g}{\mathrm{minimize}}    \Vert T (M  g) - rhs\Vert^2 + \text{regpar} \Vert M  (g - x_{ref})\Vert^2
-
+    
     with `regpy.solvers.linear.tikhonov.TikhonovCG' and spectral preconditioner :math:`M`.
     By default, :math:`regpar_n` is a decreasing geometric sequence of
     regularization parameters. An arbitrary iterable can be supplied instead.
     The spectral preconditioner :math:`M` is chosen, such that:
-
+    
     .. math::
         M  A  M \approx Id
-
+    
     where :math:`A = (T^t Gram_{codomain} T + \text{regpar} Id) = T^* T + \text{regpar} Id` 
-
+    
     Note that the Tikhonov CG solver computes an orthonormal basis of vectors spanning the Krylov subspace of 
     the order of the number of iterations: :math:`\{v_j\}`
     We approximate A by the operator:
-
+    
     .. math::
         C_k: v \mapsto \text{regpar} v +\sum_{j=1}^k \langle v, v_j\rangle \lambda_j v_j
-
+    
     where lambda are the biggest eigenvalues of :math:`T*T`.
     
     We choose: :math:`M = C_k^{-1/2} and M^{-1} = C_k^{1/2}`
-
+    
     It is:
-
+    
     .. math::
         M     &: v \mapsto \frac{1}{\sqrt{\text{regpar}}} v + \sum_{j=1}^{k} \left[\frac{1}{\sqrt{\lambda_j+\text{regpar}}}-\frac{1}{\sqrt{\text{regpar}}}\right] \langle v_j, v\rangle v_j \\
         M^{-1}&: v \mapsto \sqrt{\text{regpar}} v + \sum_{j=1}^{k} \left[\sqrt{\lambda_j+\text{regpar}} -\sqrt{\text{regpar}}\right] \langle v_j, v\rangle v_j.
-
+    
     This only works for UniformGridFcts domains.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem. The domain of the operator has to be of type UniformGridFcts.
-    data : Vector or None [default: None]
+    data: ReadOnlyVector | None [default: None]
         The measured data. If it is None it is taken from the setting.
-    regpar : float [default: 1.0]
+    regpar: float [default: 1.0]
         The initial regularization parameter. Must be positive.
-    regpar_step : float [default: 2 / 3]
+    regpar_step: float [default: 2 / 3]
         The factor by which to reduce ``regpar`` in each iteration when
         ``regpars`` is not supplied.
-    init : Vector or None [default: None]
-        The initial guess. Defaults to None, in this case it is taken from the setting.
-    cg_pars : dict or None [default: None]
+    init: ReadOnlyVector | None [default: None]
+        The initial guess.
+    cg_pars: dict | None [default: None]
         Parameter dictionary passed to the inner
         :class:`regpy.solvers.linear.tikhonov.TikhonovCG` solver.
-    cgstop : int or None [default: None]
+    cgstop: int | None [default: None]
         Maximum number of inner CG iterations.
-    precpars : dict or None [default: None]
+    precpars: dict | None [default: None]
         Parameters for the spectral preconditioner. The defaults are Krylov
         order 6 and four eigenvalues.
-    logging_level : int or str [default: "INFO"]
+    logging_level: int | str [default: 'INFO']
         Logging level.
-    regpars : iterable of float or None [default: None]
+    regpars: Iterable[float] | None [default: None]
         Regularization parameters for the outer iterations. If omitted, a
         sequence ``regpar * regpar_step**Naturals()`` is used. If supplied, ``regpar`` and ``regpar_step``
         are ignored. Iteration ends after the last supplied parameter.
     """
 
     def __init__(
-        self, setting:Setting, data:Vector | None=None, regpar:float=1.,
-        regpar_step:float=2 / 3, init:Vector | None=None,
+        self, setting:Setting, data:ReadOnlyVector | None=None, regpar:float=1.,
+        regpar_step:float=2 / 3, init:ReadOnlyVector | None=None,
         cg_pars:dict | None=None, cgstop:int | None=None,
         precpars:dict | None=None,
         logging_level:int | str="INFO",
@@ -611,10 +706,28 @@ class IrgnmCGPrec(RegSolver):
     def check_applicability(
         setting: Setting,
         op_norm: float | None = None,
-        user_data: Vector | None = None,
-        user_init: Vector | None = None,
+        user_data: ReadOnlyVector | None = None,
+        user_init: ReadOnlyVector | None = None,
     ) -> tuple[dict, dict]:
-        """Check whether preconditioned IRGNM-CG can be used."""
+        r"""Check whether preconditioned IRGNM-CG-Prec can be used.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        user_data: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        user_init: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            The first dictionary contains applicability information, the second is empty here. 
+        """
         out, par = IrgnmCG.check_applicability(
             setting,
             op_norm=op_norm,
@@ -631,7 +744,7 @@ class IrgnmCGPrec(RegSolver):
         out['applicable'] = out['info'] == ''
         return out, par
     
-    def _next(self):
+    def _next(self) -> None:
         if self.cgstop is not None:
             stoprule = CountIterations(self.cgstop)
             # Disable info logging, but don't override log level for all
@@ -681,8 +794,9 @@ class IrgnmCGPrec(RegSolver):
         except StopIteration:
             self.converge()
                        
-    def _preconditioner_update(self):
-        """perform lanzcos method to calculate the preconditioner"""
+    def _preconditioner_update(self) -> None:
+        r"""perform lanzcos method to calculate the preconditioner
+        """
         L = np.zeros((self.krylov_order, self.krylov_order), dtype=self.op.domain.dtype)
         for i in range(0, self.krylov_order):
             L[i, i] = np.vdot(self.krylov_basis_img[i, :], self.krylov_basis_img_2[i, :])

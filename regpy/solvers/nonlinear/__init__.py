@@ -17,6 +17,7 @@ from regpy.solvers import *
 where you have access to `nonlinear` and can use for example `nonlinear.FISTA` to define
 a Tikhonov solver.
 """
+from __future__ import annotations
 
 
 from .fista import *

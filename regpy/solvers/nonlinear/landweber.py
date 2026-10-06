@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from collections.abc import Iterable, Iterator
 from numbers import Real
 from typing import cast
@@ -13,39 +16,39 @@ __all__ = ["Landweber"]
 
 class Landweber(RegSolver):
     r"""The nonlinear Landweber method for the ill-posed equation
-
+    
     .. math::
         F(x) = data.
-
+    
     It applies gradient descent to :math:`\lVert F(x)-data\rVert_Y^2` given by
-
+    
     .. math::
             x_{k+1} = x_k  -  \mu  G_X^{-1}  F'[x_k]^*  G_Y  (F(x_k) - data).
     
     If ``setting.codomain_free`` is true, this iteration formula is evaluated
     through ``adjoint_eval`` and ``adjoint_data``, and no codomain vector is
     allocated.
-
+    
     There are two mutually exclusive step-length modes:
-
+    
     - By default, the derivative norm is estimated initially and again at the
       iterations specified by ``stepsize_selection_steps``.
     - Supplying ``stepsize`` selects a fixed step length.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         Setting of the inverse problem.
-    data : ReadOnlyVector | ObsDataT | None, optional
+    data: ReadOnlyVector | ObsDataT | None [default: None]
         Right-hand side. In the default case, ``setting.data`` is used. For a
         codomain-free setting, it may be any object accepted by
         ``deriv.adjoint_data``.
-    init : Vector | None, optional
+    init: ReadOnlyVector | None [default: None]
         Initial guess. In the default case, it is taken from the setting.
-    stepsize : float | None, optional
+    stepsize: float | None [default: None]
         Positive fixed step length. If supplied, derivative-norm estimates are
         not used.
-    stepsize_selection_steps : iterable of int | None, optional
+    stepsize_selection_steps: Iterable[int] | None [default: None]
         Iterates at which the derivative norm is estimated to select a new
         step length. Selection is always performed once at the initial iterate
         (iteration zero). By default, it is then repeated at iterations
@@ -54,15 +57,13 @@ class Landweber(RegSolver):
         The derivative norm at :math:`x_k` determines the update from
         :math:`x_k` to :math:`x_{k+1}`. This argument cannot be combined with
         a fixed ``stepsize``.
-    stepsize_safety : float, optional
+    stepsize_safety: float [default: 0.9]
         Safety factor for norm-based step lengths. The selected value is
-        ``stepsize_safety / norm(deriv)**2``. It must lie in ``(0, 1]`` and
-        defaults to ``0.9``.
-    op_norm_method : str, optional
+        ``stepsize_safety / norm(deriv)**2``. It must lie in ``(0, 1]`` and9``.
+    op_norm_method: str [default: 'lanczos']
         Method used to estimate the derivative norm.
         Norm estimates use ``reltol=0.05 / sqrt(1 + iteration_step_nr)``.
-        Defaults to ``"lanczos"``.
-    logging_level : int | str, optional
+    logging_level: int | str [default: 'INFO']
         Logging level.
     """
 
@@ -70,7 +71,7 @@ class Landweber(RegSolver):
         self,
         setting: Setting,
         data: ReadOnlyVector | ObsDataT | None = None,
-        init: Vector | None = None,
+        init: ReadOnlyVector | None = None,
         stepsize: float | None = None,
         stepsize_selection_steps: Iterable[int] | None = None,
         stepsize_safety: float = 0.9,
@@ -197,7 +198,8 @@ class Landweber(RegSolver):
         self._update_norm_based_stepsize()
 
     def _advance_stepsize_selection_step(self) -> None:
-        """Read and validate the next step-length selection step."""
+        r"""Read and validate the next step-length selection step.
+        """
         if self._stepsize_selection_steps is None:
             self._next_stepsize_selection_step = None
             return
@@ -224,7 +226,8 @@ class Landweber(RegSolver):
         self._next_stepsize_selection_step = step
 
     def _estimate_stepsize(self) -> None:
-        """Estimate the derivative norm and update the step length."""
+        r"""Estimate the derivative norm and update the step length.
+        """
         norm = self.deriv.norm(
             self.setting.h_domain,
             None if self.setting.codomain_free else self.setting.h_codomain,
@@ -240,7 +243,8 @@ class Landweber(RegSolver):
         self.log.debug(f'it. {self.iteration_step_nr:}: Step size changed by norm estimation to {self.stepsize}')
 
     def _update_norm_based_stepsize(self) -> None:
-        """Refresh a norm-based step length at the current iteration."""
+        r"""Refresh a norm-based step length at the current iteration.
+        """
         step = self._next_stepsize_selection_step
         if step is None:
             return

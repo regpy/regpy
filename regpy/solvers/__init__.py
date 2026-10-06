@@ -12,6 +12,7 @@ The structure is as follows
 - `nonlinear` is a submodule that provides nonlinear solvers.
 
 """
+from __future__ import annotations
 
 from .solver import RegSolver, Solver
 from .setting import Setting, check_Hilbert_applicability, check_Hilbert_applicability_linear

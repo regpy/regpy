@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from typing import Iterable, Tuple
 
 from regpy.stoprules import StopRule,CountIterations,DualityGapStopping
@@ -9,21 +12,29 @@ __all__ =["GeneralizedTikhonov"]
 class GeneralizedTikhonov(RegSolver):
     r"""Class running generalized Tikhonov regularization with some inner solver for different regularization parameters.
     This can serve as an interface to stopping rules for the selection of the regularization parameters 
-
+    
     Parameters
     ----------
-    setting:  regpy.solvers.Setting
+    setting: Setting
         The setting of the forward problem.
-    inner_solver: regpy.solvers.RegSolver class name
-        The right-hand side.
-    inner_stoprule_class_list: list[regpy.stoprules.StopRule]        
+    inner_solver_class: type[RegSolver]
+        Inner solver class.
+    inner_solver_is_primal: bool [default: True]
+        Inner solver is primal.
+    inner_solver_params: dict [default: {}]
+        Options for inner solver params.
+    inner_stoprule_class_list: list[type[StopRule]] [default: [DualityGapStopping, CountIterations]]
         List of stop rules to be combined for the inner solver. Default is [regpy.stoprules.DualityGapStopping,regpy.stoprules.CountIterations].
-    inner_stoprule_param_list: list[dict]
+    inner_stoprule_param_list: list[dict] [default: [{'tol': 0.001}, {'max_iterations': 1000}]]
         List of parameter dicts for the inner stop rules. Default is [{'tol':1e-3},{'max_iterations':1000}].
-    alphas: iterable or tuple, optional
+    alphas: Iterable[float] | tuple[float, float] [default: (1.0, 0.5)]
         Either an iterable giving the grid of alphas or a tuple (alpha0,q).
         In the second case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
         Default is (1.0,0.5).
+    logging_level: str [default: 'INFO']
+        Logging level for this object.
+    inner_logging_level: str [default: 'WARNING']
+        Inner logging level.
     """
     def __init__(self,setting:Setting, 
                  inner_solver_class:type[RegSolver],
@@ -31,10 +42,10 @@ class GeneralizedTikhonov(RegSolver):
                  inner_solver_params:dict={},
                  inner_stoprule_class_list:list[type[StopRule]]=[DualityGapStopping,CountIterations],
                  inner_stoprule_param_list:list[dict]=[{'tol':1e-3},{'max_iterations':1000}],
-                 alphas: Iterable[float] | Tuple[float,float] = (1e0,0.5),
+                 alphas: Iterable[float] | tuple[float, float] = (1e0,0.5),
                  logging_level:str= "INFO",
                  inner_logging_level:str="WARNING"
-                 ):
+                 ) -> None:
                  
         super().__init__(setting)
         self.log.setLevel(logging_level) 
@@ -69,7 +80,7 @@ class GeneralizedTikhonov(RegSolver):
         """use the computed solution as initial guess for next iteration."""
     
 
-    def _next(self):
+    def _next(self) -> None:
         the_setting = self.setting if self.inner_solver_is_primal else self.setting.get_dual_setting()
         self.inner_solver = self.inner_solver_class(the_setting,**self.inner_solver_params | {"logging_level":self.inner_logging_level}) 
         self.inner_stoprule = sum([rule(**params | {"logging_level":self.inner_logging_level}) for rule,params in zip(self.inner_stoprule_class_list,self.inner_stoprule_param_list )])
@@ -87,14 +98,15 @@ class GeneralizedTikhonov(RegSolver):
         self.setting.get_or_update_initial_guess(self.x,update=True)
         """use the computed solution as initial guess for next iteration."""        
 
-    def set_next_alpha(self,alpha:float=None)->bool:
+    def set_next_alpha(self,alpha:float | None=None)->bool:
         r"""" Set the next regularization parameter.
-
+        
         Parameters
-        ----------    
-        alpha: float, optional
+        ----------
+        alpha: float | None [default: None]
             If given, this regularization parameter is set.
             Otherwise, the next parameter from the internal iterator is used.
+        
         Returns
         -------   
         bool
@@ -113,6 +125,19 @@ class GeneralizedTikhonov(RegSolver):
 
     @staticmethod
     def check_applicability(setting: Setting) -> tuple[dict, dict]:
+        r"""Check the requirements of this solver for the supplied setting.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
         out = {"info": "",  "warning": ""}
         par = {}
         if setting.is_tikhonov:
