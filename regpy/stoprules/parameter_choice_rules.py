@@ -61,6 +61,11 @@ class Discrepancy(StopRule):
     schedule: Schedule | None [default: None]
         Iterations at which the rule is evaluated. If ``None``, it
         is evaluated at every iteration.
+    max_residual_increase: float | None [default: None]
+        Optional divergence safeguard: stop without convergence if the residual
+        exceeds this factor times its smallest recorded value and the discrepancy
+        criterion is not satisfied. Must exceed one. None disables the safeguard,
+        since residuals need not decrease monotonically for every method.
     """
     @overload
     def __init__(
@@ -73,6 +78,7 @@ class Discrepancy(StopRule):
         norm: Norm | None = None,
         noise_level_is_relative: bool = False,
         schedule: Schedule | None = None,
+        max_residual_increase: float | None = None,
     ) -> None: ...
 
     @overload
@@ -86,6 +92,7 @@ class Discrepancy(StopRule):
         setting: Setting | None = None,
         noise_level_is_relative: bool = False,
         schedule: Schedule | None = None,
+        max_residual_increase: float | None = None,
     ) -> None: ...
 
     @overload
@@ -99,12 +106,14 @@ class Discrepancy(StopRule):
         setting: Setting | None = None,
         noise_level_is_relative: bool = False,
         schedule: Schedule | None = None,
+        max_residual_increase: float | None = None,
     ) -> None: ...
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         defaults: dict[str, Any] = {
             'tau': 2., 'setting': None, 'data': None, 'norm': None,
             'noise_level_is_relative': False, 'schedule': None,
+            'max_residual_increase': None,
         }
         if len(args)==3: 
             self.log.warning('Initialization of Discrepancy with three positional arguments (norm, data, noise_level) deprecated. Use one positional argument (noiselevel) and specifiy norm and data via a keyword argument setting!')
@@ -143,6 +152,11 @@ class Discrepancy(StopRule):
             if setting is None:
                 raise ValueError(Errors.value_error('If setting is not provided, then norm must be provided.')) 
             self.norm = setting.h_codomain.norm
+        increase = p['max_residual_increase']
+        if increase is not None and (not np.isfinite(increase) or increase <= 1):
+            raise ValueError("max_residual_increase must be finite and greater than one, or None.")
+        self.max_residual_increase: float | None = increase
+        self._min_residual: float = np.inf
         super().__init__(schedule=schedule)
         if data is not None:
             self.data: ReadOnlyVector | ObsDataT = data
@@ -163,6 +177,11 @@ class Discrepancy(StopRule):
         self.history_dict["relative discrepancy"] = []
 
 
+    def reset(self) -> None:
+        """Reset the decision, history and smallest observed residual."""
+        super().reset()
+        self._min_residual = np.inf
+
     def __repr__(self) -> str:
         return 'Discrepancy(noiselevel={}, tau={})'.format(
             self.noiselevel, self.tau)
@@ -175,7 +194,17 @@ class Discrepancy(StopRule):
         rel = discrepancy / self.noiselevel
         self.history_dict["relative discrepancy"].append(rel)
         self.log_info = 'discr./noiselevel = {:3.2f}< {:1.2f}'.format(rel, self.tau)
-        triggered =  rel < self.tau
+        if not np.isfinite(discrepancy):
+            return self._set_stop_status(False, "Nonfinite discrepancy.", failure=True)
+        self._min_residual = min(self._min_residual, discrepancy)
+        triggered = rel < self.tau
+        if (not triggered and self.max_residual_increase is not None
+                and discrepancy > self.max_residual_increase * self._min_residual):
+            return self._set_stop_status(False,
+                f"Residual increased by more than a factor {self.max_residual_increase} "
+                "relative to its smallest recorded value.", failure=True)
+        if triggered:
+            self._set_stop_status(True, "Discrepancy principle satisfied: " + self.log_info)
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
         return triggered
@@ -239,7 +268,11 @@ class LCurve(StopRule):
         self.history_dict["alphas"].append(self.setting.regpar)
         self.recos.append(_copy_vector(solver.op.domain, solver.x))
         self.log_info = 'res {:.3e},norm {:.3e}'.format(norm_res,norm_x)
-        return self.it >= self.max_iter
+        if self.it >= self.max_iter:
+            return self._set_stop_status(False,
+                f"{type(self).__name__}: parameter search cap reached ({self.max_iter}); "
+                "best recorded iterate selected without a convergence certificate.")
+        return False
    
     def best_stopping_index(self) -> int:
         r"""Best stopping index.
@@ -331,7 +364,11 @@ class QuasiOpt(StopRule):
         self.history_dict["alphas"].append(solver.setting.regpar)
         self.recos.append(_copy_vector(solver.op.domain, solver.x))
         self.log_info = 'norm_diff {:.3e}'.format(norm_diff)
-        return self.it >= self.max_iter
+        if self.it >= self.max_iter:
+            return self._set_stop_status(False,
+                f"{type(self).__name__}: parameter search cap reached ({self.max_iter}); "
+                "best recorded iterate selected without a convergence certificate.")
+        return False
     
     def best_stopping_index(self) -> int:
         r"""Best stopping index.
@@ -418,7 +455,11 @@ class Lepskii(StopRule):
         self.log_info = 'iter {:d}, alpha {:.3e}'.format(
             self.it, solver.setting.regpar
         )
-        return self.it >= self.max_iter
+        if self.it >= self.max_iter:
+            return self._set_stop_status(False,
+                f"{type(self).__name__}: parameter search cap reached ({self.max_iter}); "
+                "best recorded iterate selected without a convergence certificate.")
+        return False
 
     def best_stopping_index(self) -> int:
         r"""Best stopping index.
@@ -567,7 +608,8 @@ def Discrepancy_factory(setting: Setting, params: dict) -> StopRule:
         Result described above.
     """
     options = {key: params[key] for key in
-               ('tau', 'data', 'norm', 'noise_level_is_relative', 'schedule')
+               ('tau', 'data', 'norm', 'noise_level_is_relative', 'schedule',
+                'max_residual_increase')
                if key in params}
     options.setdefault('tau', 2.1)
     options['setting'] = setting

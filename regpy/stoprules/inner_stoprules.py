@@ -102,9 +102,15 @@ class RelativeChangeData(StopRule):
         change = self.norm(self.solver.y - self.data_old)
         ref = max([self.norm(self.solver.y),self.norm(self.data_old)])
         self.data_old = _copy_vector(self.solver.op.codomain, self.solver.y)
-        self.history_dict["relative change of y"].append(change/ref)
+        if not np.isfinite(change) or not np.isfinite(ref):
+            return self._set_stop_status(False, "Nonfinite change in y.", failure=True)
+        self.history_dict["relative change of y"].append(change/ref if ref else 0.)
         self.log_info = 'rel. data change {:.3e}<{:.3e}'.format(change,self.tol*ref)
-        triggered =  change < self.tol*ref
+        triggered = change < self.tol*ref or change == 0
+        if triggered:
+            self._set_stop_status(True, "Relative change in x satisfies the tolerance.") or change == 0
+        if triggered:
+            self._set_stop_status(True, "Relative change in y satisfies the tolerance.")
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
         return triggered
@@ -178,9 +184,13 @@ class RelativeChangeSol(StopRule):
         change = self.norm(self.solver.x - self.sol_old)
         ref = max([self.norm(self.solver.x),self.norm(self.sol_old)])
         self.sol_old = _copy_vector(self.solver.op.domain, self.solver.x)
-        self.history_dict["relative change of x"].append(change/ref)
+        if not np.isfinite(change) or not np.isfinite(ref):
+            return self._set_stop_status(False, "Nonfinite change in x.", failure=True)
+        self.history_dict["relative change of x"].append(change/ref if ref else 0.)
         self.log_info = 'rel. change sol: {:.3e}<{:.3e}'.format(change,self.tol*ref)
-        triggered = change < self.tol*ref
+        triggered = change < self.tol*ref or change == 0
+        if triggered:
+            self._set_stop_status(True, "Relative change in x satisfies the tolerance.")
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
         return triggered
@@ -237,7 +247,11 @@ class OptimalityCondStopping(StopRule):
         dSstar,dR = solver.setting.violation_optimality_cond(primal, dual)
         self.history_dict["dSstar"].append(dSstar)
         self.history_dict["dR"].append(dR)
+        if not np.isfinite(dSstar) or not np.isfinite(dR):
+            return self._set_stop_status(False, "Nonfinite optimality violation.", failure=True)
         triggered = (dSstar+dR<=self.tol)
+        if triggered:
+            self._set_stop_status(True, "Optimality violation satisfies the tolerance.")
         self.log_info = '{:.1e} + {:.1e} = {:.2e}  <= {:.1e}'.format(dSstar,dR,dSstar+dR,self.tol)
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)    
@@ -306,7 +320,11 @@ class OptimalityCondStoppingNonConvex(StopRule):
             primal, deriv=deriv
         )
         self.history_dict["optimality condition violation"].append(violation)
+        if not np.isfinite(violation):
+            return self._set_stop_status(False, "Nonfinite optimality violation.", failure=True)
         triggered = violation <= self.tol
+        if triggered:
+            self._set_stop_status(True, "First-order optimality violation satisfies the tolerance.")
         self.log_info = '{:.2e} <= {:.1e}'.format(violation, self.tol)
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,
@@ -321,11 +339,15 @@ class DualityGapStopping(StopRule):
     tol: float [default: 0.0]
         The tolerance for the duality gap.
     reltol: float [default: 0.1]
-        relative tolerance
+        relative tolerance: Stop if the error in the ``1/rpow``-power of the Bregman distance of the penalty functional 
+        is smaller than ``reltol`` times the ``1/rpow``-power of the difference of the penalty functional at the current iterate 
+        and the minimum of the penalty functional.
     rpow: int [default: 2]
         Rpow.
     stop_at_infty: bool [default: True]
-        Whether an infinite duality gap triggers the rule.
+        Whether an infinite duality gap triggers a nonconverged stop.
+        NaN always triggers a nonconverged stop. Nonfinite gaps never certify
+        convergence, even if the relative tolerance bound is infinite.
     logging_level: LoggingLevel [default: 'INFO']
         Logging level.
     schedule: Schedule [default: _EVERY_TENTH_STEP]
@@ -450,16 +472,19 @@ class DualityGapStopping(StopRule):
                 raise RuntimeError(Errors.runtime_error('primal does not provide a domain solution.',primal))
             pen_val = solver.setting.penalty(prim)
             rel_bound = (self.reltol/(1.-self.reltol))**self.rpow * (pen_val - self.minpen)
-        triggered = (
-            gap <= self.tol
-            or (self.reltol > 0 and gap <= rel_bound)
-            or np.isnan(gap)
-            or (np.isinf(gap) and self.stop_at_infty)
-        )
-        if np.isnan(gap):
-            self.log_info = 'duality gap is NaN'
+        finite_gap = np.isfinite(gap)
+        accepted = finite_gap and (gap <= self.tol or
+                    (self.reltol > 0 and np.isfinite(rel_bound) and gap <= rel_bound))
+        failed = np.isnan(gap) or (np.isinf(gap) and self.stop_at_infty)
+        triggered = bool(accepted or failed)
+        if failed:
+            self.log_info = f"Nonfinite duality gap ({gap})."
+            self._set_stop_status(False, self.log_info, failure=True)
+        elif accepted:
+            self.log_info = f"Duality gap ({gap:.2e}) satisfies the tolerance."
+            self._set_stop_status(True, self.log_info)
         else:
-            self.log_info ='duality gap:{:.2e} <= {:.1e}'.format(gap, 
+            self.log_info = 'duality gap:{:.2e} > {:.1e}'.format(gap, 
                                                     rel_bound if self.reltol>0 else self.tol)
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)    
