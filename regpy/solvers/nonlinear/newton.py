@@ -311,7 +311,7 @@ class IterativelyRegularizedNewton(RegSolver):
     def _next(self) -> None:
         from .irgnm import _next_regularization_parameter
 
-        inner_setting = self._linearization_setting.get_linearized_setting(
+        inner_setting = self._linearization_setting.get_linearized_tikh_setting(
             self.x, self.regpar, y0=self.y, deriv=self.deriv,
             inner_penalty=self._inner_penalty(),
             adjoint_y0=self._adjoint_eval if self.setting.codomain_free else None,

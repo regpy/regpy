@@ -136,7 +136,7 @@ def _linearized_cg_setting(solver: RegSolver, reference: ReadOnlyVector) -> Sett
     penalty = as_functional(
         solver.h_domain, solver.op.domain
     ).as_data_func(reference)
-    return problem.get_linearized_setting(
+    return problem.get_linearized_tikh_setting(
         solver.x, solver.regpar, y0=solver.y, deriv=solver.deriv,
         inner_penalty=penalty,
         adjoint_y0=solver._adjoint_eval if problem.codomain_free else None,

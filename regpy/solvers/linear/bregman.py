@@ -246,7 +246,7 @@ class Bregman(RegSolver):
         if not isinstance(params, dict) or not isinstance(stopping, dict):
             raise TypeError('method_params and stoprule_params must be dictionaries.')
         if params.get('data') is not None or params.get('regpar') is not None:
-            raise ValueError('Configure data on the outer setting and parameters through regpars.')
+            raise ValueError('Configure data on the outer setting and regularizaparameters through regpar.')
         return dict(
             **{'class': cls, 'primal': primal, 'full': template.get('full', cls.__name__)},
             method_params=dict(params), stoprule_params=deepcopy(stopping),
@@ -300,7 +300,12 @@ class Bregman(RegSolver):
         self._run_inner(alpha, self._bregman_penalty, self.x)
 
     def _run_inner(self, alpha: float, penalty: Functional, init: ReadOnlyVector) -> None:
-        r"""Execute a fresh inner problem and advance the parameter iterator.
+        r"""Solve at the zero linearization point and advance the alpha iterator.
+
+        Since the outer operator is linear, x0=y0=0 and deriv=setting.op
+        recover the original data term. The explicit penalty is copied without
+        a shift. This routine is shared with RunOnAlphaGrid, which also needs
+        inner-method configuration, warm starts and parameter advancement.
         
         Parameters
         ----------
@@ -311,16 +316,16 @@ class Bregman(RegSolver):
         init: ReadOnlyVector
             Initial iterate in the operator domain.
         """
-        from ..setting import Setting
-
-        inner = Setting(
-            op=self.op, penalty=penalty,
-            data_fid=None if self.setting.codomain_free else self.data_fid,
-            data=self.data if self.setting.codomain_free else None,
-            codomain_free=self.setting.codomain_free, regpar=alpha,
-            init=init, incorporate_init_in_penalty=False,
-            explicitDataWarning=False, logging_level=self.log.level,
+        zero = self.op.domain.zeros(read_only=True)
+        inner = self.setting.get_linearized_tikh_setting(
+            x0=zero, regpar=alpha, deriv=self.setting.op,
+            y0=None if self.setting.codomain_free else self.op.codomain.zeros(),
+            # The codomain-free representation of y0=0 avoids allocating a
+            # codomain vector or invoking an explicit adjoint.
+            adjoint_y0=zero if self.setting.codomain_free else None,
+            inner_penalty=penalty,
         )
+        inner.init = init
         template = self._inner_template
         name = self.inner_method_name
         inner.add_method(name, template['class'], primal=template['primal'],

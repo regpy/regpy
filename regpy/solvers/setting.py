@@ -820,7 +820,7 @@ class Setting:
                 self.op.domain.copyto(out, stored_init)
         return out
 
-    def get_linearized_setting(
+    def get_linearized_tikh_setting(
         self,
         x0: ReadOnlyVector,
         regpar: float,
@@ -878,7 +878,13 @@ class Setting:
             is ``deriv.adjoint_eval``, and ``adjoint_data(inner.data)`` is
             ``deriv.adjoint_data(self.data) - adjoint_y0``. The fidelity is
             implicit in these operations, as in the outer setting.
-            The initial correction is zero in both cases.
+            The initial correction is zero in both cases. The default solver
+            is ``self._default_inner_solver``. Its constructor and stopping-rule
+            configuration are copied independently from ``self._convex_solvers``
+            when present, or from ``self._methods`` for a configured Tikhonov
+            minimizer. Otherwise the registered defaults are retained. Cached
+            applicability results and executed stopping rules are not copied.
+            If no default is specified, the new setting selects one when run.
 
         Notes
         -----
@@ -964,20 +970,37 @@ class Setting:
                 penalty = penalty.bregman_func(point)
             penalty = penalty.shift(v=-point)
         if self.codomain_free:
-            return Setting(
+            inner = Setting(
                 op=_LinearizedCodomainFreeOperator(deriv),
                 penalty=penalty, data_fid=None,
                 regpar=float(regpar), data=rhs, codomain_free=True,
                 init=self.op.domain.zeros(), incorporate_init_in_penalty=False,
                 explicitDataWarning=False, logging_level=self.log.level,
+                default_inner_solver=self._default_inner_solver,
             )
-        fidelity = deepcopy(self.data_fid).shift(v=-value)
-        return Setting(
-            op=deriv, penalty=penalty, data_fid=fidelity,
-            regpar=float(regpar), init=self.op.domain.zeros(),
-            incorporate_init_in_penalty=False,
-            explicitDataWarning=False, logging_level=self.log.level,
-        )
+        else:
+            fidelity = deepcopy(self.data_fid).shift(v=-value)
+            inner = Setting(
+                op=deriv, penalty=penalty, data_fid=fidelity,
+                regpar=float(regpar), init=self.op.domain.zeros(),
+                incorporate_init_in_penalty=False,
+                explicitDataWarning=False, logging_level=self.log.level,
+                default_inner_solver=self._default_inner_solver,
+            )
+        name = self._default_inner_solver
+        if name is not None:
+            # Read existing configuration without lazily modifying self.
+            template = getattr(self, '_convex_solvers', {}).get(name)
+            if template is None:
+                template = self._methods.get(name)
+            if template is not None:
+                inner.add_method(name, template['class'],
+                                 primal=template.get('primal', True),
+                                 full_method_name=template.get('full'))
+                entry = inner._methods[name]
+                entry['method_params'].update(deepcopy(template.get('method_params', {})))
+                entry['stoprule_params'].update(deepcopy(template.get('stoprule_params', {})))
+        return inner
 
     ######Methods exploiting duality
     def get_dual_setting(self) -> Setting:
