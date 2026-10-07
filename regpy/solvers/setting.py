@@ -1500,9 +1500,9 @@ class Setting:
     def _get_configured_method(self, method_name: str) -> dict:
         r"""Resolve configuration, keeping inner convex solvers separate.
         
-        Without a regularization parameter, convex labels configure inner
+        Without a regularization parameter, convex solver labels configure inner
         minimizers in ``_convex_solvers``; they do not become runnable outer
-        regularization methods. Convex labels take precedence on name overlap.
+        regularization methods. 
         
         Parameters
         ----------
@@ -2023,36 +2023,35 @@ def get_linear_reg_method_dictionary() -> dict:
     from .nonlinear import GeneralizedTikhonov
     from .linear.spectral import Spectral, Spectral_SelfAdjoint
     return _with_stoprule_defaults({
-            'FISTA':   {'class': FISTA,
+            'FISTA':    {'class': FISTA,
                         'primal': True,
                         'full': 'Fast Iterative Thresholding for linear problems'
-                       },
+                        },
             'linLW':    {'class': linLandweber, 
                          'full': 'Landweber iteration for linear problems'
                         },
-            'Richardson':{'class': Richardson,
+            'Rich':     {'class': Richardson,
                           'full': 'relaxed Richardson method'
                         },
             'nu':       {'class': NuMethod,
                          'full': 'nu-method'
                         },
-            'nu_sa':    {'class': NuMethodSelfAdjoint,
+            'nuSA':     {'class': NuMethodSelfAdjoint,
                          'full': 'nu-method for self-adjoint operators'
                         },
             'CGNE':     {'class':CGNE, 
                          'full': 'Conjugate Gradient method applied to the normal equation'
                         },
-            'TikhOnGrid':{'class': TikhonovAlphaGrid,
+            'TikhGr':   {'class': TikhonovAlphaGrid,
                           'full': 'Tikhonov regularization applied for a grid of regularization parameters (special case of genTikh)'
-                         },
-            'genTikh':   {'class': GeneralizedTikhonov,
+                        },
+            'gTikh':    {'class': GeneralizedTikhonov,
                           'full': 'Generalized Tikhonov regularization applied for a grid of regularization parameters'
                         },
-            'Spectral': {'class': Spectral,
+            'Spec':     {'class': Spectral,
                          'full': 'spectral regularization by an SVD filter'
                         },
-            'Spectral_sa': {
-                         'class': Spectral_SelfAdjoint,
+            'SpecSA':   {'class': Spectral_SelfAdjoint,
                          'full': 'spectral regularization of a self-adjoint operator'
                         },
     }, default_parameter_choice_rule)
@@ -2080,25 +2079,25 @@ def get_nonlinear_reg_method_dictionary() -> dict:
         IterativelyRegularizedNewton
     )
     return _with_stoprule_defaults({
-            'genFISTA': {'class': genFISTA,
+            'gFISTA':   {'class': genFISTA,
                          'primal': True,
                          'full': 'Fast Iterative Thresholding for nonlinear problems'
                         },
             'nlLW':     {'class': nlLandweber,
                          'full': 'Landweber iteration for nonlinear problems'
                         },
-            'IRGNM_CG':     {'class': IrgnmCG, 
+            'IRGN_CG':  {'class': IrgnmCG, 
                          'full': 'Iteratively Regularized Gauss-Newton Method with inner CG solver'
                         },
-            'LevMar':     {'class': LevenbergMarquardt, 
+            'LM':       {'class': LevenbergMarquardt, 
                          'full': 'Levenberg-Marquardt method'
                         },
-            'NewtonCG':     {'class': NewtonCG, 
+            'NewtCG':   {'class': NewtonCG, 
                          'full': 'Newton method with inner CGNE regularized by early stopping'
                         },
-            'IRN' :      {'class': IterativelyRegularizedNewton,
+            'IRN' :     {'class': IterativelyRegularizedNewton,
                           'full': 'Iteratively regularized Newton methods (generalized IRGNM)'
-                          }
+                        }
     }, default_parameter_choice_rule)
 
 
@@ -2143,18 +2142,54 @@ def get_convex_solver_dictionary() -> dict:
         TikhonovCG,
     )
     method_dict={
-            'TikhCG': {'class':TikhonovCG, 'primal': True, 'full':'conjugate gradient method applied to normal equation'},
-            'dTikhCG': {'class':TikhonovCG, 'primal': False, 'full':'conjugate gradient method applied to dual normal equation'},
-            'FB': {'class':ForwardBackwardSplitting, 'primal': True, 'full':'Forward Backward Splitting applied to primal problem'},
-            'dFB': {'class':ForwardBackwardSplitting, 'primal': False, 'full': 'Forward Backward Splitting applied to dual problem'},
-            'FISTA': {'class':FISTA, 'primal': True, 'full': 'Fast Iterative Thresholding applied to primal problem'}, 
-            'dFISTA': {'class':FISTA, 'primal': False, 'full': 'Fast Iterative Thresholding applied to dual problem'},
-            'PDHG': {'class':PDHG, 'primal': True, 'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'},
-            'dPDHG': {'class':PDHG, 'primal': False, 'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'},
-            'ADMM': {'class':ADMM, 'primal': True, 'full': 'Alternating Direction Method of Multipliers' },
-            'dADMM': {'class':ADMM, 'primal': False, 'full': 'Alternating Direction Method of Multipliers applied to dual problem'},
-            'SSN': {'class':SemiSmoothNewton, 'primal': True, 'full': 'Semismooth Newton method'},
-            'dSSN': {'class':SemiSmoothNewton, 'primal': False, 'full': 'Semismooth Newton method applied to dual problem'}
+            'TikhCG':   {'class':TikhonovCG, 
+                         'primal': True, 
+                        'full':'conjugate gradient method applied to normal equation'
+                        },
+            'dTikhCG':  {'class':TikhonovCG, 
+                         'primal': False, 
+                         'full':'conjugate gradient method applied to dual normal equation'
+                        },
+            'FB':       {'class':ForwardBackwardSplitting, 
+                         'primal': True, 
+                         'full':'Forward Backward Splitting applied to primal problem'
+                        },
+            'dFB':      {'class':ForwardBackwardSplitting, 
+                         'primal': False, 
+                         'full': 'Forward Backward Splitting applied to dual problem'
+                        },
+            'FISTA':    {'class':FISTA, 
+                         'primal': True, 
+                         'full': 'Fast Iterative Thresholding applied to primal problem'
+                        }, 
+            'dFISTA':   {'class':FISTA, 
+                         'primal': False, 
+                         'full': 'Fast Iterative Thresholding applied to dual problem'
+                        },
+            'PDHG':     {'class':PDHG, 
+                         'primal': True, 
+                         'full': 'Primal-Dual Hybrid Gradient Method applied to primal problem'
+                        },
+            'dPDHG':    {'class':PDHG,
+                         'primal': False, 
+                         'full': 'Primal-Dual Hybrid Gradient Method applied to dual problem'
+                        },
+            'ADMM':     {'class':ADMM, 
+                         'primal': True, 
+                         'full': 'Alternating Direction Method of Multipliers'
+                        },
+            'dADMM':    {'class':ADMM, 
+                         'primal': False, 
+                         'full': 'Alternating Direction Method of Multipliers applied to dual problem'
+                        },
+            'SSN':      {'class':SemiSmoothNewton, 
+                         'primal': True, 
+                         'full': 'Semismooth Newton method'
+                        },
+            'dSSN':     {'class':SemiSmoothNewton, 
+                         'primal': False, 
+                         'full': 'Semismooth Newton method applied to dual problem'
+                        }
         }
     return _with_stoprule_defaults(method_dict, default_convex_stoprule)
 
@@ -2171,8 +2206,8 @@ def get_non_convex_solver_dictionary() -> dict:
     from .nonlinear import ForwardBackwardSplitting as genFB
 
     method_dict={
-            'genFB': {'class':genFB, 'primal': True, 'full':'generalized forward-backward splitting'},
-            'genFISTA': {'class':genFISTA, 'primal': True, 'full':'Fast Iterative Thresholding for non-convex problems'},
+            'gFB': {'class':genFB, 'primal': True, 'full':'generalized forward-backward splitting'},
+            'gFISTA': {'class':genFISTA, 'primal': True, 'full':'Fast Iterative Thresholding for non-convex problems'},
     }
     return _with_stoprule_defaults(method_dict, default_nonconvex_stoprule)
 
