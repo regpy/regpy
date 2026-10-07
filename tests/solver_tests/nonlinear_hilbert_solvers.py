@@ -113,13 +113,13 @@ def test_fista_codomain_free_matches_standard(
     )
 
     standard_reconstruction, _ = standard.run(
-        "genFISTA",
+        "gFISTA",
         max_it=2,
         stepsize_selection_steps=[0],
         logging_level="DEBUG",
     )
     codomain_free_reconstruction, _ = codomain_free.run(
-        "genFISTA",
+        "gFISTA",
         max_it=2,
         stepsize_selection_steps=[0],
         stoprule=CountIterations(2),
@@ -141,8 +141,8 @@ def test_fista_codomain_free_matches_standard(
     ("method", "solver_options", "tolerance"),
     [
         pytest.param("nlLW", {"stepsize": 2e6}, 1e-8, id="landweber"),
-        pytest.param("IRGNM_CG", {}, 1e-10, id="irgnm-cg"),
-        pytest.param("LevMar", {}, 1e-10, id="levenberg-marquardt"),
+        pytest.param("IRGN_CG", {}, 1e-10, id="irgnm-cg"),
+        pytest.param("LM", {}, 1e-10, id="levenberg-marquardt"),
     ],
 )
 def test_codomain_free_matches_standard(
@@ -185,11 +185,11 @@ def test_codomain_free_matches_standard(
     [
         pytest.param("nlLW", 400, {}, 1e-1, 1e-2, id="landweber"),
         pytest.param(
-            "genFISTA", 100, {"stepsize_selection_steps": [0]},
+            "gFISTA", 100, {"stepsize_selection_steps": [0]},
             1e-1, 1e-2, id="FISTA",
         ),        
         pytest.param(
-            "IRGNM_CG",
+            "IRGN_CG",
             20,
             {"regpar": 1e-9, "regpar_step": 1 / 3},
             1e-2,
@@ -197,14 +197,14 @@ def test_codomain_free_matches_standard(
             id="irgnm-cg",
         ),
         pytest.param(
-            "LevMar",
+            "LM",
             15,
             {"regpar": 1e-8, "regpar_step": 1 / 2},
             1e-2,
             5e-4,
             id="levenberg-marquardt",
         ),
-        pytest.param("NewtonCG", 25, {}, 2e-2, 8e-3, id="newton-cg"),
+        pytest.param("NewtCG", 25, {}, 2e-2, 8e-3, id="newton-cg"),
     ],
 )
 def test_exact_data_convergence(
@@ -235,7 +235,7 @@ def test_exact_data_convergence(
     )
 
     assert l2_error <= max_l2_error
-    if method in {"LevMar", "NewtonCG"}:
+    if method in {"LM", "NewtCG"}:
         assert image_error < max_image_error
     else:
         assert image_error <= max_image_error
@@ -249,9 +249,9 @@ def test_tikhonov_fista_with_optimality_stopping(
         inverse_problem, codomain_free=False, regpar=1e-9,
     )
     reconstruction, reconstructed_data = setting.run(
-        "genFISTA", max_it=400, logging_level="DEBUG",
+        "gFISTA", max_it=400, logging_level="DEBUG",
     )
-    executed_rule = setting.get_stoprule("genFISTA")
+    executed_rule = setting.get_stoprule("gFISTA")
     assert executed_rule.solver is not None
     iterations = executed_rule.solver.iteration_step_nr
     #assert iterations < 200, f"Expected fewer than 200 iterations, got {iterations}."

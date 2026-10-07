@@ -566,7 +566,14 @@ class Setting:
         a missing regularization parameter is represented by ``None`` so that
         :attr:`is_tikhonov` and later assignments to :attr:`regpar` continue
         to work normally.
-        
+
+        For a convex Tikhonov setting, solver configurations in ``_methods``
+        are copied independently into ``_convex_solvers`` before rebuilding
+        the outer method registry. This preserves solver classes, names,
+        primal/dual flags, constructor parameters and stopping-rule factories
+        with their parameters. Executed stopping rules, histories and cached
+        applicability results are not transferred. 
+
         A regularization parameter cannot be removed from a dual setting,
         because such settings are defined only together with their associated
         primal Tikhonov setting.
@@ -576,6 +583,19 @@ class Setting:
                 "The regularization parameter cannot be removed from a dual "
                 "setting."
             ))
+        if self.is_tikhonov and self.is_convex:
+            configuration_keys = (
+                'class', 'full', 'primal', 'method_params', 'stoprule_params',
+            )
+            configurations = {
+                name: deepcopy({key: method[key] for key in configuration_keys
+                                if key in method})
+                for name, method in self._methods.items()
+            }
+            # Build all copies before changing either registry or regpar.
+            self._convex_solvers = {
+                **getattr(self, '_convex_solvers', {}), **configurations,
+            }
         self._regpar = None
         self._init_method_dictionary()
 
@@ -593,10 +613,8 @@ class Setting:
                 if self.op.linear
                 else get_nonlinear_reg_method_dictionary()
             )
-            self.__dict__.pop('duality_gap_warning_incr', None)
         elif self.is_convex:
             self._methods = get_convex_solver_dictionary()
-            self.duality_gap_warning_incr = 1.
         else: # Non-convex Tikhonov settings
             self._methods = get_non_convex_solver_dictionary()
 
@@ -1235,9 +1253,6 @@ class Setting:
             res = dat+pen+ddat+dpen
             if ares/res>1e10:
                 self.log.warning('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
-            elif ares/res>1e5*self.duality_gap_warning_incr:
-                self.log.debug('estimated loss of rel. accuracy in duality gap by cancellation: {:.3e}'.format(ares/res))
-                self.duality_gap_warning_incr *=10.
 
         return (res
                 if self._primal_setting is None else
@@ -1801,7 +1816,6 @@ class Setting:
                         | None) = None,
             dist_x: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None = None,
             dist_y: Callable[[tuple[ReadOnlyVector, ReadOnlyVector]], float] | None = None,
-            gap_tol: float | None = None,
             **kwargs: Any) -> tuple[Vector, Vector]:
         r"""Runs a given method for the setting. If no method name is given, the "best" method is selected by select_best_method() if possible.
         
@@ -1833,10 +1847,6 @@ class Setting:
             Custom distances called as ``dist((current, reference))`` by the
             error monitor. If omitted, the corresponding Hilbert-space norm is
             used when available.
-        gap_tol: float | None [default: None]
-            Override ``stoprule_params['tol']`` for the built-in duality-gap
-            factory only. None retains the configured tolerance.
-            Does not modify an explicit rule or a custom factory.
         **kwargs: Any
             Arguments to be passed to the method.
         
@@ -1902,8 +1912,6 @@ class Setting:
             if max_op_evals is not None:
                 params['max_op_evals'] = max_op_evals
             factory = resolve_stoprule_factory(params.pop('factory'))
-            if gap_tol is not None and factory is default_convex_stoprule:
-                params['tol'] = gap_tol
             stoprule = factory(thesetting, params)
             if not isinstance(stoprule, StopRule):
                 raise TypeError("The factory must return a StopRule.")
