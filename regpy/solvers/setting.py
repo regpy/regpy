@@ -2008,8 +2008,10 @@ class Setting:
         # here: doing so would overwrite the independently configured rule.
         themethod['stoprule'] = stoprule.copy_and_reset()
         
-        # Start both measurements before constructor-time evaluations and
-        # norm estimation. Attachment must preserve these initial counts.
+        # Capture each rule's time origin and evaluation baseline before
+        # constructor-time work. CountIterations leaves the shared operator's
+        # counters intact, so nested runs retain cumulative outer counts.
+        # Attachment to this operator preserves the prepared baseline.
         pending_counters = [themethod['stoprule']]
         seen_counters = set()
         while pending_counters:

@@ -16,7 +16,6 @@ from regpy.operators import ObsDataT, Operator
 from regpy.vecsps import ReadOnlyVector, Vector
 from .. import RegSolver, Setting, Naturals, check_Hilbert_applicability
 from ..linear import LavrentievCG, TikhonovCG
-from ..linear.tikhonov import _InnerCGCountIterations
 
 __all__ = ["IrgnmCG","LevenbergMarquardt","IrgnmCGPrec"]
 
@@ -310,10 +309,10 @@ class IrgnmCG(RegSolver):
 
     def _next(self) -> None:
         if self.cgstop is not None:
-            stoprule = _InnerCGCountIterations(self.cgstop, eval_count=True,
+            stoprule = CountIterations(self.cgstop, eval_count=True,
                                        logging_level=self.inner_it_logging_level)
         else:
-            stoprule = _InnerCGCountIterations(2**15, eval_count=True,
+            stoprule = CountIterations(2**15, eval_count=True,
                                        logging_level=self.inner_it_logging_level)
         inner_init = self.op.domain.empty()
         self.op.domain.copyto(inner_init, self.init)
@@ -517,10 +516,10 @@ class LevenbergMarquardt(RegSolver):
 
     def _next(self) -> None:
         if self.cgstop is not None:
-            stoprule = _InnerCGCountIterations(self.cgstop, eval_count=True,
+            stoprule = CountIterations(self.cgstop, eval_count=True,
                                        logging_level=self.inner_it_logging_level)
         else:
-            stoprule = _InnerCGCountIterations(2**15, eval_count=True,
+            stoprule = CountIterations(2**15, eval_count=True,
                                        logging_level=self.inner_it_logging_level)
         inner_init = self.op.domain.zeros(read_only=True)
         step, _ = _run_inner_cg(self, inner_init, stoprule)

@@ -75,35 +75,6 @@ def _contains_count_iterations(stoprule: StopRule) -> bool:
     )
 
 
-class _InnerCGCountIterations(CountIterations):
-    """Count one inner run without resetting a possibly shared outer operator.
-
-    The operator's counters stay cumulative. Only this rule's snapshots are
-    shifted by the baseline taken before constructing the inner solver.
-    """
-
-    def prepare_run(self, operator: Operator) -> None:
-        if self.timing:
-            from time import process_time
-            self.start_time = process_time()
-        if self.eval_count:
-            operator.enable_eval_count(reset=False)
-            self._eval_baseline = operator.eval_counts
-            self._eval_baseline['total'] = operator.total_eval_count()
-        self._prepared_operator = operator
-
-    def _complete_init_with_solver(self, solver: RegSolver) -> None:
-        if self._prepared_operator is not solver.op:
-            self.prepare_run(solver.op)
-        super()._complete_init_with_solver(solver)
-
-    def _record_eval_counts(self) -> None:
-        super()._record_eval_counts()
-        if self.eval_count:
-            for key, values in self.eval_counts.items():
-                values[-1] -= self._eval_baseline[key]
-
-
 def _cg_stoprule_logging(rule: StopRule, solver: RegSolver,
                          other: StopRule | None = None,
                          other_level: int | None = None) -> StopRule:
@@ -1088,7 +1059,7 @@ class TikhonovAlphaGrid(RegSolver):
             return self.converge()
         self.alpha = alpha
         self.error_prop = 1/(2*np.sqrt(alpha))
-        inner_stoprule = _InnerCGCountIterations(
+        inner_stoprule = CountIterations(
             max_iterations=self.max_CG_iter, eval_count=True,
             logging_level=self.inner_it_logging_level)
         common = {

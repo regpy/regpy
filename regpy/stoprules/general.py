@@ -895,9 +895,9 @@ class CountIterations(StopRule):
         is reached at an omitted step, the rule stops at the next scheduled
         step. If ``None``, the limit is checked on every call.
     eval_count: bool [default: False]
-        If True, enable counting only on solver.op and reset its counters
-        when attaching the rule, then store
-        cumulative snapshots in eval_counts, a dictionary of integer lists
+        If True, enable counting only on solver.op without resetting its
+        counters. Store cumulative counts relative to this rule's own starting
+        baseline in eval_counts, a dictionary of integer lists
         with the six Operator keys and 'total'. eval_count_steps records the
         corresponding solver steps, including step zero in while-style runs.
         Snapshots are recorded even on steps omitted by schedule. Constructor
@@ -905,9 +905,13 @@ class CountIterations(StopRule):
         construction. Direct solver.run calls start measurements at attachment
         unless prepare_run was called beforehand. Counting remains enabled after
         the run for inspection; use solver.op.disable_eval_count() to remove
-        instrumentation. False leaves existing operator counting unchanged.
+        instrumentation. Nested rules have independent baselines, so inner
+        runs do not reset or truncate the outer history. Do not manually reset
+        or disable the operator's counters while a counting rule is active.
+        False leaves existing operator counting unchanged.
     max_op_evals: int | None [default: None]
-        Stop when the weighted operator evaluation total reaches this cap,
+        Stop when the weighted operator evaluation total since this rule's
+        starting baseline reaches this cap,
         or when max_iterations is reached. None disables this additional cap.
         Supplying a cap automatically enables evaluation counting. Uses
         Operator.total_eval_count(), including its doubled weights for
@@ -937,6 +941,7 @@ class CountIterations(StopRule):
                 raise ValueError("max_op_evals must be nonnegative.")
         self.max_op_evals = None if max_op_evals is None else int(max_op_evals)
         self._prepared_operator = None
+        self._eval_baseline: dict[str, int] = {}
         self.eval_count = eval_count or max_op_evals is not None
         self.eval_counts: dict[str, list[int]] = {}
         self.eval_count_steps: list[int] = []
@@ -967,6 +972,7 @@ class CountIterations(StopRule):
         """
         super().reset()
         self._prepared_operator = None
+        self._eval_baseline = {}
         self.iteration = 0
         self.eval_counts = {}
         self.eval_count_steps = []
@@ -976,8 +982,11 @@ class CountIterations(StopRule):
     def prepare_run(self, operator: Operator) -> None:
         r"""Start measurements before constructing a solver (used by Setting).
         
+        Capture a private baseline without resetting the operator counters.
         Attachment to the same operator preserves construction-time work.
         Direct solver.run calls instead start measurements at attachment.
+        Resetting this rule clears its history and baseline, not the shared
+        operator's counters.
         
         Parameters
         ----------
@@ -987,17 +996,16 @@ class CountIterations(StopRule):
         if self.timing:
             self.start_time = time.process_time()
         if self.eval_count:
-            operator.enable_eval_count(reset=True)
+            operator.enable_eval_count(reset=False)
+            self._eval_baseline = dict(operator.eval_counts)
+            self._eval_baseline['total'] = operator.total_eval_count()
         self._prepared_operator = operator
 
     def _complete_init_with_solver(self, solver: Solver) -> None:
         super()._complete_init_with_solver(solver)
         operator = getattr(solver, 'op', None)
         if self._prepared_operator is None or self._prepared_operator is not operator:
-            if self.timing:
-                self.start_time = time.process_time()
-            if self.eval_count:
-                operator.enable_eval_count(reset=True)
+            self.prepare_run(operator)
         self._prepared_operator = None
         if self.eval_count:
             self.eval_counts = {key: [] for key in operator.eval_counts}
@@ -1011,7 +1019,7 @@ class CountIterations(StopRule):
             snapshot = self.solver.op.eval_counts
             snapshot['total'] = self.solver.op.total_eval_count()
             for key, value in snapshot.items():
-                self.eval_counts[key].append(value)
+                self.eval_counts[key].append(value - self._eval_baseline[key])
             self.eval_count_steps.append(self._current_step)
 
     def _stop(self) -> bool:

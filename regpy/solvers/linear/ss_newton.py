@@ -27,7 +27,7 @@ from regpy.functionals.integral_functionals import IntegralFunctionalBase
 from ..sequences import Naturals
 from ..solver import RegSolver
 from ..setting import Setting
-from .tikhonov import TikhonovCG, _InnerCGCountIterations
+from .tikhonov import TikhonovCG
 __all__ = ["SemiSmoothNewton"]
 
 def quadTaylor(func:Functional,x: ReadOnlyVector) -> SquaredNorm:
@@ -580,7 +580,7 @@ class SemiSmoothNewton(RegSolver):
                                   )         
             cg_parameters = self._next_cg_parameters()
             cg_parameters.setdefault('logging_level', self.cg_logging_level)
-            inner_stoprule = _InnerCGCountIterations(
+            inner_stoprule = CountIterations(
                 cg_parameters.get('max_it', 1000), eval_count=True,
                 logging_level=cg_parameters['logging_level'])
             inner_stoprule.prepare_run(quad_setting.op)

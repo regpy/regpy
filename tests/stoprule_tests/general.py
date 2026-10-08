@@ -307,16 +307,30 @@ def test_operator_overloads_construct_expected_combinations():
         ),
     ),
 )
-def test_nested_combinations_of_same_kind_are_flattened(
+def test_nested_combinations_preserve_identity_and_root(
     operator, combination_type
 ):
-    rules = [DecisionRule([False]) for _ in range(3)]
-
-    combination = operator(operator(rules[0], rules[1]), rules[2])
+    # A combination has its own schedule and result-selection state and must
+    # therefore remain part of the tree, even inside the same combination type.
+    rules = [DecisionRule([False, True], history_name=f'rule_{i}')
+             for i in range(3)]
+    inner = operator(rules[0], rules[1])
+    combination = operator(inner, rules[2])
 
     assert isinstance(combination, combination_type)
-    assert combination.rules == rules
-    assert all(not rule.is_main_rule for rule in rules)
+    assert combination.rules == [inner, rules[2]]
+    assert inner.rules == rules[:2]
+    assert combination.is_main_rule
+    assert all(not rule.is_main_rule for rule in [inner, *rules])
+    assert all(rule.main_rule is combination for rule in [inner, *rules])
+    solver = _attach(combination, x=np.array([1.0]), y=np.array([2.0]))
+    assert all(rule.solver is solver for rule in [inner, *rules])
+    assert not combination.stop()
+    assert combination.stop()
+    assert all(rule.calls == 2 for rule in rules)
+    best_x, best_y = combination.best_iterate()
+    assert best_x is solver.x
+    assert best_y is solver.y
 
 
 def test_sum_combines_rules_with_logical_or():
@@ -325,7 +339,34 @@ def test_sum_combines_rules_with_logical_or():
     combination = sum(rules)
 
     assert isinstance(combination, CombineRules)
-    assert combination.rules == rules
+    assert combination.rules[0].rules == rules[:2]
+    assert combination.rules[1] is rules[2]
+    assert all(rule.main_rule is combination for rule in rules)
+    _attach(combination, x=np.array([1.0]), y=np.array([2.0]))
+    assert not combination.stop()
+    assert all(rule.calls == 1 for rule in rules)
+    rules[2].decisions = (True,)
+    assert combination.stop()
+    assert combination.active_rule is rules[2]
+
+
+@pytest.mark.parametrize("combination_type", (CombineRules, AndCombineRules))
+def test_nested_combination_keeps_its_own_schedule(combination_type):
+    first = DecisionRule([False], history_name='first')
+    second = DecisionRule([False], history_name='second')
+    third = DecisionRule([False], history_name='third')
+    inner = combination_type([first, second], schedule=[0, 2])
+    outer = combination_type([inner, third])
+    solver = _attach(outer, x=np.array([1.0]), y=np.array([2.0]))
+
+    for step in range(3):
+        solver.iteration_step_nr = step
+        assert not outer.stop()
+        assert first.calls == second.calls == (1 if step < 2 else 2)
+        assert third.calls == step + 1
+    assert inner.schedule is not None
+    assert first.main_rule is outer
+    assert second.main_rule is outer
 
 
 def test_or_combination_stops_when_first_rule_stops():
@@ -448,3 +489,156 @@ def test_combination_representations_show_component_rules():
 
     assert repr(CombineRules([rule])).startswith("CombineRules([")
     assert repr(AndCombineRules([rule])).startswith("AndCombineRules([")
+
+
+# Evaluation histories are local to each rule; operator counters are shared.
+def _counted_identity():
+    from regpy.operators import Identity
+    from regpy.vecsps import NumPyVectorSpace
+
+    op = Identity(NumPyVectorSpace(3))
+    op.enable_eval_count()
+    return op, op.domain.ones()
+
+
+def test_count_iterations_preparation_preserves_constructor_work():
+    op, x = _counted_identity()
+    op(x)  # Work before this run must not enter its history.
+    rule = CountIterations(10, eval_count=True)
+    rule.prepare_run(op)
+    op(x)  # Simulate solver-constructor work.
+    op.adjoint_eval(x)  # Weighted as two operator evaluations.
+    _attach(rule, op=op, x=x)
+
+    assert not rule.stop()
+    assert rule.eval_counts['eval'] == [1]
+    assert rule.eval_counts['adjoint_eval'] == [1]
+    assert rule.eval_counts['total'] == [3]
+    assert rule.eval_count_steps == [0]
+    assert op.total_eval_count() == 4
+
+
+def test_count_iterations_nested_runs_preserve_outer_history_and_cap():
+    op, x = _counted_identity()
+    op(x)
+    outer = CountIterations(100, max_op_evals=5)
+    _attach(outer, op=op, x=x)
+    assert not outer.stop()
+    op(x)
+
+    # Two successive inner runs share the same operator and start at zero.
+    for _ in range(2):
+        inner = CountIterations(100, max_op_evals=2)
+        inner.prepare_run(op)
+        op(x)  # Count constructor work in both inner and outer histories.
+        _attach(inner, op=op, x=x)
+        assert not inner.stop()
+        op(x)
+        assert inner.stop()
+        assert inner.eval_counts['total'] == [1, 2]
+        stopped = outer.stop()
+
+    assert stopped
+    assert outer.eval_counts['total'] == [0, 3, 5]
+    assert op.total_eval_count() == 6
+    assert 'Operator evaluation cap' in outer.stop_reason
+
+
+def test_count_iterations_reset_and_copy_do_not_reset_operator():
+    op, x = _counted_identity()
+    rule = CountIterations(10, eval_count=True)
+    _attach(rule, op=op, x=x)
+    op(x)
+    assert not rule.stop()
+    saved = rule.copy_and_reset()
+    rule.reset()
+    assert op.total_eval_count() == 1
+    assert rule.eval_counts == {}
+    assert saved.eval_counts == {}
+    for current in (rule, saved):
+        _attach(current, op=op, x=x)
+        assert not current.stop()
+        op(x)
+        assert not current.stop()
+        assert current.eval_counts['total'] == [0, 1]
+    assert op.total_eval_count() == 3
+
+
+def test_count_iterations_attachment_to_another_operator_rebases():
+    first, x = _counted_identity()
+    second, _ = _counted_identity()
+    rule = CountIterations(10, eval_count=True)
+    rule.prepare_run(first)
+    first(x)
+    second(x)
+    _attach(rule, op=second, x=x)
+    assert not rule.stop()
+    second(x)
+    assert not rule.stop()
+    assert rule.eval_counts['total'] == [0, 1]
+    assert first.total_eval_count() == 1
+    assert second.total_eval_count() == 2
+
+
+def test_count_iterations_scheduled_snapshots_use_weighted_baseline():
+    op, x = _counted_identity()
+    op.adjoint_eval(x)  # Historical work must not trigger the new cap.
+    rule = CountIterations(10, max_op_evals=2, schedule=[0, 2])
+    solver = _attach(rule, op=op, x=x)
+    solver.iteration_step_nr = 0
+    assert not rule.stop()
+    op.adjoint_eval(x)
+    solver.iteration_step_nr = 1
+    assert not rule.stop()  # Omitted step still records its snapshot.
+    solver.iteration_step_nr = 2
+    assert rule.stop()
+    assert rule.eval_counts['total'] == [0, 2, 2]
+    assert rule.eval_counts['adjoint_eval'] == [0, 1, 1]
+    assert rule.eval_count_steps == [0, 1, 2]
+
+
+def test_count_iterations_disabled_leaves_existing_counting_unchanged():
+    op, x = _counted_identity()
+    op(x)
+    rule = CountIterations(10)
+    rule.prepare_run(op)
+    _attach(rule, op=op, x=x)
+    op(x)
+    assert not rule.stop()
+    assert rule.eval_counts == {}
+    assert op.total_eval_count() == 2
+
+
+def test_count_iterations_alpha_grid_keeps_cumulative_outer_counts():
+    from regpy.hilbert import L2
+    from regpy.operators import PtwMultiplication
+    from regpy.solvers import Setting
+    from regpy.solvers.linear.bregman import RunOnAlphaGrid
+    from regpy.solvers.linear.proximal_gradient import FISTA
+    from regpy.vecsps import NumPyVectorSpace
+
+    space = NumPyVectorSpace(5)
+    op = PtwMultiplication(space, np.linspace(.4, 1.2, 5))
+    setting = Setting(op, L2, L2, data=space.ones(), logging_level='WARNING')
+    method = {
+        'class': FISTA, 'full': 'FISTA', 'primal': True,
+        'method_params': {'op_norm': 1.2},
+        'stoprule_params': {'max_it': 2, 'max_op_evals': None},
+    }
+    solver = RunOnAlphaGrid(setting, regpars=[.1, .05],
+                            inner_solver=method, logging_level='WARNING')
+    outer = CountIterations(10, eval_count=True)
+    outer.prepare_run(op)
+    outer._complete_init_with_solver(solver)
+    # Ensure an inner reset would cause a visible decrease.
+    for _ in range(100):
+        op(solver.x)
+    assert not outer.stop()
+    for _ in range(2):
+        solver.next()
+        outer.stop()
+        assert solver.inner_setting.op is op
+        assert outer.eval_counts['total'][-1] == op.total_eval_count()
+    assert outer.eval_counts['total'][0] == 100
+    assert all(a < b for a, b in zip(outer.eval_counts['total'],
+                                    outer.eval_counts['total'][1:]))
