@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from regpy.vecsps.base import Scalar, Vector
     from regpy.operators.base import Operator
     from regpy._typing import Mask
+    from regpy.stoprules import StopRule
 from math import sqrt,inf
 from collections.abc import Iterable
 from numbers import Real
@@ -146,7 +147,9 @@ class SemiSmoothNewton(RegSolver):
     would change the objective rather than merely extend the penalty outside
     the active-set constraints.
     Direct sums of these functionals are handled componentwise, recursively.
-    The original setting penalty is not modified.
+    The original setting penalty is not modified. Internal Newton iterates
+    may be infeasible. Both primal() and run() return feasible copies, without
+    projecting the internal state or changing the Newton iteration.
     
     For separable fidelities, each Hessian must be represented as pointwise
     multiplication or a scalar multiple of Identity, with finite nonnegative
@@ -206,6 +209,8 @@ class SemiSmoothNewton(RegSolver):
                 self.op.domain.iter_coefficients(self.psi_plus), strict=True)):
             raise ValueError(Errors.generic_message('x0 not feasible.'))
         self.x, self.y = x0, self.op(x0)
+        self._feasible_cached_x: Vector | None = None
+        self._feasible_cached_y: Vector | None = None
         self._cg_dual = None
         self._cg_dual_adjoint = None
 
@@ -701,20 +706,68 @@ class SemiSmoothNewton(RegSolver):
             self._cg_dual_adjoint = self.op.adjoint(self._cg_dual)
         return self._cg_dual, self._cg_dual_adjoint
 
-    def primal(self) -> tuple[Vector | None, Vector | None]:
-        r"""Return the current primal iterate and operator image, when available.
-        
-        
+    def primal(self) -> tuple[Vector, Vector]:
+        r"""Return a feasible copy of the current iterate and its operator image.
+
+        Clip to ``[psi_minus, psi_plus]`` without changing the internal Newton
+        state. Reuse self.y if the iterate is already feasible, or the cached
+        image if the projected vector is unchanged. Returned vectors do not
+        share writable storage with the internal state or private cache.
+        """
+        space = self.op.domain
+        projected = space.empty()
+        space.copyto(projected, self.x)
+        space.copyto(projected, self.psi_minus,
+                     where=space.geq_mask(self.psi_minus, projected))
+        space.copyto(projected, self.psi_plus,
+                     where=space.geq_mask(projected, self.psi_plus))
+
+        def same(left: ReadOnlyVector, right: ReadOnlyVector) -> bool:
+            return space.nrTrues(space.eq_mask(left, right)) == space.dimension
+
+        if self.y is not None and same(projected, self.x):
+            value = self.y
+        elif (self._feasible_cached_x is not None
+              and same(projected, self._feasible_cached_x)):
+            value = self._feasible_cached_y
+        else:
+            value = self.op(projected)
+            self._feasible_cached_x = space.empty()
+            space.copyto(self._feasible_cached_x, projected)
+            self._feasible_cached_y = self.op.codomain.empty()
+            self.op.codomain.copyto(self._feasible_cached_y, value)
+        image = self.op.codomain.empty()
+        self.op.codomain.copyto(image, value)
+        return projected, image
+
+    def run(self, stoprule: StopRule | None = None,
+            max_it: int | None = None) -> tuple[Vector, Vector]:
+        r"""Run Newton and return the feasible final reconstruction.
+
+        Parameters
+        ----------
+        stoprule: StopRule | None [default: None]
+            Rule controlling termination. The final iterate is always used;
+            best_iterate() is not called.
+        max_it: int | None [default: None]
+            Additional maximum number of Newton iterations.
+
         Returns
         -------
-        tuple[Vector | None, Vector | None]
-            Result described above.
+        tuple[Vector, Vector]
+            The final iterate projected onto the box constraints and its
+            operator image, as supplied by primal(). Its cached image is
+            reused when available, avoiding duplicate operator evaluations.
+
+        Notes
+        -----
+        The internal Newton state remains unprojected. The inherited iteration
+        interfaces still expose that internal state. In a dual setting the
+        result remains in dual coordinates; Setting.run handles conversion.
         """
-        projected_x = self.op.domain.empty()
-        self.op.domain.copyto(projected_x, self.x)
-        self.op.domain.copyto(projected_x, self.psi_minus, where=self.active_minus)
-        self.op.domain.copyto(projected_x, self.psi_plus, where=self.active_plus)
-        return (projected_x, self.op(projected_x))
+        for _ in self.while_(stoprule=stoprule, max_it=max_it):
+            pass
+        return self.primal()
 
     @staticmethod
     def check_applicability(setting: Setting,op_norm: float | None=None) -> tuple[dict[str, Any], dict[str, Any]]:
