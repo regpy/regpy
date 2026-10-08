@@ -1860,10 +1860,11 @@ class Setting:
         Other Parameters
         ----------------
         logging_level: int or str
-            Logging level for the solver and the stopping-rule tree used by
-        this run, including iteration limits and error monitors. Defaults
-        to ``self.log.level``. An explicit value takes precedence over
-        registered method parameters and configured rule levels.
+            Logging level for the solver and the default for its stopping rules.
+            Defaults to the method's configured level, then ``self.log.level``.
+            Explicit stopping-rule levels in ``stoprule_params`` or its
+            ``rule_params`` take precedence for the rules; levels supplied by
+            custom factories are also preserved.
         
         Returns
         -------
@@ -1878,10 +1879,16 @@ class Setting:
             self.evaluate_methods([method_name]) 
         if themethod['applicable'] == False:
             raise RuntimeError(f'{method_name} is not applicable in this setting: '+themethod['info'])
-        logging_level = kwargs.get('logging_level', self.log.level)
+        logging_level = kwargs.get(
+            'logging_level', themethod.get('method_params', {}).get('logging_level', self.log.level)
+        )
         if 'method_params' in themethod:
             kwargs.update(themethod['method_params'])
         kwargs['logging_level'] = logging_level
+        stop_params = themethod['stoprule_params']
+        rule_logging_level = stop_params.get('rule_params', {}).get(
+            'logging_level', stop_params.get('logging_level', logging_level)
+        )
 
         if self.is_tikhonov:
             primal = themethod['primal']
@@ -1913,7 +1920,7 @@ class Setting:
 
         if stoprule is None:
             params = deepcopy(themethod['stoprule_params'])
-            params.update(solver_class=themethod['class'], logging_level=logging_level)
+            params.update(solver_class=themethod['class'], logging_level=rule_logging_level)
             if max_it is not None:
                 params['max_it'] = max_it
             if max_op_evals is not None:
@@ -1927,7 +1934,7 @@ class Setting:
         elif max_it is not None or max_op_evals is not None:
             # Copy before composition to leave the caller's rule untouched.
             stoprule = stoprule.copy_and_reset() + CountIterations_factory(thesetting,
-                {'max_it': max_it, 'max_op_evals': max_op_evals, 'logging_level': logging_level})
+                {'max_it': max_it, 'max_op_evals': max_op_evals, 'logging_level': rule_logging_level})
 
         if ref_sol is not None:
             monitor_ref_sol = ref_sol
@@ -2024,8 +2031,9 @@ class Setting:
             if id(rule) in seen_rules:
                 continue
             seen_rules.add(id(rule))
+            configured_level = rule.log.level
             rule.log = solver.log.getChild(type(rule).__name__)
-            rule.log.setLevel(logging_level)
+            rule.log.setLevel(configured_level)
             pending_rules.extend(getattr(rule, 'rules', ()))
         x,y = solver.run(themethod['stoprule'])
         

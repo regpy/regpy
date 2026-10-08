@@ -226,8 +226,10 @@ class IterativelyRegularizedNewton(RegSolver):
         Runs after applying the inner_solver configuration and may override
         it for the current step. None leaves that configuration unchanged.
     logging_level: int | str [default: 'INFO']
-        Outer logging level. Configure inner logging through
-        inner_solver's method_params or inner_solver_configurator if desired.
+        Outer logging level, including an INFO summary of each inner run when
+        CountIterations is present. Inner logging defaults to WARNING. Override
+        it through inner_solver's method_params or stoprule_params, or through
+        inner_solver_configurator.
     """
 
     def __init__(
@@ -330,8 +332,12 @@ class IterativelyRegularizedNewton(RegSolver):
                                 None if self.y is None else
                                 self.op.codomain.read_only(self.y)), entry,
             )
-        level = entry['method_params'].get('logging_level', self.log.level)
+        entry['stoprule_params'].setdefault('logging_level', 'WARNING')
+        level = entry['method_params'].get('logging_level', 'WARNING')
         step, _ = inner_setting.run(name, logging_level=level)
+        from ..linear.bregman import _log_inner_summary
+        _log_inner_summary(self.log, template['class'].__name__,
+                           inner_setting.get_stoprule(name))
         if step not in self.op.domain:
             raise RuntimeError('The inner solver did not return a domain correction.')
         self.x += step
@@ -428,7 +434,8 @@ class NonlinBregman(IterativelyRegularizedNewton):
     inner_solver_configurator: Callable[[Setting, tuple[Vector, Vector], dict], None] | None [default: None]
         Writable vector used by this operation.
     logging_level: int | str [default: 'INFO']
-        Logging level for this object.
+        Outer logging level. Inner logging defaults to WARNING, with explicit
+        configuration taking precedence. CountIterations enables an INFO run summary.
     select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None [default: None]
         Input vector; its coefficients are only read.
     """

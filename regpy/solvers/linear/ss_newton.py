@@ -27,7 +27,7 @@ from regpy.functionals.integral_functionals import IntegralFunctionalBase
 from ..sequences import Naturals
 from ..solver import RegSolver
 from ..setting import Setting
-from .tikhonov import TikhonovCG
+from .tikhonov import TikhonovCG, _InnerCGCountIterations
 __all__ = ["SemiSmoothNewton"]
 
 def quadTaylor(func:Functional,x: ReadOnlyVector) -> SquaredNorm:
@@ -102,7 +102,8 @@ class SemiSmoothNewton(RegSolver):
     logging_level: int | str [default: 'INFO']
         default: logging:INFO
     cg_logging_level: int | str [default: 'WARNING']
-        default: logging.INFO
+        Level for inner CG and its stopping rules. An explicit logging_level
+        in cg_pars takes precedence. Inner-run summaries use the outer INFO level.
     cg_reltols: Iterable[float] | None [default: None]
         Positive finite relative domain tolerances for successive CG solves.
         None creates a fresh (1.0/3.0) ** Naturals(), yielding
@@ -577,13 +578,20 @@ class SemiSmoothNewton(RegSolver):
                                   regpar=self.regpar,
                                   data = model_op(projection(self.x)-self.x)
                                   )         
+            cg_parameters = self._next_cg_parameters()
+            cg_parameters.setdefault('logging_level', self.cg_logging_level)
+            inner_stoprule = _InnerCGCountIterations(
+                cg_parameters.get('max_it', 1000), eval_count=True,
+                logging_level=cg_parameters['logging_level'])
+            inner_stoprule.prepare_run(quad_setting.op)
             tikhcg = TikhonovCG(quad_setting, 
                                 init=projection(full_R_taylor.reference_vector()),                                
                                 x0 = projection(self.x), 
-                                logging_level=self.cg_logging_level,
-                                **self._next_cg_parameters()
+                                **cg_parameters
                                 )
-            aux, _ = tikhcg.run()
+            aux, _ = tikhcg.run(inner_stoprule)
+            from regpy.solvers.linear.bregman import _log_inner_summary
+            _log_inner_summary(self.log, type(tikhcg).__name__, inner_stoprule)
             # Capture before resetting S_taylor.data below: CG's dual belongs
             # to the shifted, restricted quadratic subproblem.
             self._store_cg_dual(tikhcg, data_projection, linear)

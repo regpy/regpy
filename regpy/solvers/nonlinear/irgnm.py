@@ -16,6 +16,7 @@ from regpy.operators import ObsDataT, Operator
 from regpy.vecsps import ReadOnlyVector, Vector
 from .. import RegSolver, Setting, Naturals, check_Hilbert_applicability
 from ..linear import LavrentievCG, TikhonovCG
+from ..linear.tikhonov import _InnerCGCountIterations
 
 __all__ = ["IrgnmCG","LevenbergMarquardt","IrgnmCGPrec"]
 
@@ -171,12 +172,18 @@ def _run_inner_cg(
         'logging_level', solver.inner_it_logging_level
     )
     inner_setting = _linearized_cg_setting(solver, reference)
-    inner_setting.log.setLevel(solver.inner_it_logging_level)
-    return TikhonovCG(
+    inner_setting.log.setLevel(cg_pars['logging_level'])
+    stoprule.log.setLevel(cg_pars['logging_level'])
+    stoprule.prepare_run(inner_setting.op)
+    cg = TikhonovCG(
         setting=inner_setting,
         x0=solver.deriv.domain.zeros(),
         **cg_pars,
-    ).run(stoprule=stoprule)
+    )
+    result = cg.run(stoprule=stoprule)
+    from ..linear.bregman import _log_inner_summary
+    _log_inner_summary(solver.log, type(cg).__name__, stoprule)
+    return result
 
 class IrgnmCG(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
@@ -213,7 +220,8 @@ class IrgnmCG(RegSolver):
     cgstop: int | None [default: 1000]
         Maximum number of inner CG iterations.
     inner_it_logging_level: int | str [default: 'WARNING']
-        Logging level for inner iterations.
+        Level for inner CG and its stopping rules, unless cg_pars supplies
+        logging_level. Inner-run summaries use the outer solver's INFO level.
     simplified_op: Operator | None [default: None]
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. This option is
@@ -302,12 +310,11 @@ class IrgnmCG(RegSolver):
 
     def _next(self) -> None:
         if self.cgstop is not None:
-            stoprule = CountIterations(self.cgstop)
+            stoprule = _InnerCGCountIterations(self.cgstop, eval_count=True,
+                                       logging_level=self.inner_it_logging_level)
         else:
-            stoprule = CountIterations(2**15)
-        # Disable info logging, but don't override log level for all CountIterations instances.
-        #stoprule.log = self.log.getChild('CountIterations')
-        stoprule.log.setLevel(self.inner_it_logging_level)
+            stoprule = _InnerCGCountIterations(2**15, eval_count=True,
+                                       logging_level=self.inner_it_logging_level)
         inner_init = self.op.domain.empty()
         self.op.domain.copyto(inner_init, self.init)
         inner_init -= self.x
@@ -325,8 +332,8 @@ class IrgnmCG(RegSolver):
             self.y = self.op(self.x)
         else:
             self.y , self.deriv = self.op.linearize(self.x)
-        self._nr_inner_steps = stoprule.iteration
-        self.log.info('its.{}: alpha={}, CG its:{}'.format(self.iteration_step_nr,self.regpar,self._nr_inner_steps))
+        self._nr_inner_steps = stoprule.solver.iteration_step_nr
+        self.log.info('it %s: alpha=%s', self.iteration_step_nr, self.regpar)
         try:
             self.regpar = _next_regularization_parameter(
                 self._regpar_iterator
@@ -416,7 +423,8 @@ class LevenbergMarquardt(RegSolver):
     cgstop: int | None [default: 1000]
         Maximum number of inner CG iterations.
     inner_it_logging_level: int | str [default: 'WARNING']
-        Logging level for inner iterations.
+        Level for inner CG and its stopping rules, unless cg_pars supplies
+        logging_level. Inner-run summaries use the outer solver's INFO level.
     simplified_op: Operator | None [default: None]
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. This option is
@@ -509,12 +517,11 @@ class LevenbergMarquardt(RegSolver):
 
     def _next(self) -> None:
         if self.cgstop is not None:
-            stoprule = CountIterations(self.cgstop)
+            stoprule = _InnerCGCountIterations(self.cgstop, eval_count=True,
+                                       logging_level=self.inner_it_logging_level)
         else:
-            stoprule = CountIterations(2**15)
-        # Disable info logging, but don't override log level for all CountIterations instances.
-        stoprule.log = self.log.getChild('CountIterations')
-        stoprule.log.setLevel("WARNING")
+            stoprule = _InnerCGCountIterations(2**15, eval_count=True,
+                                       logging_level=self.inner_it_logging_level)
         inner_init = self.op.domain.zeros(read_only=True)
         step, _ = _run_inner_cg(self, inner_init, stoprule)
         self.x += step
@@ -530,8 +537,8 @@ class LevenbergMarquardt(RegSolver):
             self.y = self.op(self.x)
         else:
             self.y , self.deriv = self.op.linearize(self.x)
-        self._nr_inner_steps = stoprule.iteration
-        self.log.info('its.{}: alpha={}, CG its:{}'.format(self.iteration_step_nr,self.regpar,self._nr_inner_steps))
+        self._nr_inner_steps = stoprule.solver.iteration_step_nr
+        self.log.info('it %s: alpha=%s', self.iteration_step_nr, self.regpar)
         try:
             self.regpar = _next_regularization_parameter(
                 self._regpar_iterator

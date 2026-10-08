@@ -6,11 +6,13 @@ if TYPE_CHECKING:
     from regpy.vecsps.base import ReadOnlyVector, Vector
     from regpy.functionals.base import Functional
     from regpy.solvers.setting import Setting
+    from regpy.stoprules import StopRule
 
 from collections.abc import Callable, Iterable
 from copy import deepcopy
 from itertools import repeat
 from math import isfinite
+from logging import Logger
 from numbers import Integral, Real
 from typing import TYPE_CHECKING, Any
 
@@ -21,6 +23,39 @@ from ..sequences import Sequence
 __all__ = ["Bregman", "RunOnAlphaGrid"]
 
 _END = object()
+
+
+def _log_inner_summary(log: Logger, method_name: str, rule: StopRule) -> None:
+    """Report completed inner steps and the recorded evaluation total, if available.
+
+    Search nested combinations without relying on which component triggered.
+    CountIterations.iteration includes stop checks, so use the attached solver's
+    iteration_step_nr for the number of completed iterations. Prefer a counter
+    with evaluation snapshots when several counters are present. Never sum
+    snapshots or counters: each total is already cumulative for the inner run.
+    """
+    from regpy.stoprules import CountIterations
+
+    pending = [rule]
+    counters = []
+    while pending:
+        current = pending.pop()
+        if isinstance(current, CountIterations):
+            counters.append(current)
+        pending.extend(reversed(getattr(current, 'rules', ())))
+    if not counters:
+        return
+    counter = next((r for r in counters if r.eval_counts.get('total')), counters[0])
+    if counter.solver is None:
+        return
+    iterations = counter.solver.iteration_step_nr
+    totals = counter.eval_counts.get('total', ())
+    if totals:
+        log.info('%s stopped after %s its and %s op-evals.',
+                 method_name, iterations, totals[-1])
+    else:
+        log.info('%s stopped after %s its (op-evals not recorded).',
+                 method_name, iterations)
 
 
 class Bregman(RegSolver):
@@ -100,8 +135,10 @@ class Bregman(RegSolver):
         Selection occurs once at initialization and once before each later
         inner solve, never speculatively after the last completed step.
     logging_level: int | str [default: 'INFO']
-        Outer logging level. Inner logging may be configured
-        in the inner method's method_params.
+        Outer logging level, including an INFO summary of each inner run when
+        CountIterations is present. Inner solver and stopping-rule logging
+        default independently to WARNING. Configure them through the inner
+        method's method_params and stoprule_params, respectively.
     is_primal: bool [default: True]
         Coordinate label for compatibility with RegSolver.
         This does not change which inner problem is solved.
@@ -334,8 +371,10 @@ class Bregman(RegSolver):
         entry['method_params'].update(template['method_params'])
         entry['stoprule_params'].update(deepcopy(template['stoprule_params']))
         self.inner_setting = inner
-        level = entry['method_params'].get('logging_level', self.log.level)
+        entry['stoprule_params'].setdefault('logging_level', 'WARNING')
+        level = entry['method_params'].get('logging_level', 'WARNING')
         x, y = inner.run(name, logging_level=level)
+        _log_inner_summary(self.log, template['class'].__name__, inner.get_stoprule(name))
         if x not in self.op.domain:
             raise RuntimeError('The inner solver did not return a domain reconstruction.')
         self.op.domain.copyto(self.x, x)
@@ -431,7 +470,9 @@ class RunOnAlphaGrid(RegSolver):
         Later solves use the preceding reconstruction as their initial guess.
         An explicit inner method initialization takes precedence.
     logging_level: int | str [default: 'INFO']
-        Outer logging level.
+        Outer logging level, including an INFO summary of each inner run when
+        CountIterations is present. Inner solver and stopping-rule logging
+        default to WARNING; explicit inner configuration takes precedence.
     is_primal: bool [default: True]
         Coordinate label for RegSolver.
     
