@@ -341,7 +341,12 @@ class DualityGapStopping(StopRule):
     reltol: float [default: 0.1]
         relative tolerance: Stop if the error in the ``1/rpow``-power of the Bregman distance of the penalty functional 
         is smaller than ``reltol`` times the ``1/rpow``-power of the difference of the penalty functional at the current iterate 
-        and the minimum of the penalty functional.
+        and the minimum of the penalty functional. The reference always uses
+        the original primal penalty, including for methods operating on a dual
+        setting. For a dual iterate ``(p, T*p)``, the primal point is recovered
+        by the primal setting's ``dual_to_primal`` method; a supplied ``T*p``
+        is reused. The minimum is estimated from the primal penalty's reference
+        vector, with zero as fallback if that vector is not a minimizer.
     rpow: int [default: 2]
         Rpow.
     stop_at_infty: bool [default: True]
@@ -412,7 +417,10 @@ class DualityGapStopping(StopRule):
         reg_solver.setting.duality_gap_warning_incr = 1.
         super()._complete_init_with_solver(solver)
         if self.reltol>0:
-            pen = reg_solver.setting.penalty
+            primal_setting = reg_solver.setting._primal_setting
+            reference_setting = (reg_solver.setting if primal_setting is None
+                                 else primal_setting)
+            pen = reference_setting.penalty
             refsol = pen.reference_vector()
             dist = pen.dist_subdiff(pen.domain.zeros(),refsol)
             if dist>0:
@@ -467,10 +475,20 @@ class DualityGapStopping(StopRule):
         for key, value in zip(self.additional_gap_keys, additional_gaps):
             self.history_dict[key].append(value)
         if self.reltol>0:
-            prim = primal[0] if isinstance(primal,tuple) else primal
+            primal_setting = solver.setting._primal_setting
+            if primal_setting is None:
+                prim = primal[0] if isinstance(primal, tuple) else primal
+                reference_setting = solver.setting
+            else:
+                # Here solver.primal() is (p, T*p) in dual coordinates.
+                # Use the same reconstructed primal point as Setting.duality_gap.
+                pair = primal if isinstance(primal, tuple) else (primal, None)
+                prim = (primal_setting.dual_to_primal(pair)
+                        if primal is not None else None)
+                reference_setting = primal_setting
             if prim is None:
                 raise RuntimeError(Errors.runtime_error('primal does not provide a domain solution.',primal))
-            pen_val = solver.setting.penalty(prim)
+            pen_val = reference_setting.penalty(prim)
             rel_bound = (self.reltol/(1.-self.reltol))**self.rpow * (pen_val - self.minpen)
         finite_gap = np.isfinite(gap)
         accepted = finite_gap and (gap <= self.tol or
