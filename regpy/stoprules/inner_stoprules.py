@@ -423,7 +423,7 @@ class DualityGapStopping(StopRule):
             pen = reference_setting.penalty
             refsol = pen.reference_vector()
             dist = pen.dist_subdiff(pen.domain.zeros(),refsol)
-            if dist>0:
+            if dist>1e-14:
                 self.log.warning(f"penalty reference vector is no minimizer. {dist}" 
                                  "Assuming 0 as infimum in duality gap relative error estimate.")
                 self.minpen  = 0.
