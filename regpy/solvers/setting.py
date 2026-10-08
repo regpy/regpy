@@ -193,11 +193,11 @@ class Setting:
                  incorporate_init_in_penalty: bool = True,
                  codomain_free: bool = False,
                  logging_level: int | str = "INFO",
-                 explicitDataWarning: bool = True,                 
-                 default_linear_regmethod: str = 'genTikh', 
+                 explicitDataWarning: bool =    True,                 
+                 default_linear_regmethod: str = 'alGr', 
                  default_nonlinear_regmethod: str = 'IRN', 
                  default_inner_solver: str|None = None, 
-                 default_nl_minimizer: str|None = 'genFISTA',             
+                 default_nl_minimizer: str|None = 'gFISTA',             
                  _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()                 
                  ) -> None:
         if not isinstance(op,Operator):
@@ -1684,9 +1684,16 @@ class Setting:
                 'No convergence-rate comparison is available for the '
                 'applicable methods. Please specify method_name explicitly.'
             ))
-        best_method_name = min(
-            rated, key=lambda name: np.abs(rated[name]['rate'])
-        )
+        linear = [name for name in rated if 0 < rated[name]['rate'] < 1]
+        polynomial = [name for name in rated if rated[name]['rate'] < 0]
+
+        if linear:
+            best_method_name = min(linear, key=lambda name: rated[name]['rate'])
+        elif polynomial:
+            best_method_name = min(polynomial, key=lambda name: rated[name]['rate'])
+        else:
+            raise ValueError("No method has a valid convergence rate.")        
+        
         self.log.info('Choose '+best_method_name+' as best method.')
         return best_method_name
 
@@ -2046,17 +2053,18 @@ def get_linear_reg_method_dictionary() -> dict:
         CGNE,
         FISTA,
         Landweber as linLandweber,
+        Bregman,
+        RunOnAlphaGrid,
         Richardson,
         NuMethod,
         NuMethodSelfAdjoint,
         TikhonovAlphaGrid
-    )
-    from .nonlinear import GeneralizedTikhonov
+    )    
     from .linear.spectral import Spectral, Spectral_SelfAdjoint
     return _with_stoprule_defaults({
-            'FISTA':    {'class': FISTA,
+            'nFISTA':   {'class': FISTA,
                         'primal': True,
-                        'full': 'Fast Iterative Thresholding for linear problems'
+                        'full': 'Fast Iterative Thresholding for with no penalty'
                         },
             'linLW':    {'class': linLandweber, 
                          'full': 'Landweber iteration for linear problems'
@@ -2076,8 +2084,11 @@ def get_linear_reg_method_dictionary() -> dict:
             'TikhGr':   {'class': TikhonovAlphaGrid,
                           'full': 'Tikhonov regularization applied for a grid of regularization parameters (special case of genTikh)'
                         },
-            'gTikh':    {'class': GeneralizedTikhonov,
-                          'full': 'Generalized Tikhonov regularization applied for a grid of regularization parameters'
+            'Breg':     {'class': Bregman,
+                         'full': 'Bregman iteration for linear problems'
+                        },       
+            'alGr':     {'class': RunOnAlphaGrid,
+                         'full': 'Tikhonov regularization applied for a grid of regularization parameters'
                         },
             'Spec':     {'class': Spectral,
                          'full': 'spectral regularization by an SVD filter'
