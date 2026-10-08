@@ -199,6 +199,11 @@ class StopRule:
     A solver calling ``converge()`` alone does not certify an external rule.
     Use ``rule.main_rule`` when a rule has been included in a combination.
 
+    A rule that selects a stored reconstruction independently of what stops
+    the run can set ``selects_best_iterate = True`` and override
+    :meth:`best_iterate`. Combined rules then prefer its result, including
+    when another component triggers or the solver finishes by itself.
+
     Custom implementations should return ``self._set_stop_status(True, reason)``
     when their acceptance criterion is met, or use False for other stops.
     Pass ``failure=True`` for numerical failures; these override simultaneous
@@ -218,6 +223,7 @@ class StopRule:
     """
 
     log = ClassLogger()
+    selects_best_iterate: bool = False
 
     solver: Solver | None
     x: ReadOnlyVector
@@ -744,8 +750,11 @@ class CombineRules(StopRule):
     All components are checked. Numerical failures take precedence; otherwise
     a satisfied acceptance criterion takes precedence over a limit, independent
     of component order. If a limit triggers, skipped scheduled criteria are
-    checked once at the final iterate. The selected component supplies the best
-    iterate. Nested rules retain their identity and link to ``main_rule``;
+    checked once at the final iterate. For result selection, components with
+    ``selects_best_iterate=True`` take precedence over the triggering component.
+    They are tried in component order (including nested combinations); the
+    first available result is returned. This does not change the stop reason
+    or convergence status. Nested rules retain their identity and link to ``main_rule``;
     only that root exposes ``converged`` and ``stop_reason``.
 
     Parameters
@@ -835,8 +844,18 @@ class CombineRules(StopRule):
                          self._stop_reason if stopped else self.log_info)
         return stopped
 
+    @property
+    def selects_best_iterate(self) -> bool:
+        """Whether a component selects a result independently of stopping."""
+        return any(rule.selects_best_iterate for rule in self.rules)
+
     def best_iterate(self) -> BestIterate | None:
-        """Return the iterate selected by the active component."""
+        """Prefer a result selector, then fall back to the active component."""
+        for rule in self.rules:
+            if rule.selects_best_iterate:
+                best = rule.best_iterate()
+                if best is not None:
+                    return best
         if self.active_rule is not None:
             return self.active_rule.best_iterate()
         return super().best_iterate()
@@ -845,8 +864,8 @@ class CombineRules(StopRule):
 class AndCombineRules(CombineRules):
     """Stop when all components stop (logical AND).
 
-    Accepts the same parameters as CombineRules. The first component selects
-    the best iterate. Convergence is confirmed only if every component confirms
+    Accepts the same parameters as CombineRules. An independent result selector
+    takes precedence; otherwise the first component selects the best iterate. Convergence is confirmed only if every component confirms
     acceptance; satisfying an iteration cap is not an acceptance criterion.
     """
 

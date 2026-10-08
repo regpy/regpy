@@ -17,7 +17,7 @@ import numpy as np
 from regpy.operators import ObsDataT
 from regpy.util import Errors
 from regpy.vecsps import ReadOnlyVector, Vector
-from .general import Schedule, MissingValueError, StopRule, _copy_vector
+from .general import LoggingLevel, Schedule, MissingValueError, StopRule, _copy_vector
 
 
 Norm: TypeAlias = Callable[[ReadOnlyVector], float]
@@ -66,6 +66,8 @@ class Discrepancy(StopRule):
         exceeds this factor times its smallest recorded value and the discrepancy
         criterion is not satisfied. Must exceed one. None disables the safeguard,
         since residuals need not decrease monotonically for every method.
+    logging_level: LoggingLevel [default: 'INFO']
+        Logging level, as a level name or integer logging constant.
     """
     @overload
     def __init__(
@@ -79,6 +81,7 @@ class Discrepancy(StopRule):
         noise_level_is_relative: bool = False,
         schedule: Schedule | None = None,
         max_residual_increase: float | None = None,
+        logging_level: LoggingLevel = "INFO",
     ) -> None: ...
 
     @overload
@@ -93,6 +96,7 @@ class Discrepancy(StopRule):
         noise_level_is_relative: bool = False,
         schedule: Schedule | None = None,
         max_residual_increase: float | None = None,
+        logging_level: LoggingLevel = "INFO",
     ) -> None: ...
 
     @overload
@@ -107,9 +111,14 @@ class Discrepancy(StopRule):
         noise_level_is_relative: bool = False,
         schedule: Schedule | None = None,
         max_residual_increase: float | None = None,
+        logging_level: LoggingLevel = "INFO",
     ) -> None: ...
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self, *args: Any, logging_level: LoggingLevel = "INFO", **kwargs: Any
+    ) -> None:
+        # Configure logging before emitting constructor/deprecation messages.
+        super().__init__(logging_level=logging_level, schedule=kwargs.get('schedule'))
         defaults: dict[str, Any] = {
             'tau': 2., 'setting': None, 'data': None, 'norm': None,
             'noise_level_is_relative': False, 'schedule': None,
@@ -157,7 +166,6 @@ class Discrepancy(StopRule):
             raise ValueError("max_residual_increase must be finite and greater than one, or None.")
         self.max_residual_increase: float | None = increase
         self._min_residual: float = np.inf
-        super().__init__(schedule=schedule)
         if data is not None:
             self.data: ReadOnlyVector | ObsDataT = data
         else:
@@ -227,6 +235,8 @@ class LCurve(StopRule):
     schedule: Schedule | None [default: None]
         Iterations at which the rule records and evaluates a parameter. If
         ``None``, every iteration is used.
+    logging_level: LoggingLevel [default: 'INFO']
+        Logging level, as a level name or integer logging constant.
     """
     def __init__(
         self,
@@ -234,8 +244,9 @@ class LCurve(StopRule):
         solver: RegSolver,
         max_iter: int = 1000,
         schedule: Schedule | None = None,
+        logging_level: LoggingLevel = "INFO",
     ) -> None:
-        super().__init__(schedule=schedule)
+        super().__init__(logging_level=logging_level, schedule=schedule)
         self.data: ReadOnlyVector | ObsDataT | None = setting.data
         self.setting: Setting = setting
         self.data_norm: Norm = setting.h_codomain.norm
@@ -328,6 +339,8 @@ class QuasiOpt(StopRule):
     schedule: Schedule | None [default: None]
         Iterations at which the rule records and evaluates a parameter. If
         ``None``, every iteration is used.
+    logging_level: LoggingLevel [default: 'INFO']
+        Logging level, as a level name or integer logging constant.
     """
     def __init__(
         self,
@@ -335,8 +348,9 @@ class QuasiOpt(StopRule):
         solver: RegSolver,
         max_iter: int = 1000,
         schedule: Schedule | None = None,
+        logging_level: LoggingLevel = "INFO",
     ) -> None:
-        super().__init__(schedule=schedule)
+        super().__init__(logging_level=logging_level, schedule=schedule)
         self.data: ReadOnlyVector | ObsDataT | None = setting.data
         self.norm: Norm = setting.h_domain.norm
         self.solver = solver
@@ -415,6 +429,8 @@ class Lepskii(StopRule):
     schedule: Schedule | None [default: None]
         Iterations at which the rule records and evaluates a parameter. If
         ``None``, every iteration is used.
+    logging_level: LoggingLevel [default: 'INFO']
+        Logging level, as a level name or integer logging constant.
     """
 
     def __init__(
@@ -424,8 +440,9 @@ class Lepskii(StopRule):
         error_prop: ErrorPropagation | None = None,
         max_iter: int = 100,
         schedule: Schedule | None = None,
+        logging_level: LoggingLevel = "INFO",
     ) -> None:
-        super().__init__(schedule=schedule)
+        super().__init__(logging_level=logging_level, schedule=schedule)
         self.data: ReadOnlyVector | ObsDataT | None = setting.data
         self.norm: Norm = setting.h_domain.norm
         self.solver = solver
@@ -519,15 +536,31 @@ class Oracle(StopRule):
     schedule: Schedule | None [default: None]
         Iterations at which errors and reconstructions are recorded. If
         ``None``, every iteration is used.
+    logging_level: LoggingLevel [default: 'INFO']
+        Logging level, as a level name or integer logging constant.
+    record_operator_values: bool [default: False]
+        Store a copy of the operator value with each recorded reconstruction.
+        If the solver does not provide it, evaluate its operator at that point.
+        The selected result is ``(x, y)`` when enabled and ``(x, None)``
+        otherwise; disabled recording requires no additional operator calls.
     """
+    selects_best_iterate: bool = True
+
     def __init__(
         self,
         setting: Setting,
         exact_solution: ReadOnlyVector | None = None,
         distance_function: DistanceFunction | None = None,
         schedule: Schedule | None = None,
+        logging_level: LoggingLevel = "INFO",
+        record_operator_values: bool = False,
     ) -> None:
-        super().__init__(schedule=schedule)
+        if not isinstance(record_operator_values, bool):
+            raise TypeError('record_operator_values must be a bool.')
+        self.record_operator_values = record_operator_values
+        self.operator_values: list[Vector] = []
+        self._recorded_steps: list[int] = []
+        super().__init__(logging_level=logging_level, schedule=schedule)
         self.data: ReadOnlyVector | ObsDataT | None = setting.data
         self.history_dict["error"] = []
         self.history_dict["alphas"] = []
@@ -546,6 +579,13 @@ class Oracle(StopRule):
         else:
             self.dist = lambda x: distance_function(x, self.exact_solution)
 
+    def reset(self) -> None:
+        """Clear stored reconstructions and operator values along with history."""
+        super().reset()
+        self.recos.clear()
+        self.operator_values.clear()
+        self._recorded_steps.clear()
+
     def __repr__(self) -> str:
         return 'Oracle'
 
@@ -554,9 +594,22 @@ class Oracle(StopRule):
             raise MissingValueError     
         solver = cast("RegSolver", self.solver)
         error = self.dist(solver.x)
+        reconstruction = _copy_vector(solver.op.domain, solver.x)
+        operator_value = None
+        if self.record_operator_values:
+            value = getattr(solver, 'y', None)
+            if value is None:
+                value = solver.op(solver.x)
+            operator_value = _copy_vector(solver.op.codomain, value)
+        # Append only after all computations succeed, keeping records aligned.
         self.history_dict["error"].append(error)
-        self.history_dict["alphas"].append(solver.setting.regpar)
-        self.recos.append(_copy_vector(solver.op.domain, solver.x))
+        self.history_dict["alphas"].append(
+            getattr(solver, 'regpar', getattr(solver.setting, 'regpar', None))
+        )
+        self.recos.append(reconstruction)
+        self._recorded_steps.append(solver.iteration_step_nr)
+        if operator_value is not None:
+            self.operator_values.append(operator_value)
         self.log_info = 'error {:.3e}'.format(error)
         return False
 
@@ -569,18 +622,30 @@ class Oracle(StopRule):
         int
             Computed scalar value.
         """
-        return int(np.argmin(self.history_dict["error"]))
+        if not self.history_dict["error"]:
+            raise RuntimeError('Oracle has not recorded any iterates.')
+        best = np.argmin(self.history_dict["error"])
+        self.log.info('selected iterate nr. %s as best iterate',
+                      self._recorded_steps[best])
 
-    def best_iterate(self) -> Vector:
-        r"""Best iterate.
-        
-        
+        return int(best)
+
+    def best_iterate(self) -> tuple[Vector, Vector | None] | None:
+        r"""Return the recorded reconstruction with the smallest error.
+
         Returns
         -------
-        Vector
-            Writable result vector.
+        tuple[Vector, Vector | None] | None
+            Selected reconstruction and its recorded operator value, or
+            ``(x, None)`` if operator values were not recorded. Returns None
+            if no iterates have been recorded. Selection is independent of
+            which stopping rule triggered.
         """
-        return self.recos[self.best_stopping_index()]
+        if not self.recos:
+            return None
+        best = self.best_stopping_index()
+        return (self.recos[best],
+                self.operator_values[best] if self.record_operator_values else None)
     
 
 
@@ -609,7 +674,7 @@ def Discrepancy_factory(setting: Setting, params: dict) -> StopRule:
     """
     options = {key: params[key] for key in
                ('tau', 'data', 'norm', 'noise_level_is_relative', 'schedule',
-                'max_residual_increase')
+                'max_residual_increase', 'logging_level')
                if key in params}
     options.setdefault('tau', 2.1)
     options['setting'] = setting
@@ -617,7 +682,6 @@ def Discrepancy_factory(setting: Setting, params: dict) -> StopRule:
     noise = options.pop('noiselevel', params.get('absolute_noise_level',
             setting._noise_model_param.get('absolute_noise_level')))
     rule = Discrepancy(noise, **options)
-    rule.log.setLevel(params.get('logging_level', 'INFO'))
     return rule + CountIterations_factory(setting, params)
 
 LCurve_factory = _capped_factory(LCurve)

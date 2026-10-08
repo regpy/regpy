@@ -264,6 +264,7 @@ class PDHG(RegSolver):
 
                 muR = setting.penalty.convexity_param
                 muSstar = setting.regpar/setting.data_fid.Lipschitz
+                dual_str = ' for dual' if setting._primal_setting is not None else ''
                 if muR>0:
                     if muSstar>0:
                         mu = 2*ma.sqrt(muR * muSstar)/L
@@ -271,13 +272,13 @@ class PDHG(RegSolver):
                         sigma = mu/(2.*muSstar)
                         theta = 1./(1.+mu)
                         out['rate']=(1.+theta)/(2.+mu)
-                        out['info']='Using accelerated version 2 with convexity parameters mu_R={:.3e}, mu_S*={:.3e}.'.format(muR,muSstar)
+                        out['info']='Using accelerated version 2' + dual_str + ' with convexity parameters mu_R={:.3e}, mu_S*={:.3e}.'.format(muR,muSstar)
                     else:
                         theta = 0.
-                        out['info']='Using accelerated version 1 with convexity parameter mu_R={:.3e}'.format(muR)
+                        out['info']='Using accelerated version 1' + dual_str + 'with convexity parameter mu_R={:.3e}'.format(muR)
                         out['rate']=-2
                 else:
-                    out['info']='Using unaccelerated version.'
+                    out['info']='Using unaccelerated version' + dual_str + '.'
                     out['rate']=np.nan
                     theta =1.
                 par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':muR, 'muSstar':muSstar}

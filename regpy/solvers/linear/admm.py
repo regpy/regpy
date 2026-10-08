@@ -192,7 +192,7 @@ class ADMM(RegSolver):
             )
         out['applicable'] = out['info']==''
         if out['applicable']:
-            out['info'] += ''
+            out['info'] += 'ADMM applied to ' + ('primal' if setting._primal_setting is None else 'dual') + ' problem.  '
             out['rate'] = -1.
         return out, par
 

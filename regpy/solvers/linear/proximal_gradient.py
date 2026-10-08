@@ -130,7 +130,8 @@ class ForwardBackwardSplitting(RegSolver):
             mu_data_fidelity = setting.data_fid.convexity_param * op_lower_bound**2 
             out['rate'] = (1. - par['tau'] * mu_data_fidelity) / (1. + par['tau']*mu_penalty)
             out['rate'] = -1. if out['rate'] == 1 else out['rate']
-            out['info'] = "FB used with step length tau={:.3e}.".format(par['tau'])
+            out['info'] = 'Dual ' if setting._primal_setting is not None else ''            
+            out['info'] += "FB used with step length tau={:.3e}.".format(par['tau'])
 
         return out, par
 
@@ -230,7 +231,7 @@ class FISTA(RegSolver):
         If False, the initial dual estimate is zero. This affects monitoring
         and stopping at iteration zero, not the primal iteration formulas.
         Requires an explicit codomain.
-        
+
     Notes
     -----
     In the unregularized mode, the iteration minimizes
@@ -387,7 +388,8 @@ class FISTA(RegSolver):
             par['q'] = (par['tau'] * par['mu']) / (1+par['tau']*par['mu_penalty'])
             out['rate'] = 1.-ma.sqrt(par['q']) 
             if par['mu']>0:
-                out['info'] = "FISTA used with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.".format(par['mu_penalty'],par['mu_data_fidelity'],par['tau'])
+                out['info'] = 'dual ' if setting._primal_setting is not None else ''
+                out['info'] += "FISTA used with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.".format(par['mu_penalty'],par['mu_data_fidelity'],par['tau'])
             else:
                 out['info'] = ''
                 out['rate'] = -2
