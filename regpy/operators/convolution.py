@@ -1813,12 +1813,15 @@ class Laplacian(ConvolutionOperator):
         Convolution axes.
     kernel_matrix_shape: int | tuple[int, ...] | None [default: None]
         See description above
+    as_svd : bool [default: False]
+        See :class:`ConvolutionOperator`.
     self_adjoint: bool | None [default: None]
         See :class:`ConvolutionOperator`.
     """
     def __init__(self,grid: UniformGridFcts, pad_amount: int | ArrayLike=0,pad_value: Scalar=0.,
                  Fourier_truncation_amount: int | ArrayLike | None=None,convolution_axes: int | tuple[int, ...] | None=None,
                  kernel_matrix_shape: int | tuple[int, ...] | None=None,
+                 as_svd: bool = False,
                  self_adjoint: bool | None = None) -> None:
         if grid.shape_codomain == () or kernel_matrix_shape is None:
             if  grid.shape_codomain == () and kernel_matrix_shape is not None:
@@ -1828,6 +1831,7 @@ class Laplacian(ConvolutionOperator):
                             pad_amount=pad_amount,pad_value=pad_value,
                             Fourier_truncation_amount=Fourier_truncation_amount,
                             convolution_axes=convolution_axes,
+                            as_svd=as_svd,
                             self_adjoint=self_adjoint,
                             )
         else:
@@ -1842,6 +1846,7 @@ class Laplacian(ConvolutionOperator):
                             pad_amount=pad_amount,pad_value=pad_value,
                             Fourier_truncation_amount=Fourier_truncation_amount,
                             convolution_axes=convolution_axes,
+                            as_svd=as_svd,
                             self_adjoint=self_adjoint,
                             )
 
@@ -2026,6 +2031,7 @@ class PeriodicShift(ConvolutionOperator):
 
 def GaussianBlur(grid: UniformGridFcts,sigma: float=1.,pad_amount: int | ArrayLike=0,pad_value: Scalar=0.,
                  Fourier_truncation_amount: int | ArrayLike | None=None,convolution_axes: int | tuple[int, ...] | None=None,
+                 as_svd: bool = False,
                  self_adjoint: bool | None = None) -> ConvolutionOperator:
     r"""Convolution with a Gaussian kernel
     
@@ -2043,6 +2049,8 @@ def GaussianBlur(grid: UniformGridFcts,sigma: float=1.,pad_amount: int | ArrayLi
         Fourier truncation amount.
     convolution_axes: int | tuple[int, ...] | None [default: None]
         Convolution axes.
+    as_svd : bool [default: False]
+        See :class:`ConvolutionOperator`.
     self_adjoint: bool | None [default: None]
         See :class:`ConvolutionOperator`.
     
@@ -2057,6 +2065,7 @@ def GaussianBlur(grid: UniformGridFcts,sigma: float=1.,pad_amount: int | ArrayLi
     Lap = Laplacian(grid,pad_amount=pad_amount,pad_value=pad_value,
                         Fourier_truncation_amount=Fourier_truncation_amount,
                         convolution_axes=convolution_axes,
+                        as_svd=as_svd,
                         self_adjoint=self_adjoint)
     return Lap.functional_calculus(lambda t: np.exp((sigma/2)**2 * t))
 
@@ -2081,17 +2090,21 @@ class ExponentialConvolution(ConvolutionOperator):
         Fourier truncation amount.
     convolution_axes: int | tuple[int, ...] | None [default: None]
         Convolution axes.
+    as_svd : bool [default: False]
+        See :class:`ConvolutionOperator`.
     self_adjoint: bool | None [default: None]
         Self adjoint.
     """
     def __init__(self,grid: UniformGridFcts,a: float,pad_amount: int | ArrayLike=0,pad_value: Scalar=0.,
                  Fourier_truncation_amount: int | ArrayLike | None=None,convolution_axes: int | tuple[int, ...] | None=None,
+                 as_svd: bool = False,
                  self_adjoint: bool | None = None) -> None:
         super().__init__(grid,
                         lambda *x : np.prod([1/(1 + (2*np.pi*a*y)**2) for y in x],axis=0),
                         pad_amount=pad_amount,pad_value=pad_value,
                         Fourier_truncation_amount=Fourier_truncation_amount,
                         convolution_axes=convolution_axes,
+                        as_svd=as_svd,
                         self_adjoint=self_adjoint,
                         )
 
