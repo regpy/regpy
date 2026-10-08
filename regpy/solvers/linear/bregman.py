@@ -406,11 +406,12 @@ class Bregman(RegSolver):
 
 
 class RunOnAlphaGrid(RegSolver):
-    r"""Solve independent convex Tikhonov problems on a parameter grid.
+    r"""Solve convex Tikhonov problems on a parameter grid with warm starts.
     
     Each step minimizes ``S(Tf) + alpha * R(f)`` using a fresh inner setting,
-    solver, and stopping history. The original penalty and the same initial
-    guess are used at every step; there is no warm start between grid points.
+    solver, and stopping history. The original penalty is used at every step.
+    The first solve starts at ``init`` (or ``setting.init``); each subsequent
+    solve starts at a copy of the preceding reconstruction.
     
     This method is used to select the regularization parameter by a parameter choice rule. 
     
@@ -426,7 +427,8 @@ class RunOnAlphaGrid(RegSolver):
         Convex solver label or method dictionary or None, as in
         Bregman. Labels retain configuration from ``setting._convex_solvers``.
     init: ReadOnlyVector | None [default: None]
-        Fixed initial guess for every solve, default ``setting.init``.
+        Initial guess for the first solve, default ``setting.init``.
+        Later solves use the preceding reconstruction as their initial guess.
         An explicit inner method initialization takes precedence.
     logging_level: int | str [default: 'INFO']
         Outer logging level.
@@ -471,8 +473,6 @@ class RunOnAlphaGrid(RegSolver):
         super().__init__(setting, is_primal=is_primal)
         self.log.setLevel(logging_level)
         self.regpar = alpha
-        self._initial = self.op.domain.empty()
-        self.op.domain.copyto(self._initial, initial)
         self.x = self.op.domain.empty()
         self.op.domain.copyto(self.x, initial)
         self.y = self.op(self.x)
@@ -513,7 +513,8 @@ class RunOnAlphaGrid(RegSolver):
 
     def _next(self) -> None:
         alpha = self._validate_alpha(self._pending_alpha)
-        # Give every solve its own copy, even if an inner method mutates init.
+        # Warm-start from the last reconstruction without sharing writable
+        # storage with the outer iterate. The penalty remains unchanged.
         initial = self.op.domain.empty()
-        self.op.domain.copyto(initial, self._initial)
+        self.op.domain.copyto(initial, self.x)
         self._run_inner(alpha, self.penalty, initial)

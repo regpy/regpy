@@ -224,6 +224,13 @@ class FISTA(RegSolver):
         Pass False when solving its dual. This labels coordinates and does not
         change the iteration formulas or construct a dual setting.
     
+    estimate_dual_init: bool [default: False]
+        If True, initialize the dual estimate on the first call to ``dual()``
+        by ``p = -data_fid.subgradient(op(x)) / regpar`` and its adjoint image.
+        If False, the initial dual estimate is zero. This affects monitoring
+        and stopping at iteration zero, not the primal iteration formulas.
+        Requires an explicit codomain.
+        
     Notes
     -----
     In the unregularized mode, the iteration minimizes
@@ -247,7 +254,13 @@ class FISTA(RegSolver):
             logging_level: int | str = "INFO",
             update_setting: bool = False,
                  is_primal: bool = True,
+            estimate_dual_init: bool = False,
                  ) -> None:
+        if not isinstance(estimate_dual_init, bool):
+            raise TypeError('estimate_dual_init must be a bool.')
+        if estimate_dual_init and setting.codomain_free:
+            raise ValueError('estimate_dual_init requires an explicit codomain.')
+        self.estimate_dual_init = estimate_dual_init
         super().__init__(setting, is_primal=is_primal)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="For nonlinear operators the FISTA method in regpy.solvers.nonlinear must be used."))
@@ -406,6 +419,10 @@ class FISTA(RegSolver):
         if self.codomain_free:
             raise RuntimeError(Errors.runtime_error("Dual variables not available when FISTA is run without codomain vectors!"))
         if self._dual_variables_computed==False:
+            if self.estimate_dual_init and self.iteration_step_nr == 0:
+                self.op(self.x, out=self.p)
+                self.data_fid.subgradient(self.p, out=self.p)
+                self.op.adjoint(self.p, out=self.Tp)
             scale = -1./self.regpar
             self.p *= scale
             self.Tp *= scale
