@@ -739,6 +739,17 @@ class Setting:
         r"""Generate and store Poisson-distributed data.
         
         Sampling is delegated to :meth:`self.op.codomain.poisson`.
+        The noise model remains Poisson. Its ``absolute_noise_level`` is set
+        to the deterministic discrepancy estimate
+        ``self.h_codomain.norm(sqrt(self.data / scale))``, where ``scale`` is
+        the count scaling factor (one for unscaled data).
+
+        Indeed, for counts N_i with mean scale * exact_data_i, the rescaled
+        observation Y_i = N_i / scale has variance exact_data_i / scale.
+        Replacing the unknown mean by Y_i gives the variance estimate
+        Y_i / scale. For diagonal codomain Gram matrices the squared estimate
+        estimates the expected squared Hilbert-norm error. This is a noise
+        magnitude estimate, not a guaranteed upper bound on a realization.
         
         Parameters
         ----------
@@ -760,7 +771,14 @@ class Setting:
         else:
             scale = 1.0      
         poisson_data = self.op.codomain.poisson(scale*self._exact_data,seed=seed)/scale
-        self.data = poisson_data    
+        self.data = poisson_data
+        self._noise_model_param = {
+            'model_name': 'Poisson',
+            'expected_nr_counts': expected_nr_counts,
+            'absolute_noise_level': float(
+                self.h_codomain.norm(np.sqrt(poisson_data / scale))
+            ),
+        }
 
     def get_or_update_data(self, 
                            new_data:Vector | ObsDataT | None = None,
