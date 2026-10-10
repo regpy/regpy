@@ -27,6 +27,55 @@ from regpy.vecsps import ReadOnlyVector, Vector, VectorSpaceBase
 if TYPE_CHECKING:
     from regpy.solvers import Solver
 
+class _RuleLogger(logging.Logger):
+    """Instance-local level, with output routed through an existing logger.
+
+    Do not register this logger with logging.getLogger: two rules may have
+    the same display name while requiring independent logging levels.
+    """
+
+    def __init__(self, target: logging.Logger) -> None:
+        super().__init__(target.name, target.level)
+        self.parent = target
+
+    def setLevel(self, level: int | str) -> None:
+        super().setLevel(level)
+        # logging's manager only invalidates caches of registered loggers.
+        self._cache.clear()
+
+    def __deepcopy__(self, memo: dict[int, object]) -> _RuleLogger:
+        # Logger.__reduce__ cannot copy unregistered loggers. Keep the output
+        # destination, but give the copied rule its own mutable logger state.
+        result = type(self)(self.parent)
+        memo[id(self)] = result
+        result.setLevel(self.level)
+        result.disabled = self.disabled
+        result.propagate = self.propagate
+        result.handlers = self.handlers.copy()
+        result.filters = self.filters.copy()
+        return result
+
+
+class _RuleClassLogger(ClassLogger):
+    """Retain class access and isolate all instance logger assignments."""
+
+    def __get__(self, instance: object | None, owner: type | None = None) -> logging.Logger:
+        if instance is None:
+            return super().__get__(instance, owner)
+        logger = vars(instance).get("_log")
+        if logger is None:
+            logger = _RuleLogger(super().__get__(None, owner or type(instance)))
+            vars(instance)["_log"] = logger
+        return logger
+
+    def __set__(self, instance: object, value: logging.Logger) -> None:
+        if not isinstance(value, logging.Logger):
+            raise TypeError("log must be a logging.Logger instance.")
+        # Setting.run assigns named solver children here. Wrapping also this
+        # path prevents nested rules of the same class sharing a level again.
+        super().__set__(instance, _RuleLogger(value))
+
+
 LoggingLevel: TypeAlias = int | str
 Schedule: TypeAlias = Iterable[int] | None
 Iterate: TypeAlias = tuple[ReadOnlyVector, ReadOnlyVector | None]
@@ -222,7 +271,7 @@ class StopRule:
         This is useful for expensive stopping criteria that do not need to be checked on every iteration.
     """
 
-    log = ClassLogger()
+    log = _RuleClassLogger()
     selects_best_iterate: bool = False
 
     solver: Solver | None

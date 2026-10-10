@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 import logging
 from collections.abc import Callable
+from numbers import Real
 from typing import TYPE_CHECKING, Any, TypeAlias, cast, overload
 
 import numpy as np
@@ -27,7 +28,7 @@ DistanceFunction: TypeAlias = Callable[
 ErrorPropagation: TypeAlias = Callable[[float], float]
 
 __all__: list[str] = [
-    "Discrepancy", "LCurve", "QuasiOpt", "Lepskii", "Oracle",
+    "Discrepancy", "GeneralizedDiscrepancy", "LCurve", "QuasiOpt", "Lepskii", "Oracle",
 ]
 
 class Discrepancy(StopRule):
@@ -216,6 +217,102 @@ class Discrepancy(StopRule):
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
         return triggered
+
+class GeneralizedDiscrepancy(StopRule):
+    r"""Stop at the first iterate satisfying S(y_k) < threshold.
+
+    S is the attached solver's ``setting.data_fid`` and y_k is its current
+    operator image ``solver.y``. The data fidelity is evaluated as configured,
+    including data shifts and any additive constants; no regularization
+    parameter or penalty term enters this criterion.
+
+    Parameters
+    ----------
+    threshold: float
+        Finite threshold for the data-fidelity value. Equality does not stop
+        the iteration. Negative thresholds are allowed for shifted functionals.
+
+    schedule: Schedule | None [default: None]
+        Iterations at which the fidelity is evaluated and recorded.
+        None checks every iteration.
+    logging_level: LoggingLevel [default: 'INFO']
+        Logging level, as a level name or integer logging constant.
+    residual_increase: float | None [default: None]
+        Optional divergence safeguard, finite and greater than one. Unless
+        the threshold is satisfied, stop without convergence when the fidelity
+        exceeds its recorded minimum m by more than
+        (residual_increase - 1) * abs(m). For nonnegative fidelities this is
+        equivalent to S(y_k) > residual_increase * m. None disables it.
+
+    Notes
+    -----
+    Every evaluation is recorded in ``history_dict["data fidelity"]``.
+    The base class records iteration numbers in ``history_step_dict`` and
+    clears both histories on reset. The schedule controls whether the initial
+    iterate is checked; without a schedule it is checked in a while-style run. An unavailable operator image raises MissingValueError,
+    allowing a combined rule to request it from the solver.
+
+    For S(y) = ||y - data||^2 / 2 and
+    threshold = (tau * noiselevel)^2 / 2, the criterion agrees with
+    Discrepancy using the same norm and positive noise level (without its
+    optional divergence safeguard). To match a residual-norm increase factor
+    c in Discrepancy, use residual_increase=c**2 for this quadratic fidelity.
+    Nonfinite fidelity values stop with failure, as in Discrepancy.
+    """
+
+    def __init__(self, threshold: float, schedule: Schedule | None = None,
+                 logging_level: LoggingLevel = "INFO",
+                 residual_increase: float | None = None) -> None:
+        if isinstance(threshold, (bool, np.bool_)) or not isinstance(threshold, Real):
+            raise TypeError("threshold must be a finite real number.")
+        if not np.isfinite(threshold):
+            raise ValueError("threshold must be finite.")
+        if residual_increase is not None:
+            if (isinstance(residual_increase, (bool, np.bool_))
+                    or not isinstance(residual_increase, Real)):
+                raise TypeError("residual_increase must be a real number or None.")
+            if not np.isfinite(residual_increase) or residual_increase <= 1:
+                raise ValueError("residual_increase must be finite and greater than one, or None.")
+        super().__init__(logging_level=logging_level, schedule=schedule)
+        self.residual_increase = residual_increase
+        self._min_residual: float = np.inf
+        self.threshold: float = float(threshold)
+        self.history_dict["data fidelity"] = []
+
+    def reset(self) -> None:
+        """Clear the history and smallest observed fidelity value."""
+        super().reset()
+        self._min_residual = np.inf
+
+    def __repr__(self) -> str:
+        return f"GeneralizedDiscrepancy(threshold={self.threshold!r})"
+
+    def _stop(self) -> bool:
+        if self.solver is None or self.solver.y is None:
+            raise MissingValueError
+        solver = cast("RegSolver", self.solver)
+        value = float(solver.setting.data_fid(solver.y))
+        self.history_dict["data fidelity"].append(value)
+        triggered = value < self.threshold
+        self.log_info = f"data fidelity = {value:.6g}; threshold = {self.threshold:.6g}"
+        if not np.isfinite(value):
+            return self._set_stop_status(False, "Nonfinite data fidelity.", failure=True)
+        self._min_residual = min(self._min_residual, value)
+        if (not triggered and self.residual_increase is not None
+                and value - self._min_residual
+                > (self.residual_increase - 1) * abs(self._min_residual)):
+            return self._set_stop_status(
+                False,
+                f"Data fidelity increased beyond factor {self.residual_increase} "
+                f"relative to its smallest recorded value ({self._min_residual:.6g}).",
+                failure=True)
+        if triggered:
+            self._set_stop_status(
+                True, "Generalized discrepancy principle satisfied: " + self.log_info)
+        if self.is_main_rule:
+            self.log.log(logging.INFO if triggered else logging.DEBUG, self.log_info)
+        return triggered
+
 
 class LCurve(StopRule):
     r"""L Curve method.
@@ -684,8 +781,9 @@ def Discrepancy_factory(setting: Setting, params: dict) -> StopRule:
     rule = Discrepancy(noise, **options)
     return rule + CountIterations_factory(setting, params)
 
+GeneralizedDiscrepancy_factory = _capped_factory(GeneralizedDiscrepancy)
 LCurve_factory = _capped_factory(LCurve)
 QuasiOpt_factory = _capped_factory(QuasiOpt)
 Lepskii_factory = _capped_factory(Lepskii)
 Oracle_factory = _capped_factory(Oracle)
-__all__ += ['Discrepancy_factory', 'LCurve_factory', 'QuasiOpt_factory', 'Lepskii_factory', 'Oracle_factory']
+__all__ += ['Discrepancy_factory', 'GeneralizedDiscrepancy_factory', 'LCurve_factory', 'QuasiOpt_factory', 'Lepskii_factory', 'Oracle_factory']
