@@ -3,8 +3,6 @@ import sys
 
 import numpy as np
 
-from regpy.solvers.nonlinear.newton import NewtonCG
-import regpy.stoprules as rules
 from regpy.hilbert import L2, Sobolev
 from regpy.solvers import Setting
 from regpy.vecsps.curve import Apple
@@ -30,36 +28,19 @@ def test_obstacle():
         inc_waves = 4
     )
 
-    setting = Setting(op=op, penalty=Sobolev(index=1.6), data_fid=L2)
-
     #Exact data
     farfield, _ = op.create_synthetic_data(Apple)
-
-    # Gaussian data 
-    noiselevel=0.01
-    noise = op.codomain.randn()
-    noise = noiselevel*setting.h_codomain.norm(farfield)/setting.h_codomain.norm(noise)*noise
-    data = farfield+noise
-
     #Initial guess
-    init = op.domain.circle(radius = 0.45)    
+    init = op.domain.circle(radius = 0.45)   
+    setting = Setting(op, Sobolev(index=1.6), L2, 
+                      exact_data= farfield,
+                      init = init.coeff
+                      )
 
+    noiselevel=0.01
+    setting.add_Gaussian_noise(relative_noise_level=noiselevel,white_noise=False)
 
-    solver = NewtonCG(
-        setting, data, init = init.coeff,
-            cgmaxit=50, rho=0.8
-    )
-
-    stoprule = (
-        rules.CountIterations(10) +
-        rules.Discrepancy(
-            setting.h_codomain.norm, data,
-            noiselevel=noiselevel,
-            tau=2.4
-        )
-    )
-
-    solver.run(stoprule)
+    setting.run('NewtCG',max_it = 20)
 
 
 sys.path.pop(0)
