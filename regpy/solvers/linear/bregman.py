@@ -458,7 +458,7 @@ class RunOnAlphaGrid(RegSolver):
     ----------
     setting: Setting
         Must have no regularization parameter, a linear operator, convex
-        penalty and fidelity, and an explicit codomain and fidelity.
+        penalty and fidelity (or codomain-free quadratic fidelity).
     regpars: Sequence | Iterable[float]
         Nonempty, finite or infinite iterable of finite positive parameters.
         Parameters are validated lazily, as in Bregman.
@@ -508,6 +508,8 @@ class RunOnAlphaGrid(RegSolver):
             raise ValueError('regpars must contain at least one parameter.')
         alpha = self._validate_alpha(self._pending_alpha)
         self._inner_template = self._method_template(setting, inner_solver)
+        if setting.codomain_free and not self._inner_template['primal']:
+            raise ValueError('Codomain-free RunOnAlphaGrid requires a primal inner solver.')
         initial = setting.init if init is None else init
         if initial not in setting.op.domain:
             raise ValueError('init must belong to the operator domain.')
@@ -516,7 +518,7 @@ class RunOnAlphaGrid(RegSolver):
         self.regpar = alpha
         self.x = self.op.domain.empty()
         self.op.domain.copyto(self.x, initial)
-        self.y = self.op(self.x)
+        self.y = None if setting.codomain_free else self.op(self.x)
         self.inner_setting: Setting | None = None
         self.inner_method_name = '_alpha_grid_inner'
 
@@ -547,7 +549,8 @@ class RunOnAlphaGrid(RegSolver):
         if not setting.penalty.is_convex:
             info.append('The penalty must be convex.')
         if setting.codomain_free:
-            info.append('An explicit codomain and data-fidelity functional are required.')
+            if setting.data is None:
+                info.append('Codomain-free RunOnAlphaGrid requires data in the setting.')
         elif not setting.data_fid.is_convex:
             info.append('The data fidelity must be convex.')
         return {'applicable': not info, 'info': ' '.join(info)}, {}
