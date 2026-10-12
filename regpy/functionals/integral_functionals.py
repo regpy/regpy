@@ -3839,12 +3839,14 @@ class RelativeEntropy(IntegralFunctionalBase):
     def _f_conj_second_deriv(self, u_star: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         return self._f_conj(u_star, out=out, mask=mask, **kwargs)
 
-def Huber(domain: MeasureSpaceFcts, as_primal: bool=True, sigma: float=1., **kwargs: Any) -> Quadratic:
+def Huber(domain: MeasureSpaceFcts, as_primal: bool=True, sigma: float=1., L1_type: bool=False, **kwargs: Any) -> Quadratic:
     r"""Return the Huber functional as a Quadratic with linear tails.
     
     Its pointwise value is x**2/2 for abs(x)<=sigma and
     sigma*abs(x)-sigma**2/2 otherwise. The signature and normalization
-    match Huber_old. sigma may be a positive scalar or domain element.
+    match Huber_old when L1_type=False. When L1_type=True, the
+    integrand is divided pointwise by sigma, so its linear tails have
+    slopes -1 and +1. sigma may be a positive scalar or domain element.
     as_primal=False uses the reciprocal measure, as in the legacy class.
     Data shifts preserve the Quadratic type and translate the tail joins.
     
@@ -3855,7 +3857,10 @@ def Huber(domain: MeasureSpaceFcts, as_primal: bool=True, sigma: float=1., **kwa
     as_primal: bool [default: True]
         As primal.
     sigma: float [default: 1.0]
-        Sigma.
+        Positive Huber transition threshold.
+    L1_type: bool [default: False]
+        If True, divide the pointwise Huber integrand by sigma so that
+        the linear tails have slopes -1 and +1.
     **kwargs: Any
         Additional keyword arguments forwarded to the underlying implementation.
     
@@ -3875,8 +3880,12 @@ def Huber(domain: MeasureSpaceFcts, as_primal: bool=True, sigma: float=1., **kwa
     if not as_primal:
         domain = deepcopy(domain)
         domain.measure = 1. / domain.measure
-    # These are the defining Huber tails. Alternative modifications of the
-    # integrand remain available through Huber_old.
+    # Scaling the quadratic coefficient scales its linear Taylor tails too.
+    # This also supports spatially varying sigma without changing the measure.
+    if L1_type:
+        if "a" in kwargs:
+            raise ValueError("Huber(L1_type=True) does not accept an explicit a coefficient.")
+        kwargs["a"] = 1. / sigma
     functional = Quadratic(domain, lin_taylor_l=-sigma, lin_taylor_u=sigma, **kwargs)
     functional.sigma = sigma
     return functional
