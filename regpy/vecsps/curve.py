@@ -200,6 +200,39 @@ class GenCurve:
         else:
             raise RuntimeError(Errors.runtime_error("To return the evaluation of the third derivative the self.nderivs >=3 please change that!",self,"zppp"))
 
+    def center_of_gravity(self) -> np.ndarray:
+        """Return the area centroid of the enclosed planar obstacle.
+
+        Returns
+        -------
+        numpy.ndarray
+            Two coordinates of the centroid for uniform area density,
+            approximated by the polygon through ``self.z``. The polygon is
+            closed implicitly; either orientation is accepted. This is not
+            the arclength-weighted centroid of the boundary. No curve state
+            is changed and no derivatives are required.
+
+        Raises
+        ------
+        ValueError
+            If samples are nonfinite or enclose numerically zero signed area.
+            The boundary is assumed simple (not self-intersecting).
+        """
+        points = np.asarray(self.z, dtype=float)
+        if points.ndim != 2 or points.shape[0] != 2 or points.shape[1] < 3:
+            raise ValueError("A planar boundary with at least three samples is required.")
+        if not np.all(np.isfinite(points)):
+            raise ValueError("Boundary samples must be finite.")
+        # Translate before forming cross products to reduce cancellation.
+        origin = points[:, 0]
+        q = points - origin[:, None]
+        following = np.roll(q, -1, axis=1)
+        cross = q[0] * following[1] - following[0] * q[1]
+        twice_area = np.sum(cross)
+        if abs(twice_area) <= 32 * np.finfo(float).eps * np.sum(np.abs(cross)):
+            raise ValueError("Boundary encloses numerically zero signed area.")
+        return origin + np.sum((q + following) * cross, axis=1) / (3 * twice_area)
+
     def param_derivative(self,u:np.ndarray) -> np.ndarray : 
         r"""Computes the derivative(s) of one or several complex periodic functions :math:`u:[0,2 pi]       o C`,
         which are given by their radial_samples at self.nval equidistant point on :math:`[0,2 pi]` 
