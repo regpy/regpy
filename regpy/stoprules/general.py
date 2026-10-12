@@ -1056,10 +1056,29 @@ class CountIterations(StopRule):
         if self._prepared_operator is None or self._prepared_operator is not operator:
             self.prepare_run(operator)
         self._prepared_operator = None
+        if self.max_op_evals is not None:
+            limits = getattr(solver, '_operator_evaluation_limits', None)
+            if limits is None:
+                limits = solver._operator_evaluation_limits = []
+            if all(rule is not self for rule in limits):
+                limits.append(self)
         if self.eval_count:
             self.eval_counts = {key: [] for key in operator.eval_counts}
             self.eval_counts['total'] = []
             self.eval_count_steps = []
+
+    def remaining_op_evals(self) -> int | None:
+        """Return the live remaining budget, without evaluating this stoprule.
+
+        Inner solvers can inspect this between steps without advancing outer
+        iteration counters or writing duplicate history entries.
+        """
+        if self.max_op_evals is None:
+            return None
+        if self.solver is None:
+            raise RuntimeError("Evaluation budget requires an attached solver.")
+        used = self.solver.op.total_eval_count() - self._eval_baseline['total']
+        return max(0, self.max_op_evals - used)
 
     def _record_eval_counts(self) -> None:
         if self.eval_count:

@@ -14,10 +14,30 @@ from regpy.functionals import Functional
 from regpy.vecsps import Vector, ReadOnlyVector
 
 from ..sequences import Naturals
+from regpy.stoprules import StopRule, resolve_stoprule_factory
 from ..solver import RegSolver
 from ..setting import Setting, check_Hilbert_applicability
 
 __all__ = ["NewtonCG", "IterativelyRegularizedNewton", "NonlinBregman"]
+
+class _OuterEvaluationBudget(StopRule):
+    """Read the outer budget without advancing its stopping rule."""
+
+    def __init__(self, limits):
+        super().__init__(logging_level='WARNING')
+        self.limits = tuple(limits)
+
+    def __deepcopy__(self, memo):
+        # Limits refer to the live outer run, never to a copied solver.
+        result = type(self)(self.limits)
+        memo[id(self)] = result
+        return result
+
+    def _stop(self):
+        if any(rule.remaining_op_evals() == 0 for rule in self.limits):
+            return self._set_stop_status(False, 'Outer operator evaluation cap reached.')
+        return False
+
 
 class NewtonCG(RegSolver):
     r"""The Newton-CG method. Solves the potentially nonlinear, ill-posed equation:
@@ -350,7 +370,7 @@ class IterativelyRegularizedNewton(RegSolver):
             if self._derivative_update_index != step + 1:
                 # Ordinary evaluation revokes a nonlinear operator's derivative
                 # proxy. Snapshot only when it must survive skipped updates.
-                self.deriv = deepcopy(self.deriv)
+                self.deriv = self.deriv.copy_with_shared_eval_counts(self.op)
         elif self.setting.codomain_free:
             # F'(x)^*F(x) from a fresh linearization would use the wrong
             # Jacobian. Form the mixed product with the frozen derivative.
@@ -389,7 +409,19 @@ class IterativelyRegularizedNewton(RegSolver):
             )
         entry['stoprule_params'].setdefault('logging_level', 'WARNING')
         level = entry['method_params'].get('logging_level', 'WARNING')
-        step, _ = inner_setting.run(name, logging_level=level)
+        limits = getattr(self, '_operator_evaluation_limits', ())
+        run_options = {}
+        if limits:
+            params = deepcopy(entry['stoprule_params'])
+            factory = resolve_stoprule_factory(params.pop('factory'))
+            params.setdefault('logging_level', 'WARNING')
+            params['solver_class'] = template['class']
+            # Keep configured inner criteria/caps and add a live outer budget.
+            # This covers constructor work and every subsequent inner step.
+            run_options['stoprule'] = (
+                factory(inner_setting, params) + _OuterEvaluationBudget(limits)
+            )
+        step, _ = inner_setting.run(name, logging_level=level, **run_options)
         from ..linear.bregman import _log_inner_summary
         _log_inner_summary(self.log, template['class'].__name__,
                            inner_setting.get_stoprule(name))
