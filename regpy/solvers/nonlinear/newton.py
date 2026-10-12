@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from regpy.functionals.base import Functional
 from collections.abc import Callable, Iterable
+from numbers import Integral
 from math import sqrt
 from copy import copy, deepcopy
 
@@ -12,6 +13,7 @@ from regpy.operators import Operator, ObsDataT
 from regpy.functionals import Functional
 from regpy.vecsps import Vector, ReadOnlyVector
 
+from ..sequences import Naturals
 from ..solver import RegSolver
 from ..setting import Setting, check_Hilbert_applicability
 
@@ -230,6 +232,19 @@ class IterativelyRegularizedNewton(RegSolver):
         CountIterations is present. Inner logging defaults to WARNING. Override
         it through inner_solver's method_params or stoprule_params, or through
         inner_solver_configurator.
+
+    derivative_update_schedule: Iterable[int] | None [default: Naturals()]
+        Strictly increasing nonnegative iterate indices at which to compute
+        the derivative. Must start with 0; [0] gives frozen Newton. A finite
+        schedule retains its final derivative after exhaustion. Entries are
+        validated lazily, with one-entry lookahead. None creates a fresh
+        Naturals() for each solver, avoiding a shared single-pass default.
+        The forward value and residual model are refreshed at every iterate.
+        Codomain-free frozen steps require ordinary forward evaluation to
+        form the frozen derivative's adjoint applied to the current value.
+        During frozen steps, deriv is the derivative at derivative_iteration,
+        not necessarily at the current iterate; derivative-based external
+        optimality monitors must take this into account.
     """
 
     def __init__(
@@ -241,6 +256,8 @@ class IterativelyRegularizedNewton(RegSolver):
             [Setting, tuple[ReadOnlyVector, ReadOnlyVector | None], dict], None
         ] | None = None,
         logging_level: int | str = 'INFO',
+        *,
+        derivative_update_schedule: Iterable[int] | None = None,
     ) -> None:
         from .irgnm import (
             _regularization_parameter_iterator, _next_regularization_parameter,
@@ -294,17 +311,55 @@ class IterativelyRegularizedNewton(RegSolver):
         self.inner_setting: Setting | None = None
         self.inner_solver_configurator = inner_solver_configurator
         self._previous_regpar: float | None = None
+        self.derivative_update_schedule = iter(
+            Naturals() if derivative_update_schedule is None
+            else derivative_update_schedule
+        )
+        self._last_derivative_schedule_index = -1
+        self._derivative_update_index = self._next_derivative_update()
+        if self._derivative_update_index != 0:
+            raise ValueError("derivative_update_schedule must start with 0.")
         self._linearize_current()
 
+    def _next_derivative_update(self) -> int | None:
+        """Consume one validated schedule entry; exhaustion freezes the derivative."""
+        try:
+            index = next(self.derivative_update_schedule)
+        except StopIteration:
+            return None
+        if isinstance(index, bool) or not isinstance(index, Integral):
+            raise TypeError("derivative_update_schedule entries must be integers.")
+        if index < 0 or index <= self._last_derivative_schedule_index:
+            raise ValueError("derivative_update_schedule must be nonnegative and strictly increasing.")
+        self._last_derivative_schedule_index = int(index)
+        return int(index)
+
     def _linearize_current(self) -> None:
-        """Refresh the derivative and the available nonlinear image."""
-        if self.setting.codomain_free:
-            self._adjoint_eval, self.deriv = self.op.linearize(
-                self.x, return_adjoint_eval=True
-            )
+        """Refresh F(x) every step, and the derivative only on its schedule."""
+        step = self.iteration_step_nr
+        if self._derivative_update_index == step:
+            if self.setting.codomain_free:
+                self._adjoint_eval, self.deriv = self.op.linearize(
+                    self.x, return_adjoint_eval=True
+                )
+                self.y = None
+            else:
+                self.y, self.deriv = self.op.linearize(self.x)
+            self.derivative_iteration = step
+            self._derivative_update_index = self._next_derivative_update()
+            if self._derivative_update_index != step + 1:
+                # Ordinary evaluation revokes a nonlinear operator's derivative
+                # proxy. Snapshot only when it must survive skipped updates.
+                self.deriv = deepcopy(self.deriv)
+        elif self.setting.codomain_free:
+            # F'(x)^*F(x) from a fresh linearization would use the wrong
+            # Jacobian. Form the mixed product with the frozen derivative.
+            value = self.op(self.x)
+            self._adjoint_eval = self.deriv.adjoint(value)
+            self._adjoint_eval *= self.deriv.gram_factor
             self.y = None
         else:
-            self.y, self.deriv = self.op.linearize(self.x)
+            self.y = self.op(self.x)
 
     def _inner_penalty(self) -> Functional | None:
         """None lets Setting construct the shifted original penalty."""
@@ -438,6 +493,19 @@ class NonlinBregman(IterativelyRegularizedNewton):
         configuration taking precedence. CountIterations enables an INFO run summary.
     select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None [default: None]
         Input vector; its coefficients are only read.
+
+    derivative_update_schedule: Iterable[int] | None [default: Naturals()]
+        Strictly increasing nonnegative iterate indices at which to compute
+        the derivative. Must start with 0; [0] gives frozen Newton. A finite
+        schedule retains its final derivative after exhaustion. Entries are
+        validated lazily, with one-entry lookahead. None creates a fresh
+        Naturals() for each solver, avoiding a shared single-pass default.
+        The forward value and residual model are refreshed at every iterate.
+        Codomain-free frozen steps require ordinary forward evaluation to
+        form the frozen derivative's adjoint applied to the current value.
+        During frozen steps, deriv is the derivative at derivative_iteration,
+        not necessarily at the current iterate; derivative-based external
+        optimality monitors must take this into account.
     """
 
     def __init__(
@@ -451,6 +519,7 @@ class NonlinBregman(IterativelyRegularizedNewton):
         logging_level: int | str = 'INFO',
         *,
         select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None = None,
+        derivative_update_schedule: Iterable[int] | None = None,
     ) -> None:
         if select_subgradient is not None and not callable(select_subgradient):
             raise TypeError('select_subgradient must be callable or None.')
@@ -463,6 +532,7 @@ class NonlinBregman(IterativelyRegularizedNewton):
             regpar_step=regpar_step, init=init, regpars=regpars,
             inner_solver_configurator=inner_solver_configurator,
             logging_level=logging_level,
+            derivative_update_schedule=derivative_update_schedule,
         )
         self.inner_method_name = '_nonlin_bregman_inner'
         self._bregman_penalty = self._make_bregman_penalty()
