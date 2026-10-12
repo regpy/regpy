@@ -71,7 +71,7 @@ class SemiSmoothNewton(RegSolver):
     ..math::
         psi_{minus} \leq f \leq psi_{plus} 
     
-    for a separable smooth penalty functional :math:`\mathcal{R}` and a smooth convex data functional (strictly convex or separable) :math:`\mathcal{S}_{g^{\delta}}` 
+    for a smooth penalty functional :math:`\mathcal{R}` (separable when domain extension is needed) and a smooth convex data functional (strictly convex or separable) :math:`\mathcal{S}_{g^{\delta}}` 
     and a linear operator :math:`T`.
     
     Parameters
@@ -209,6 +209,11 @@ class SemiSmoothNewton(RegSolver):
                 self.op.domain.iter_coefficients(self.psi_plus), strict=True)):
             raise ValueError("psi_minus must be strictly below psi_plus.")
         self._validate_constraints(original_penalty)
+        if not original_penalty.is_separable:
+            space = self.op.domain
+            if (any(not np.isneginf(v) for v in space.iter_coefficients(self.psi_minus))
+                    or any(not np.isposinf(v) for v in space.iter_coefficients(self.psi_plus))):
+                raise ValueError("Non-separable penalties are supported only without finite box constraints.")
         self.R = self._extended_penalty(original_penalty)
         x0 = self.op.domain.empty()
         self.op.domain.copyto(x0, setting.get_or_update_initial_guess(init, update=False))
@@ -848,7 +853,7 @@ class SemiSmoothNewton(RegSolver):
             if setting.data_fid.Lipschitz==np.inf:
                 out['info'] += 'Data functional not Lipschitz continuous. '                
         def check_penalty(penalty: Functional) -> bool:
-            r"""Check if penalty is separable and has a hessian.
+            r"""Check for a Hessian and either full domain or supported separable extension.
             
             Parameters
             ----------
@@ -863,7 +868,7 @@ class SemiSmoothNewton(RegSolver):
             """
             if isinstance(penalty, FunctionalOnDirectSum):
                 return all(check_penalty(f) for f in penalty.funcs)
-            if not penalty.is_separable or 'hessian' not in penalty.methods:
+            if 'hessian' not in penalty.methods:
                 return False
             lower, upper = penalty.dom_l, penalty.dom_u
             def infinite(bound: ReadOnlyVector | float, sign: int) -> bool:
@@ -886,12 +891,14 @@ class SemiSmoothNewton(RegSolver):
                     return False
                 vals = (bound,) if np.isscalar(bound) else penalty.domain.iter_coefficients(bound)
                 return all(np.isneginf(v) if sign < 0 else np.isposinf(v) for v in vals)
-            return ((infinite(lower, -1) and infinite(upper, 1))
-                    or SemiSmoothNewton._is_shifted_integral(penalty)
-                    or SemiSmoothNewton._is_integral_conjugate(penalty))
+            if infinite(lower, -1) and infinite(upper, 1):
+                return True
+            return (penalty.is_separable
+                    and (SemiSmoothNewton._is_shifted_integral(penalty)
+                         or SemiSmoothNewton._is_integral_conjugate(penalty)))
         if not check_penalty(setting.penalty):
-            out['info'] += ('Penalty must have a separable Hessian and support '
-                            'extension, componentwise for direct sums. ')
+            out['info'] += ('Penalty must have a Hessian and either full effective domain '
+                            'or separability with supported extension, componentwise for direct sums. ')
         out['applicable'] = out['info']==''
         out['rate'] = np.nan
         return out, None
