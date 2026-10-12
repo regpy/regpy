@@ -2502,8 +2502,8 @@ class SquaredNorm(Functional):
                         is_linear = (a==0 and shift is None and c==0),
                         is_quadratic = True,
                         is_separable = separable,
-                        dom_l = -np.inf if separable else None,
-                        dom_u = np.inf if separable else None,
+                        dom_l = -np.inf,
+                        dom_u = np.inf,
                         methods = {'eval','subgradient','hessian','proximal','dist_subdiff'},
                         conj_methods= {'eval','subgradient','hessian','proximal','dist_subdiff'}
                         )
@@ -2530,6 +2530,20 @@ class SquaredNorm(Functional):
             else:
                 raise ValueError(util.Errors.not_in_vecsp(shift,self.domain, add_info=f"Shift not in domain of functional {self}.")) 
         self.data = data
+
+    @property
+    def dom_l(self) -> Vector | Scalar:
+        """Pointwise lower bound of the full effective domain."""
+        if isinstance(self.domain, NumPyVectorSpace):
+            return np.broadcast_to(-np.inf, self.domain.shape)
+        return -np.inf * self.domain.ones()
+
+    @property
+    def dom_u(self) -> Vector | Scalar:
+        """Pointwise upper bound of the full effective domain."""
+        if isinstance(self.domain, NumPyVectorSpace):
+            return np.broadcast_to(np.inf, self.domain.shape)
+        return np.inf * self.domain.ones()
 
     @property
     def gram(self)->Operator:
