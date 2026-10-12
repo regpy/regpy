@@ -81,7 +81,10 @@ class SemiSmoothNewton(RegSolver):
         equipped with a Hilbert space.
     init: ReadOnlyVector | None [default: None]
         Zeroth iterate. If None, it is taken from the setting. 
-        init must be feasible. It is exposed as iteration zero through x, y
+        init must be feasible up to rounding errors. Violations no larger than
+        32 machine epsilons times max(1, abs(value), abs(violated bound))
+        are projected onto the bounds in a private copy; larger violations
+        raise ValueError. The projected initial guess is exposed as iteration zero through x, y
         and primal(), before any CG solve. Boundary multipliers are initialized
         from the objective gradient at this point, and the next active sets
         are computed from these multipliers. The first call to next() performs
@@ -151,7 +154,13 @@ class SemiSmoothNewton(RegSolver):
     may be infeasible. Both primal() and run() return feasible copies, without
     projecting the internal state or changing the Newton iteration.
     
-    For separable fidelities, each Hessian must be represented as pointwise
+    Strictly convex fidelities use their full quadratic Taylor model, also
+    for complex codomains. This path requires an invertible Taylor Hessian;
+    strict convexity alone does not mathematically guarantee invertibility
+    at every point. No ordering of the codomain is required on this path.
+
+    For non-strictly-convex separable fidelities, the codomain must be real,
+    ordered and maskable. Each Hessian must be represented as pointwise
     multiplication or a scalar multiple of Identity, with finite nonnegative
     entries. Positive-curvature coordinates define the inner CG data space.
     Zero-curvature gradient contributions are added to the quadratic penalty
@@ -203,11 +212,7 @@ class SemiSmoothNewton(RegSolver):
         self.R = self._extended_penalty(original_penalty)
         x0 = self.op.domain.empty()
         self.op.domain.copyto(x0, setting.get_or_update_initial_guess(init, update=False))
-        if any(not l <= v <= u for l, v, u in zip(
-                self.op.domain.iter_coefficients(self.psi_minus),
-                self.op.domain.iter_coefficients(x0),
-                self.op.domain.iter_coefficients(self.psi_plus), strict=True)):
-            raise ValueError(Errors.generic_message('x0 not feasible.'))
+        self._project_initial_roundoff(x0)
         self.x, self.y = x0, self.op(x0)
         self._feasible_cached_x: Vector | None = None
         self._feasible_cached_y: Vector | None = None
@@ -498,7 +503,7 @@ class SemiSmoothNewton(RegSolver):
         tuple[Any, Any, None, None] | tuple[None, None, None, Any] | tuple[Any, Any, Any, Any]
             Result described above.
         """
-        if not self.S.is_separable:
+        if self.S.is_strictly_convex or not self.S.is_separable:
             return quadTaylor(self.S, self.y), self.op, None, None
         space = self.op.codomain
         hessian = self.S.hessian(self.y)
@@ -706,6 +711,36 @@ class SemiSmoothNewton(RegSolver):
             self._cg_dual_adjoint = self.op.adjoint(self._cg_dual)
         return self._cg_dual, self._cg_dual_adjoint
 
+    def _project_initial_roundoff(self, x0: Vector) -> None:
+        """Reject genuine infeasibility and clip roundoff in a private vector.
+
+        At each violated bound b, allow 32 * eps * max(1, abs(b), abs(v)),
+        where eps is the machine precision of the iterate coefficient v.
+        Infinite bounds do not contribute to this scale. Validate all
+        coordinates before changing x0; use the space's mask operations to
+        support direct sums as well as NumPy spaces.
+        """
+        space = self.op.domain
+        for lower, value, upper in zip(
+                space.iter_coefficients(self.psi_minus),
+                space.iter_coefficients(x0),
+                space.iter_coefficients(self.psi_plus), strict=True):
+            if not np.isfinite(value):
+                raise ValueError(Errors.generic_message('x0 not feasible: nonfinite coefficient.'))
+            if lower <= value <= upper:
+                continue
+            dtype = np.asarray(value).dtype
+            eps = (np.finfo(dtype).eps if np.issubdtype(dtype, np.floating)
+                   else np.finfo(float).eps)
+            bound = lower if value < lower else upper
+            tolerance = 32 * eps * max(1., abs(value), abs(bound))
+            if not np.isfinite(bound) or abs(value - bound) > tolerance:
+                raise ValueError(Errors.generic_message('x0 not feasible.'))
+        space.copyto(x0, self.psi_minus,
+                     where=space.geq_mask(self.psi_minus, x0))
+        space.copyto(x0, self.psi_plus,
+                     where=space.geq_mask(x0, self.psi_plus))
+
     def primal(self) -> tuple[Vector, Vector]:
         r"""Return a feasible copy of the current iterate and its operator image.
 
@@ -805,10 +840,11 @@ class SemiSmoothNewton(RegSolver):
                 out['info'] += 'Data functional not twice differentiable. '
             if not (setting.data_fid.is_strictly_convex or setting.data_fid.is_separable):
                 out['info'] += 'Data fidelity must be strictly convex or separable. '
-            if setting.data_fid.is_separable and (
+            if (not setting.data_fid.is_strictly_convex
+                    and setting.data_fid.is_separable) and (
                     not isinstance(setting.op.codomain, MaskableVectorSpace)
                     or not setting.op.codomain.is_ordered):
-                out['info'] += 'Separable fidelity requires a real ordered maskable codomain. ' 
+                out['info'] += 'Non-strictly-convex separable fidelity requires a real ordered maskable codomain. ' 
             if setting.data_fid.Lipschitz==np.inf:
                 out['info'] += 'Data functional not Lipschitz continuous. '                
         def check_penalty(penalty: Functional) -> bool:

@@ -2146,7 +2146,8 @@ def get_nonlinear_reg_method_dictionary() -> dict:
         FISTA as genFISTA,
         LevenbergMarquardt,
         NewtonCG,
-        IterativelyRegularizedNewton
+        IterativelyRegularizedNewton,
+        NonlinBregman
     )
     return _with_stoprule_defaults({
             'gFISTA':   {'class': genFISTA,
@@ -2167,7 +2168,10 @@ def get_nonlinear_reg_method_dictionary() -> dict:
                         },
             'IRN' :     {'class': IterativelyRegularizedNewton,
                           'full': 'Iteratively regularized Newton methods (generalized IRGNM)'
-                        }
+                        },
+            'nlBreg' :  {'class': NonlinBregman,
+                          'full': 'Bregman iteration for nonlinear problems (generalized LM)'
+                        }                        
     }, default_parameter_choice_rule)
 
 
