@@ -63,6 +63,10 @@ def default_parameter_choice_rule(setting: Setting, params: dict[str, Any]) -> S
 def default_convex_stoprule(setting: Setting, params: dict[str, Any]) -> StopRule:
     r"""Use an evaluable Fenchel gap, otherwise relative solution change.
     
+    In codomain-free settings, select the gap when a primal iterate, data,
+    normal and backprojection actions, and evaluable penalty and conjugate
+    are available; the data-fidelity gap vanishes for the implicit dual.
+
     Check the functionals actually used by Setting.duality_gap. For a dual
     setting with a primal accessor, this is the original primal setting:
     the supplied tuple is an original dual pair and the missing primal pair
@@ -87,12 +91,20 @@ def default_convex_stoprule(setting: Setting, params: dict[str, Any]) -> StopRul
     StopRule
         Result described above.
     """
-    applicable = setting.is_tikhonov and setting.is_convex and not setting.codomain_free
+    applicable = setting.is_tikhonov and setting.is_convex
     if applicable:
         primal = _solver_has(params, 'primal')
         dual = _solver_has(params, 'dual')
         original = getattr(setting, '_primal_setting', None)
-        if original is not None and primal:
+        if setting.codomain_free:
+            # The fidelity subgradient is encoded by the normal action and
+            # backprojected data. Only the penalty Fenchel gap is evaluated.
+            R = setting.penalty
+            applicable = (primal and setting.data is not None
+                          and callable(getattr(setting.op, 'adjoint_eval', None))
+                          and callable(getattr(setting.op, 'adjoint_data', None))
+                          and _has(R, 'eval') and _has(R.conj, 'eval'))
+        elif original is not None and primal:
             # Matches the early delegation in Setting.duality_gap(primal=...).
             R, S = original.penalty, original.data_fid
             applicable = (original.is_tikhonov and original.is_convex

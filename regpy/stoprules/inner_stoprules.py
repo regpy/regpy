@@ -35,6 +35,46 @@ __all__: list[str] = [
 ]
 
 
+def _refine_penalty_minimum(pen, reference, max_steps: int = 2):
+    """Apply at most ``max_steps`` feasible, decreasing Newton steps.
+
+    The functional's Hessian maps primal increments to dual covectors;
+    hence ``hessian.inverse(subgradient)`` is the Newton correction. If the
+    Hessian inverse is unavailable, or no feasible descent step exists, keep
+    the best candidate and leave the usual warning to the caller.
+    """
+    candidate = pen.domain.empty()
+    pen.domain.copyto(candidate, reference)
+    zero_covector = pen.domain.zeros(read_only=True)
+    for _ in range(max_steps):
+        distance = pen.dist_subdiff(zero_covector, candidate)
+        if np.isfinite(distance) and distance <= 1e-10:
+            break
+        try:
+            direction = pen.hessian(candidate).inverse(pen.subgradient(candidate))
+        except (NotImplementedError, AttributeError, RuntimeError, ValueError,
+                ArithmeticError, TypeError) as error:
+            pen.log.debug('Newton refinement of penalty reference unavailable: %s', error)
+            break
+        old_value = pen(candidate)
+        accepted = False
+        # Backtrack to avoid stepping outside the essential domain or losing
+        # the decrease from an already accurate approximate minimizer.
+        for scale in (1., 0.5, 0.25, 0.125, 0.0625, 0.03125):
+            trial = candidate - scale * direction
+            try:
+                trial_value = pen(trial)
+            except (ValueError, ArithmeticError, RuntimeError):
+                continue
+            if np.isfinite(trial_value) and trial_value <= old_value:
+                pen.domain.copyto(candidate, trial)
+                accepted = True
+                break
+        if not accepted:
+            break
+    return candidate
+
+
 ######### stopping rules for convex optimization problems #########
 
 class OptimalityCondStopping(StopRule):
@@ -186,7 +226,9 @@ class DualityGapStopping(StopRule):
         setting. For a dual iterate ``(p, T*p)``, the primal point is recovered
         by the primal setting's ``dual_to_primal`` method; a supplied ``T*p``
         is reused. The minimum is estimated from the primal penalty's reference
-        vector, with zero as fallback if that vector is not a minimizer.
+        vector, optionally refined by up to two Newton steps for a smooth
+        penalty with invertible Hessian. If no minimizer can be verified,
+        zero is used as a fallback.
     rpow: int [default: 2]
         Rpow.
     stop_at_infty: bool [default: True]
@@ -262,11 +304,23 @@ class DualityGapStopping(StopRule):
                                  else primal_setting)
             pen = reference_setting.penalty
             refsol = pen.reference_vector()
-            dist = pen.dist_subdiff(pen.domain.zeros(),refsol)
-            if dist>1e-10:
-                self.log.warning(f"penalty reference vector is no minimizer. {dist}" 
-                                 "Assuming 0 as infimum in duality gap relative error estimate.")
-                self.minpen  = 0.
+            zero_covector = pen.domain.zeros(read_only=True)
+            dist = pen.dist_subdiff(zero_covector, refsol)
+            if not np.isfinite(dist) or dist > 1e-14:
+                # reference_vector() promises feasibility but not necessarily
+                # an accurately computed minimizer. Try two Newton corrections
+                # for smooth penalties with an invertible Hessian. Do not change
+                # the penalty's own reference vector or the solver's iterate.
+                if {'subgradient', 'hessian'} <= pen.methods:
+                    refsol = _refine_penalty_minimum(pen, refsol, max_steps=2)
+                    dist = pen.dist_subdiff(zero_covector, refsol)
+            if not np.isfinite(dist) or dist > 1e-14:
+                self.log.warning(
+                    'Penalty reference vector is not a verified minimizer '
+                    '(subdifferential distance: %s). Assuming 0 as infimum '
+                    'in duality-gap relative error estimate.', dist
+                )
+                self.minpen = 0.
             else:
                 self.minpen = pen(refsol)
 
@@ -301,7 +355,8 @@ class DualityGapStopping(StopRule):
             raise MissingValueError("No solver is attached to this rule.")
         solver = cast("RegSolver", self.solver)
         primal = solver.primal() if hasattr(solver,"primal") and callable(solver.primal) else None
-        dual = solver.dual() if hasattr(solver,"dual") and callable(solver.dual) else None
+        dual = (None if solver.setting.codomain_free else
+                solver.dual() if hasattr(solver, "dual") and callable(solver.dual) else None)
         if primal is None and dual is None:
             raise RuntimeError(Errors.generic_message("The solver needs to provide at least one of the methods 'primal' or 'dual'."))        
         gap = solver.setting.duality_gap(primal = primal, dual = dual)
@@ -347,14 +402,6 @@ class DualityGapStopping(StopRule):
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)    
         return triggered
-
-from .general import _capped_factory
-RelativeChangeData_factory = _capped_factory(RelativeChangeData)
-RelativeChangeSol_factory = _capped_factory(RelativeChangeSol)
-OptimalityCondStopping_factory = _capped_factory(OptimalityCondStopping)
-OptimalityCondStoppingNonConvex_factory = _capped_factory(OptimalityCondStoppingNonConvex)
-DualityGapStopping_factory = _capped_factory(DualityGapStopping)
-__all__ += ['RelativeChangeData_factory', 'RelativeChangeSol_factory', 'OptimalityCondStopping_factory', 'OptimalityCondStoppingNonConvex_factory', 'DualityGapStopping_factory']
 
 
 ##### general fall-back stopping rules
@@ -520,3 +567,11 @@ class RelativeChangeSol(StopRule):
         if self.is_main_rule:
             self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
         return triggered
+
+from .general import _capped_factory
+RelativeChangeData_factory = _capped_factory(RelativeChangeData)
+RelativeChangeSol_factory = _capped_factory(RelativeChangeSol)
+OptimalityCondStopping_factory = _capped_factory(OptimalityCondStopping)
+OptimalityCondStoppingNonConvex_factory = _capped_factory(OptimalityCondStoppingNonConvex)
+DualityGapStopping_factory = _capped_factory(DualityGapStopping)
+__all__ += ['RelativeChangeData_factory', 'RelativeChangeSol_factory', 'OptimalityCondStopping_factory', 'OptimalityCondStoppingNonConvex_factory', 'DualityGapStopping_factory']

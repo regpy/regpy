@@ -1246,7 +1246,12 @@ class Setting:
         dual: tuple[Vector | None, Vector | None] | None [default: None]
             tuple of dual variable :math:`p` and :math:`T*p`. If :math:`T*p` is None, it will be computed.
         use_bregman_formula: bool [default: True]
-            If True, the second formula above is used.
+            If True, the second formula above is used. For codomain-free
+            settings only this representation is available, and ``primal``
+            must supply ``f``. The implicit dual covector is
+            ``(op.adjoint_data(data) - op.adjoint_eval(f)) / regpar``;
+            the fidelity Bregman term vanishes for this dual choice.
+            ``dual`` is not needed in this case.
         
         
         Returns
@@ -1259,8 +1264,33 @@ class Setting:
         if not self.is_convex:
             raise RuntimeError(Errors.not_linear_op(self.op,add_info="The duality gap can only be computed for convex settings with linear operators!"))
 
-        if self._primal_setting is not None and primal is not None: 
+        if self._primal_setting is not None and primal is not None:
             return self._primal_setting.duality_gap(dual=primal)
+
+        if self.codomain_free:
+            # The codomain-free objective is, up to an irrelevant constant,
+            #   (1/alpha) * (1/2 <f, A f> - <b, f>) + R(f),
+            # where A f = op.adjoint_eval(f), b = op.adjoint_data(data).
+            # Select the implicit dual p = -S'(Tf)/alpha. The fidelity's
+            # Fenchel/Bregman gap is then zero; only the penalty gap remains.
+            if not use_bregman_formula:
+                raise ValueError(
+                    'Codomain-free duality gaps require use_bregman_formula=True; '
+                    'the separate fidelity and its conjugate are unavailable.'
+                )
+            if primal is None or primal[0] is None:
+                raise ValueError(
+                    'Codomain-free duality gap requires a primal reconstruction f.'
+                )
+            if self.data is None:
+                raise ValueError('Codomain-free duality gap requires data.')
+            f = primal[0]
+            if f not in self.op.domain:
+                raise ValueError('Primal reconstruction is not in the operator domain.')
+            Tsp = self.op.adjoint_data(self.data)
+            Tsp -= self.op.adjoint_eval(f)
+            Tsp /= self.regpar
+            return self._duality_gap_pen((f, None), (None, Tsp))
 
         (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
         alpha = self.regpar
