@@ -82,7 +82,16 @@ def _with_stoprule_defaults(methods: dict, factory: Callable[[Setting, dict], St
             50 if name in short_runs else 1000)
         params = {'max_it': max_it, 'factory': factory}
         if factory is default_convex_stoprule:
-            params['tol'] = 1e-3
+            # TikhonovCG already has its own (absolute/relative) CG stopping
+            # criteria. An additional duality-gap or relative-change rule can
+            # otherwise terminate it before those criteria are satisfied,
+            # including at the initial correction h=0.
+            if getattr(method.get('class'), '__name__', None) == 'TikhonovCG':
+                params['factory'] = CountIterations_factory
+            # Do not supply an absolute duality-gap tolerance. The gap is
+            # problem-scaled; DualityGapStopping uses its relative criterion
+            # by default (tol=0). The fallback RelativeChangeSol factory
+            # provides its own dimensionless relative-change tolerance.
             if name in ('SSN', 'dSSN'):
                 params['schedule'] = None
         elif factory is default_nonconvex_stoprule:
