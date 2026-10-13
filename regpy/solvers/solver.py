@@ -300,7 +300,12 @@ class Solver:
         stoprule._complete_init_with_solver(self)
         while not stoprule.stop() and self.next(): 
             yield self._read_only_iterate()
-        self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
+        if self.is_converged() or stoprule.main_rule.converged is True:
+            self.log.info('Solver converged after %s iteration(s).', self.iteration_step_nr)
+        else:
+            self.log.info('Solver stopped after %s iteration(s): %s',
+                          self.iteration_step_nr,
+                          stoprule.main_rule.stop_reason or 'No convergence certificate.')
  
 
 
@@ -370,7 +375,12 @@ class Solver:
         while not stoprule.stop() and self.next(): 
             yield self._read_only_iterate()
 
-        self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
+        if self.is_converged() or stoprule.main_rule.converged is True:
+            self.log.info('Solver converged after %s iteration(s).', self.iteration_step_nr)
+        else:
+            self.log.info('Solver stopped after %s iteration(s): %s',
+                          self.iteration_step_nr,
+                          stoprule.main_rule.stop_reason or 'No convergence certificate.')
 
     def run(
         self,

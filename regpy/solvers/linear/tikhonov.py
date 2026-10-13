@@ -251,7 +251,10 @@ class TikhonovCG(RegSolver):
             self.history_dict["kappa"].append(kappa)
             self.log_info = 'kappa:{:1.1e}'.format(kappa)
             self.it+=1
-            return (self.it>=self.min_it)
+            satisfied = self.it >= self.min_it
+            if satisfied:
+                return self._set_stop_status(True, 'Minimum CG iteration count satisfied.')
+            return False
 
     class RelTolXStop(StopRule):
         r"""Stopping rule based on relative error in the domain of the operator.
@@ -318,8 +321,8 @@ class TikhonovCG(RegSolver):
                     / self.sq_norm_x
                     / self.solver.kappa
                 ) / self.solver.regpar
-                self.log_info = 'rel X:{:1.1e}>={:1.1e} '.format(
-                    valx, self.tolexpr
+                self.log_info = 'rel X:{:1.1e} {} {:1.1e}'.format(
+                    valx, '<' if valx < self.tolexpr else '>=', self.tolexpr
                 )
             self.history_dict["rel_err_x"].append(valx)
             if self.x_exact is not None:
@@ -337,7 +340,9 @@ class TikhonovCG(RegSolver):
                 self.history_dict["rel_err_x_true"].append(
                     np.inf if self.sq_norm_x == 0 else true_error / np.sqrt(self.sq_norm_x)
                 )
-            return valx < self.tolexpr
+            if valx < self.tolexpr:
+                return self._set_stop_status(True, 'CG relative X tolerance satisfied.')
+            return False
 
     class RelTolYStop(StopRule):
         r"""Stopping rule based on relative error in the domain of the operator.
@@ -421,8 +426,8 @@ class TikhonovCG(RegSolver):
                     / self.solver.kappa
                     / self.solver.regpar
                 )
-                self.log_info = "rel Y:{:1.1e}>={:1.1e} ".format(
-                    valy, self.tolexpr
+                self.log_info = "rel Y:{:1.1e} {} {:1.1e}".format(
+                    valy, '<' if valy < self.tolexpr else '>=', self.tolexpr
                 )
             self.history_dict["rel_err_y"].append(valy)
             if self.y_exact is not None:
@@ -442,7 +447,9 @@ class TikhonovCG(RegSolver):
                     if self.norm_y == 0
                     else true_error / sqrt(self.norm_y)
                 )
-            return valy < self.tolexpr
+            if valy < self.tolexpr:
+                return self._set_stop_status(True, 'CG relative Y tolerance satisfied.')
+            return False
 
     class TolStop(StopRule):
         r"""Stopping rule based on absolute tolerance
@@ -492,8 +499,12 @@ class TikhonovCG(RegSolver):
                         0.,
                     ))
                 )
-            self.log_info = "abs X:{:1.1e}>={:1.1e}".format(val, self.tol)
-            return val < self.tol
+            self.log_info = "abs X:{:1.1e} {} {:1.1e}".format(
+                val, '<' if val < self.tol else '>=', self.tol
+            )
+            if val < self.tol:
+                return self._set_stop_status(True, 'CG absolute tolerance satisfied.')
+            return False
 
     def __init__(
                 self, setting:Setting, 
