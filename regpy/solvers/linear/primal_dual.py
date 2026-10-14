@@ -64,7 +64,9 @@ class PDHG(RegSolver):
         Relaxation parameter. For theta==0 PDHG is the Arrow-Hurwicz-Uzawa algorithm.
         If -1, a suitable value is selected automatically based on the convexity parameters of penalty and data fidelity term.
     op_norm: float | None [default: None]
-        The operator norm of the forward operator. If None, it is computed numerically.
+        The operator norm of the forward operator. If None, it is estimated
+        using the original primal setting's operator and Hilbert geometries
+        when ``setting`` is a transformed dual setting.
     proximal_pars_data_fidelity_conjugate: dict | None [default: None]
         Parameter dictionary passed to the computation of the prox-operator of the data fidelity functional.
     proximal_pars_penalty: dict | None [default: None]
@@ -217,7 +219,8 @@ class PDHG(RegSolver):
         setting: Setting
             Problem setting containing the operator, penalty, and data fidelity.
         op_norm: float | None [default: None]
-            Operator-norm estimate; None requests numerical estimation.
+            Operator-norm estimate. If None, estimate on the original primal
+            setting for transformed dual problems.
         tau: int [default: 0]
             Proximal or iteration step size.
         sigma: int [default: 0]
@@ -253,7 +256,19 @@ class PDHG(RegSolver):
                 out['rate']=np.nan
                 par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':0,'muSstar':0}
             else:
-                L = setting.op.norm(setting.h_domain,setting.h_codomain) if op_norm is None else op_norm  
+                if op_norm is None:
+                    # A transformed dual setting has op = T*.  Its operator norm
+                    # equals the primal norm in the corresponding dual Hilbert
+                    # geometries.  Estimate via T rather than the (potentially
+                    # much larger) domain of T*.
+                    norm_setting = (setting._primal_setting
+                                    if setting._primal_setting is not None
+                                    else setting)
+                    L = norm_setting.op.norm(
+                        norm_setting.h_domain, norm_setting.h_codomain
+                    )
+                else:
+                    L = op_norm
                 if tau==0 and sigma==0:
                     tau = 1/L
                     sigma = 1/L
