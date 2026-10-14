@@ -251,7 +251,7 @@ class DualityGapStopping(StopRule):
         on the same schedule, including the final converged iterate.
         Histories are stored under ``additional_gap_keys``, in list order;
         keys include a one-based index and the callable name when available.
-    gap_part: Literal['full', 'data_fid'] [default: 'full']
+    gap_part: Literal['full', 'data_fid', 'penalty'] [default: 'full']
         ``'full'`` uses the full primal-dual gap as before. ``'data_fid'``
         uses only ``Setting._duality_gap_data_fid`` (the Fenchel/Bregman gap
         for the *entire* data fidelity S), omitting the penalty contribution.
@@ -267,9 +267,21 @@ class DualityGapStopping(StopRule):
         This mode requires an explicit-codomain setting and both the primal
         and dual iterates (or a reconstructible missing iterate).
 
+        ``'penalty'`` evaluates ``solver.setting._duality_gap_pen`` on the
+        *active solver setting*: for a transformed dual solver this is its
+        dual-domain penalty, not the original primal penalty. Only the current
+        dual-setting iterate and the adjoint image of its saddle variable are
+        needed. The original primal reconstruction is never formed. In this
+        mode the relative bound uses the active penalty and its infimum,
+        computed as ``-penalty.conj(0)`` if finite. If the infimum is not
+        available, the absolute tolerance is still used.
+
+        Neither partial gap by itself certifies optimality. Accepting a
+        partial gap stops with ``converged=False``.
+
         ``history_dict['duality gap']`` retains the existing plotting key and
-        records the *selected* gap. In ``'data_fid'`` mode the same samples
-        are also recorded under ``history_dict['data fidelity gap']``.
+        records the *selected* gap. Partial modes also store samples in
+        ``history_dict['data fidelity gap']`` or ``['penalty gap']``.
     """
     def __init__(
         self,
@@ -280,10 +292,10 @@ class DualityGapStopping(StopRule):
         logging_level: LoggingLevel = "INFO",
         schedule: Schedule = _EVERY_TENTH_STEP,
         additional_gap_functions: list[GapFunctional] | None = None,
-        gap_part: Literal["full", "data_fid"] = "full",
+        gap_part: Literal["full", "data_fid", "penalty"] = "full",
     ) -> None:
-        if gap_part not in ("full", "data_fid"):
-            raise ValueError("gap_part must be 'full' or 'data_fid'.")
+        if gap_part not in ("full", "data_fid", "penalty"):
+            raise ValueError("gap_part must be 'full', 'data_fid', or 'penalty'.")
         self.gap_part = gap_part
         super().__init__(
             logging_level=logging_level,
@@ -310,6 +322,8 @@ class DualityGapStopping(StopRule):
         self.history_dict["duality gap"] = []
         if self.gap_part == "data_fid":
             self.history_dict["data fidelity gap"] = []
+        elif self.gap_part == "penalty":
+            self.history_dict["penalty gap"] = []
         self.stop_at_infty: bool = stop_at_infty
 
     def __repr__(self) -> str:
@@ -352,6 +366,26 @@ class DualityGapStopping(StopRule):
                     "Cannot evaluate inf S = -S*(0). The relative "
                     "data-fidelity-gap threshold is disabled; only the "
                     "absolute tolerance is used.")
+            return
+
+        if self.gap_part == "penalty":
+            # Crucially use the *active* setting. For dPDHG its penalty is
+            # S_primal^*(-alpha * p), not the original (often null) R_primal.
+            # Fenchel identity: inf R = -R*(0), when this is finite.
+            pen = reg_solver.setting.penalty
+            self.minpen = None
+            try:
+                minpen = -float(pen.conj(pen.domain.zeros(read_only=True)))
+                if np.isfinite(minpen):
+                    self.minpen = minpen
+            except (NotImplementedError, AttributeError, ValueError,
+                    RuntimeError, ArithmeticError, TypeError):
+                pass
+            if self.minpen is None:
+                self.log.warning(
+                    "Cannot evaluate inf R = -R*(0) in the active setting. "
+                    "The relative penalty-gap threshold is disabled; "
+                    "only the absolute tolerance is used.")
             return
 
         pen = reference_setting.penalty
@@ -403,8 +437,16 @@ class DualityGapStopping(StopRule):
         if self.solver is None:
             raise MissingValueError("No solver is attached to this rule.")
         solver = cast("RegSolver", self.solver)
-        primal = (solver.primal() if hasattr(solver, "primal")
-                  and callable(solver.primal) else None)
+        if (self.gap_part == "penalty"
+                and getattr(solver, "x", None) is not None
+                and not self.additional_gap_functions):
+            # PDHG.primal() evaluates the operator image on demand. The
+            # penalty gap needs only x, so avoid an unnecessary evaluation
+            # of the physical forward model on every stopping-rule check.
+            primal = (solver.x, None)
+        else:
+            primal = (solver.primal() if hasattr(solver, "primal")
+                      and callable(solver.primal) else None)
         dual = (None if solver.setting.codomain_free else
                 solver.dual() if hasattr(solver, "dual")
                 and callable(solver.dual) else None)
@@ -416,6 +458,23 @@ class DualityGapStopping(StopRule):
             gap = solver.setting.duality_gap(primal=primal, dual=dual)
             reference_setting = (solver.setting._primal_setting
                                  or solver.setting)
+        elif self.gap_part == "penalty":
+            # In contrast to data_fid mode, do NOT refer to the original
+            # primal setting. A dual PDHG solver already supplies x_dual
+            # and A_dual* pstar_dual in the correct dual-setting coordinates.
+            reference_setting = solver.setting
+            if primal is None or primal[0] is None:
+                raise ValueError(
+                    "Penalty-gap stopping requires a current iterate "
+                    "in the active setting's domain.")
+            if dual is None or (dual[0] is None and dual[1] is None):
+                raise ValueError(
+                    "Penalty-gap stopping requires a saddle-point dual "
+                    "iterate or its adjoint image.")
+            if dual[1] is None:
+                dual = (dual[0], reference_setting.op.adjoint(dual[0]))
+            gap = reference_setting._duality_gap_pen(
+                primal=primal, dual=dual)
         else:
             # Reuse Setting's Bregman term. Complete operator images only
             # if the solver did not supply them. For a solver working on the
@@ -446,6 +505,8 @@ class DualityGapStopping(StopRule):
         self.history_dict["duality gap"].append(gap)
         if self.gap_part == "data_fid":
             self.history_dict["data fidelity gap"].append(gap)
+        elif self.gap_part == "penalty":
+            self.history_dict["penalty gap"].append(gap)
         for key, value in zip(self.additional_gap_keys, additional_gaps):
             self.history_dict[key].append(value)
 
@@ -465,13 +526,18 @@ class DualityGapStopping(StopRule):
                 pen_val = reference_setting.penalty(prim)
                 rel_bound = ((self.reltol / (1. - self.reltol)) ** self.rpow
                              * (pen_val - self.minpen))
-            elif self.minfid is not None:
+            elif self.gap_part == "data_fid" and self.minfid is not None:
                 # This is a relative *functional-value* normalization, not
                 # the penalty-based norm-error bound used in 'full' mode.
                 fid_value = reference_setting.data_fid(complete_primal[1])
                 fid_excess = max(0., (fid_value - self.minfid)
                                  / reference_setting.regpar)
                 rel_bound = self.reltol / (1. - self.reltol) * fid_excess
+            elif self.gap_part == "penalty" and self.minpen is not None:
+                pen_value = reference_setting.penalty(primal[0])
+                pen_excess = max(0., float(pen_value - self.minpen))
+                rel_bound = ((self.reltol / (1. - self.reltol)) ** self.rpow
+                             * pen_excess)
 
         finite_gap = np.isfinite(gap)
         accepted = (finite_gap and
@@ -480,8 +546,9 @@ class DualityGapStopping(StopRule):
                       and gap <= rel_bound)))
         failed = np.isnan(gap) or (np.isinf(gap) and self.stop_at_infty)
         triggered = bool(accepted or failed)
-        label = ("Full duality gap" if self.gap_part == "full"
-                 else "Data-fidelity Bregman gap")
+        label = {"full": "Full duality gap",
+                 "data_fid": "Data-fidelity Bregman gap",
+                 "penalty": "Penalty Bregman gap"}[self.gap_part]
         if failed:
             self.log_info = f"Nonfinite {label.lower()} ({gap})."
             self._set_stop_status(False, self.log_info, failure=True)
@@ -490,10 +557,12 @@ class DualityGapStopping(StopRule):
                 self.log_info = f"Full duality gap ({gap:.2e}) satisfies the tolerance."
                 self._set_stop_status(True, self.log_info)
             else:
+                unchecked = ("penalty/adjoint" if self.gap_part == "data_fid"
+                             else "data-fidelity")
                 self.log_info = (
-                    f"Data-fidelity Bregman gap ({gap:.2e}) satisfies the "
-                    "stopping tolerance; primal convergence is NOT certified "
-                    "(the penalty/adjoint optimality condition is unchecked).")
+                    f"{label} ({gap:.2e}) satisfies the stopping tolerance; "
+                    "full convergence is NOT certified "
+                    f"(the {unchecked} optimality condition is unchecked).")
                 # An accepted partial gap is a *stopping* decision, not a
                 # mathematical convergence certificate.
                 self._set_stop_status(False, self.log_info)

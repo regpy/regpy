@@ -687,13 +687,13 @@ class TV_Setting(Setting):
     * The default solver is PDHG. If ``R=0``, the conjugate of the penalty
       is an indicator of zero, so the full duality gap is generally infinite
       at intermediate iterates. PDHG therefore defaults to
-      ``DualityGapStopping(gap_part='data_fid')`` and retains its iteration cap.
-      This monitors only the fidelity Bregman gap for BOTH components of the
-      augmented fidelity (S_data and alpha*TV). Its threshold is heuristic:
-      a small fidelity gap alone does not certify ``T* p in partial R(f)``.
-      The stopping rule therefore reports ``converged=False`` if the partial
-      gap criterion triggers. The full gap remains the default for other
-      settings and is available by explicitly overriding the stop rule.
+      ``DualityGapStopping(gap_part='data_fid')`` for primal PDHG and
+      ``gap_part='penalty'`` for dPDHG. The latter evaluates the Bregman gap
+      of the *dual setting's penalty*, which is the conjugated original data
+      fidelity. It does not require recovering an original primal iterate
+      through the (non-single-valued) subgradient of R*. Both partial-gap
+      thresholds are heuristics and record ``converged=False`` on acceptance.
+      The full gap remains available by overriding the stopping rule.
     """
 
     def __init__(
@@ -875,16 +875,21 @@ class TV_Setting(Setting):
 
     def _protect_pdhg_from_infinite_gaps(self) -> None:
         # R=0 entails R* = indicator_{0}. The full gap is typically
-        # infinite because T* p != 0. Monitor only the fidelity Bregman
-        # gap instead; this stops heuristically and does not certify global
-        # convergence. The usual iteration cap remains in place.
-        self.set_stoprule_params("PDHG", {
+        # infinite because T* p != 0. For primal PDHG monitor the fidelity
+        # contribution on this setting. For dual PDHG use the *penalty*
+        # contribution on the transformed dual setting. This avoids the
+        # original NullFunctional.conj subgradient and does not require
+        # reconstructing the original primal iterate. Neither partial gap
+        # certifies convergence; the iteration cap remains in place.
+        params = {
             "factory": "DualityGapStopping",
-            "gap_part": "data_fid",
             "stop_at_infty": False,
             "reltol": 1e-3,
             "tol": 1e-12,
-        })
+            "rpow": 1    # actually the two components of the data term may have different rpow's, but 1 dominates.
+        }
+        self.set_stoprule_params("PDHG", {**params, "gap_part": "data_fid"})
+        self.set_stoprule_params("dPDHG", {**params, "gap_part": "penalty"})
 
     @staticmethod
     def _augmented_observations(data, op, scale: float = 1.):
