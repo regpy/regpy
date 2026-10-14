@@ -553,8 +553,16 @@ class DualityGapStopping(StopRule):
             if self.gap_part == "full":
                 if solver.setting._primal_setting is None:
                     prim = primal[0] if isinstance(primal, tuple) else primal
+                elif dual is not None and dual[0] is not None:
+                    # For the transformed dual setting (alpha_d=1/alpha_p),
+                    # the solver's saddle-point dual variable q is the ACTUAL
+                    # original primal iterate f=-alpha_d*q. Using the other
+                    # iterate p via dual_to_primal(p) generally yields a
+                    # different point and an inconsistent relative bound.
+                    prim = -solver.setting.regpar * dual[0]
                 else:
-                    # solver.primal() is (p,T*p) in transformed dual coordinates.
+                    # Retain the legacy conversion for solvers that do not
+                    # expose a saddle-point dual variable.
                     pair = primal if isinstance(primal, tuple) else (primal, None)
                     prim = (reference_setting.dual_to_primal(pair)
                             if primal is not None else None)
@@ -574,9 +582,11 @@ class DualityGapStopping(StopRule):
             elif self.gap_part == "penalty":
                 if reference_setting._primal_setting is not None:
                     # Exactly the normalization of the original setting's
-                    # data-fidelity gap. Dual variable q represents
+                    # data-fidelity gap. PDHG's dual variable q represents
                     # the original primal iterate f=-alpha_d*q, so
                     # A f=-alpha_d*A_d^*q is already available as dual[1].
+                    # Do not call original_setting.dual_to_primal() here:
+                    # for NullFunctional that map is undefined/nonunique.
                     if self.minfid is not None:
                         primal_setting = reference_setting._primal_setting
                         forward_image = -reference_setting.regpar * dual[1]

@@ -1306,7 +1306,14 @@ class Setting:
         if not self.is_convex:
             raise RuntimeError(Errors.not_linear_op(self.op,add_info="The duality gap can only be computed for convex settings with linear operators!"))
 
-        if self._primal_setting is not None and primal is not None:
+        if self._primal_setting is not None and primal is not None and dual is None:
+            # Backward-compatible one-sided dual-setting evaluation: the
+            # transformed dual iterate p supplies the original dual variable,
+            # and the original penalty's conjugate reconstructs f when possible.
+            # If both saddle-point iterates are available, DO NOT discard the
+            # supplied dual-setting dual variable: it encodes the actual
+            # original primal iterate f = -alpha_dual * q. Instead compute
+            # the dual-setting gap below and scale it by alpha_dual.
             return self._primal_setting.duality_gap(dual=primal)
 
         if self.codomain_free:
