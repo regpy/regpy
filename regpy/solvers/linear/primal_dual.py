@@ -299,6 +299,36 @@ class PDHG(RegSolver):
                 par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':muR, 'muSstar':muSstar}
         return out, par
 
+    def reconstruct_original_primal(self) -> Vector:
+        r"""Return the original primal reconstruction from transformed dual PDHG.
+
+        For a primal problem ``S(Tf)/alpha + R(f)``, the transformed
+        dual setting has regularization parameter ``alpha_d = 1/alpha``.
+        PDHG's codomain saddle variable ``pstar`` then represents
+        ``-f / alpha_d``. Unlike the generic ``Setting.dual_to_primal``
+        mapping, this conversion is well-defined even for ``R = 0``.
+
+        This returns the *current* iterate. ``Setting.run`` may use it for
+        final-result conversion only when the stopping rule selects the
+        final iterate (not an earlier parameter-choice iterate).
+
+        Returns
+        -------
+        Vector
+            A newly allocated reconstruction in the original primal domain.
+
+        Raises
+        ------
+        RuntimeError
+            If this is not PDHG on a transformed dual setting.
+        """
+        if self.is_primal or self.setting._primal_setting is None:
+            raise RuntimeError(
+                "Original primal reconstruction requires PDHG on a "
+                "transformed dual setting."
+            )
+        return -self.regpar * self.pstar
+
     def primal(self) -> tuple[Vector | None, Vector | None]:
         r"""Return the current primal iterate and operator image, when available.
         

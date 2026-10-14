@@ -2140,8 +2140,17 @@ class Setting:
         x,y = solver.run(themethod['stoprule'])
         
         if self.is_tikhonov and not solver.is_primal:
-            x_star,y_star = x,y
-            x = self.dual_to_primal((x_star,y_star))
+            # Some dual solvers (notably PDHG) retain the original primal
+            # variable as an independent saddle-point iterate. Prefer that
+            # direct reconstruction if available; the generic subgradient
+            # mapping may be undefined or nonunique, e.g. for R = 0.
+            # The optional hook reconstructs the *current* iterate, so it is
+            # appropriate for stop rules selecting the final solver iterate.
+            reconstruct = getattr(solver, "reconstruct_original_primal", None)
+            if callable(reconstruct):
+                x = reconstruct()
+            else:
+                x = self.dual_to_primal((x, y))
             y = self.op(x)
         return x,y
 

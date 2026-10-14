@@ -268,13 +268,24 @@ class DualityGapStopping(StopRule):
         and dual iterates (or a reconstructible missing iterate).
 
         ``'penalty'`` evaluates ``solver.setting._duality_gap_pen`` on the
-        *active solver setting*: for a transformed dual solver this is its
-        dual-domain penalty, not the original primal penalty. Only the current
-        dual-setting iterate and the adjoint image of its saddle variable are
-        needed. The original primal reconstruction is never formed. In this
-        mode the relative bound uses the active penalty and its infimum,
-        computed as ``-penalty.conj(0)`` if finite. If the infimum is not
-        available, the absolute tolerance is still used.
+        *active solver setting*. In an ordinary primal setting the relative
+        bound uses the active penalty and ``inf R = -R*(0)``, as before.
+        For a transformed dual setting with ``alpha_d = 1/alpha_p``, its
+        penalty Bregman gap is ``alpha_p`` times the *original* primal
+        fidelity gap. The recorded gap is therefore multiplied by
+        ``alpha_d`` to express it in original-primal objective units,
+        consistently with ``Setting.duality_gap``. In that case the relative
+        bound mirrors ``'data_fid'``: it uses the original primal fidelity
+        ``(S(Af) - inf S)/alpha_p`` with ``Af = -alpha_d*A_d^*q`` supplied
+        by the dual solver; no original primal reconstruction or extra
+        operator evaluation is needed. If ``inf S = -S*(0)`` cannot be
+        evaluated, only the absolute tolerance is used. A dual setting's
+        existing penalty minimum is also retained for introspection.
+
+        Scaling a dual gap and its relative bound by the same factor alone
+        cannot change the relative stopping decision. The mirrored fidelity
+        normalization (rather than the dual-penalty ``rpow`` bound) makes the
+        primal and dual partial-gap stopping criteria comparable.
 
         Neither partial gap by itself certifies optimality. Accepting a
         partial gap stops with ``converged=False``.
@@ -381,7 +392,27 @@ class DualityGapStopping(StopRule):
             except (NotImplementedError, AttributeError, ValueError,
                     RuntimeError, ArithmeticError, TypeError):
                 pass
-            if self.minpen is None:
+            if reg_solver.setting._primal_setting is not None:
+                # The dual penalty is S_primal^*(-alpha_p p). Its Bregman
+                # gap is alpha_p times the primal fidelity contribution.
+                # Normalize the relative test by the *primal fidelity* as
+                # for gap_part='data_fid', not by the dual penalty's size.
+                fidelity = reg_solver.setting._primal_setting.data_fid
+                self.minfid = None
+                try:
+                    minfid = -float(fidelity.conj(
+                        fidelity.domain.zeros(read_only=True)))
+                    if np.isfinite(minfid):
+                        self.minfid = minfid
+                except (NotImplementedError, AttributeError, ValueError,
+                        RuntimeError, ArithmeticError, TypeError):
+                    pass
+                if self.minfid is None:
+                    self.log.warning(
+                        "Cannot evaluate original-primal inf S = -S*(0). "
+                        "The relative dual-penalty-gap threshold is disabled; "
+                        "only the absolute tolerance is used.")
+            elif self.minpen is None:
                 self.log.warning(
                     "Cannot evaluate inf R = -R*(0) in the active setting. "
                     "The relative penalty-gap threshold is disabled; "
@@ -473,8 +504,15 @@ class DualityGapStopping(StopRule):
                     "iterate or its adjoint image.")
             if dual[1] is None:
                 dual = (dual[0], reference_setting.op.adjoint(dual[0]))
-            gap = reference_setting._duality_gap_pen(
+            raw_gap = reference_setting._duality_gap_pen(
                 primal=primal, dual=dual)
+            # J_dual is alpha_p*J_original, whereas Setting.duality_gap
+            # already reports transformed-dual gaps in original-primal units.
+            # Since alpha_d = 1/alpha_p, multiply by alpha_d (equivalently,
+            # divide by the ORIGINAL primal regpar, NOT the dual regpar).
+            gap = (reference_setting.regpar * raw_gap
+                   if reference_setting._primal_setting is not None
+                   else raw_gap)
         else:
             # Reuse Setting's Bregman term. Complete operator images only
             # if the solver did not supply them. For a solver working on the
@@ -533,11 +571,25 @@ class DualityGapStopping(StopRule):
                 fid_excess = max(0., (fid_value - self.minfid)
                                  / reference_setting.regpar)
                 rel_bound = self.reltol / (1. - self.reltol) * fid_excess
-            elif self.gap_part == "penalty" and self.minpen is not None:
-                pen_value = reference_setting.penalty(primal[0])
-                pen_excess = max(0., float(pen_value - self.minpen))
-                rel_bound = ((self.reltol / (1. - self.reltol)) ** self.rpow
-                             * pen_excess)
+            elif self.gap_part == "penalty":
+                if reference_setting._primal_setting is not None:
+                    # Exactly the normalization of the original setting's
+                    # data-fidelity gap. Dual variable q represents
+                    # the original primal iterate f=-alpha_d*q, so
+                    # A f=-alpha_d*A_d^*q is already available as dual[1].
+                    if self.minfid is not None:
+                        primal_setting = reference_setting._primal_setting
+                        forward_image = -reference_setting.regpar * dual[1]
+                        fid_value = primal_setting.data_fid(forward_image)
+                        fid_excess = max(0., float(
+                            (fid_value - self.minfid) / primal_setting.regpar))
+                        rel_bound = (self.reltol / (1. - self.reltol)
+                                     * fid_excess)
+                elif self.minpen is not None:
+                    pen_value = reference_setting.penalty(primal[0])
+                    pen_excess = max(0., float(pen_value - self.minpen))
+                    rel_bound = ((self.reltol / (1. - self.reltol)) ** self.rpow
+                                 * pen_excess)
 
         finite_gap = np.isfinite(gap)
         accepted = (finite_gap and
