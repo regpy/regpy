@@ -279,6 +279,22 @@ class Setting:
         return self._op
     
     @property
+    def evaluation_operator(self) -> Operator:
+        """Operator whose evaluations count toward solver work budgets.
+
+        Normally this is ``op``.  A primal-dual solver operating on a dual
+        setting counts the *original* forward operator instead of its adjoint
+        proxy.  Specialized settings may override this property when their
+        optimization operator is an augmentation of a physical forward model.
+
+        The returned operator must actually be used in the computation (or
+        share evaluation counters with the operator that is used).  Merely
+        returning an unrelated operator does not transfer evaluation counts.
+        """
+        primal = getattr(self, '_primal_setting', None)
+        return primal.evaluation_operator if primal is not None else self.op
+
+    @property
     def penalty(self)->Functional:
         r"""The penalty functional.
         
@@ -2094,7 +2110,8 @@ class Setting:
         # Capture each rule's time origin and evaluation baseline before
         # constructor-time work. CountIterations leaves the shared operator's
         # counters intact, so nested runs retain cumulative outer counts.
-        # Attachment to this operator preserves the prepared baseline.
+        # Attachment to this setting's evaluation_operator preserves the
+        # prepared baseline, even for augmented or dual optimization operators.
         pending_counters = [themethod['stoprule']]
         seen_counters = set()
         while pending_counters:
@@ -2103,7 +2120,7 @@ class Setting:
                 continue
             seen_counters.add(id(rule))
             if isinstance(rule, CountIterations):
-                rule.prepare_run(thesetting.op)
+                rule.prepare_run(thesetting.evaluation_operator)
             pending_counters.extend(getattr(rule, 'rules', ()))
 
         solver = themethod['class'](thesetting,**kwargs)

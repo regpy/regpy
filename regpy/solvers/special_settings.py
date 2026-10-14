@@ -677,7 +677,9 @@ class TV_Setting(Setting):
     Notes
     -----
     * The stored ``Setting.op`` is ``VectorOfOperators((c*T, grad))``;
-      ``forward_op`` still refers to the original ``T``.
+      ``forward_op`` still refers to the original ``T``.  Evaluation caps
+      and histories count operations on ``forward_op``, not on ``grad`` or
+      ``VectorOfOperators``.  Iterations are counted on the PDHG solver.
     * ``Setting.data`` stores ``(c*data, 0)``. Assigning raw data in
       ``T.codomain`` or scaled augmented data in the direct-sum codomain
       updates *only* the first fidelity component. This preserves KL semantics.
@@ -704,13 +706,14 @@ class TV_Setting(Setting):
         data: ReadOnlyVector | None = None,
         grad: Operator | None = None,
         boundary_condition: str = "Neum",
-        data_operator_scale: float | str = 1.0,
+        data_operator_scale: float | str = 'auto',
         init: ReadOnlyVector | None = None,
         incorporate_init_in_penalty: bool = True,
         logging_level: int | str = "INFO",
         explicitDataWarning: bool = True,
     ) -> None:
         from regpy.operators import ForwardFDGradient, VectorOfOperators
+        from regpy.operators.base import LinearCombination
         from regpy.functionals.base import (
             FunctionalOnDirectSum, NullFunctional, as_functional,
         )
@@ -738,6 +741,12 @@ class TV_Setting(Setting):
             )
         if not isinstance(grad, Operator) or not grad.linear or grad.domain != op.domain:
             raise ValueError("grad must be a linear operator with domain T.domain.")
+
+        # The physical model is the evaluation-accounting boundary. Instrument
+        # it BEFORE forming any scaled or composite operator: operator algebra
+        # may otherwise flatten an uninstrumented composition, bypassing the
+        # physical model's counter. Never reset counts owned by outer solvers.
+        op.enable_eval_count(reset=False)
 
         # Only the operator *coordinates* are changed, not the physical
         # fidelity S_data: F_c(y) = S_data(y/c), F_c(c*T(f)) = S_data(T(f)).
@@ -780,7 +789,16 @@ class TV_Setting(Setting):
         alpha = float(regpar)
         self.data_operator_scale = scale
         self.forward_op = op
-        self.scaled_forward_op = op if scale == 1. else scale * op
+        # Do not use ``scale * op`` here.  Some forward operators (notably
+        # ConvolutionOperator) override scalar multiplication to construct a
+        # *new* operator with a scaled kernel.  Although mathematically equal
+        # to scale*T, that new object bypasses the original physical T and
+        # its evaluation counters.  The explicit one-term LinearCombination
+        # retains T as a child and dispatches its forward/adjoint operations
+        # through T, also when scale != 1.
+        self.scaled_forward_op = (
+            op if scale == 1. else LinearCombination((scale, op))
+        )
         self.grad = grad
         self.beta = float(beta)
         self.tv_func = (L1L2(grad.codomain, conj_tol=1e-5)
@@ -844,6 +862,17 @@ class TV_Setting(Setting):
         if self._tv_null_penalty:
             self._protect_pdhg_from_infinite_gaps()
 
+    @property
+    def evaluation_operator(self) -> Operator:
+        """Count physical forward-model work, not gradient/stack operations.
+
+        The augmented operator ``(c*T, grad)`` calls the original ``T`` as
+        its first block, including when ``c != 1``.  Counting the original
+        operator avoids charging finite-difference gradient evaluations or
+        book-keeping in VectorOfOperators to the inverse problem's budget.
+        """
+        return self.forward_op
+
     def _protect_pdhg_from_infinite_gaps(self) -> None:
         # R=0 entails R* = indicator_{0}. The full gap is typically
         # infinite because T* p != 0. Monitor only the fidelity Bregman
@@ -853,6 +882,7 @@ class TV_Setting(Setting):
             "factory": "DualityGapStopping",
             "gap_part": "data_fid",
             "stop_at_infty": False,
+            "reltol": 1e-3,
             "tol": 1e-12,
         })
 

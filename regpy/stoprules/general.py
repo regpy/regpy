@@ -944,8 +944,8 @@ class CountIterations(StopRule):
         is reached at an omitted step, the rule stops at the next scheduled
         step. If ``None``, the limit is checked on every call.
     eval_count: bool [default: False]
-        If True, enable counting only on solver.op without resetting its
-        counters. Store cumulative counts relative to this rule's own starting
+        If True, enable counting on the setting's ``evaluation_operator``
+        (falling back to ``solver.op``) without resetting its counters. Store cumulative counts relative to this rule's own starting
         baseline in eval_counts, a dictionary of integer lists
         with the six Operator keys and 'total'. eval_count_steps records the
         corresponding solver steps, including step zero in while-style runs.
@@ -953,8 +953,8 @@ class CountIterations(StopRule):
         work is included when Setting.run prepares the rule before solver
         construction. Direct solver.run calls start measurements at attachment
         unless prepare_run was called beforehand. Counting remains enabled after
-        the run for inspection; use solver.op.disable_eval_count() to remove
-        instrumentation. Nested rules have independent baselines, so inner
+        the run for inspection; use the rule's ``counting_operator`` to inspect
+        or disable instrumentation. Nested rules have independent baselines, so inner
         runs do not reset or truncate the outer history. Do not manually reset
         or disable the operator's counters while a counting rule is active.
         False leaves existing operator counting unchanged.
@@ -990,6 +990,7 @@ class CountIterations(StopRule):
                 raise ValueError("max_op_evals must be nonnegative.")
         self.max_op_evals = None if max_op_evals is None else int(max_op_evals)
         self._prepared_operator = None
+        self._count_operator = None
         self._eval_baseline: dict[str, int] = {}
         self.eval_count = eval_count or max_op_evals is not None
         self.eval_counts: dict[str, list[int]] = {}
@@ -1021,6 +1022,7 @@ class CountIterations(StopRule):
         """
         super().reset()
         self._prepared_operator = None
+        self._count_operator = None
         self._eval_baseline = {}
         self.iteration = 0
         self.eval_counts = {}
@@ -1052,9 +1054,17 @@ class CountIterations(StopRule):
 
     def _complete_init_with_solver(self, solver: Solver) -> None:
         super()._complete_init_with_solver(solver)
-        operator = getattr(solver, 'op', None)
+        # A specialized setting may optimize over a stacked/operator-space
+        # representation but wish to count work on its physical forward model.
+        # Resolve this once at attachment so a nested run cannot silently
+        # change our counter target or reset an outer run's baseline.
+        setting = getattr(solver, 'setting', None)
+        operator = getattr(setting, 'evaluation_operator', None)
+        if operator is None:
+            operator = getattr(solver, 'op', None)
         if self._prepared_operator is None or self._prepared_operator is not operator:
             self.prepare_run(operator)
+        self._count_operator = operator
         self._prepared_operator = None
         if self.max_op_evals is not None:
             limits = getattr(solver, '_operator_evaluation_limits', None)
@@ -1067,6 +1077,11 @@ class CountIterations(StopRule):
             self.eval_counts['total'] = []
             self.eval_count_steps = []
 
+    @property
+    def counting_operator(self) -> Operator | None:
+        """Actual operator monitored by this rule, or None before attachment."""
+        return self._count_operator
+
     def remaining_op_evals(self) -> int | None:
         """Return the live remaining budget, without evaluating this stoprule.
 
@@ -1077,15 +1092,15 @@ class CountIterations(StopRule):
             return None
         if self.solver is None:
             raise RuntimeError("Evaluation budget requires an attached solver.")
-        used = self.solver.op.total_eval_count() - self._eval_baseline['total']
+        used = self._count_operator.total_eval_count() - self._eval_baseline['total']
         return max(0, self.max_op_evals - used)
 
     def _record_eval_counts(self) -> None:
         if self.eval_count:
             if self.solver is None:
                 raise RuntimeError("Evaluation counting requires an attached solver.")
-            snapshot = self.solver.op.eval_counts
-            snapshot['total'] = self.solver.op.total_eval_count()
+            snapshot = self._count_operator.eval_counts
+            snapshot['total'] = self._count_operator.total_eval_count()
             for key, value in snapshot.items():
                 self.eval_counts[key].append(value - self._eval_baseline[key])
             self.eval_count_steps.append(self._current_step)
