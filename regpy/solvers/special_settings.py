@@ -683,10 +683,15 @@ class TV_Setting(Setting):
       updates *only* the first fidelity component. This preserves KL semantics.
     * ``codomain_free=True`` is not supported for this explicit formulation.
     * The default solver is PDHG. If ``R=0``, the conjugate of the penalty
-      is an indicator of zero, so the duality gap may be infinite at many
-      intermediate iterations. Such a gap should *not* be interpreted as a
-      numerical failure: PDHG's gap stopping rule is configured with
-      ``stop_at_infty=False`` and retains its iteration cap.
+      is an indicator of zero, so the full duality gap is generally infinite
+      at intermediate iterates. PDHG therefore defaults to
+      ``DualityGapStopping(gap_part='data_fid')`` and retains its iteration cap.
+      This monitors only the fidelity Bregman gap for BOTH components of the
+      augmented fidelity (S_data and alpha*TV). Its threshold is heuristic:
+      a small fidelity gap alone does not certify ``T* p in partial R(f)``.
+      The stopping rule therefore reports ``converged=False`` if the partial
+      gap criterion triggers. The full gap remains the default for other
+      settings and is available by explicitly overriding the stop rule.
     """
 
     def __init__(
@@ -699,7 +704,7 @@ class TV_Setting(Setting):
         data: ReadOnlyVector | None = None,
         grad: Operator | None = None,
         boundary_condition: str = "Neum",
-        data_operator_scale: float | str = 'auto',
+        data_operator_scale: float | str = 1.0,
         init: ReadOnlyVector | None = None,
         incorporate_init_in_penalty: bool = True,
         logging_level: int | str = "INFO",
@@ -840,10 +845,13 @@ class TV_Setting(Setting):
             self._protect_pdhg_from_infinite_gaps()
 
     def _protect_pdhg_from_infinite_gaps(self) -> None:
-        # R=0 entails R* = indicator_{0}. Intermediate dual iterates
-        # typically have T* p != 0; infinity must not abort PDHG.
+        # R=0 entails R* = indicator_{0}. The full gap is typically
+        # infinite because T* p != 0. Monitor only the fidelity Bregman
+        # gap instead; this stops heuristically and does not certify global
+        # convergence. The usual iteration cap remains in place.
         self.set_stoprule_params("PDHG", {
             "factory": "DualityGapStopping",
+            "gap_part": "data_fid",
             "stop_at_infty": False,
             "tol": 1e-12,
         })

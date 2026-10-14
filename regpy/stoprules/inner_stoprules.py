@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING, TypeAlias, cast
+from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
 import numpy as np
 
@@ -251,6 +251,25 @@ class DualityGapStopping(StopRule):
         on the same schedule, including the final converged iterate.
         Histories are stored under ``additional_gap_keys``, in list order;
         keys include a one-based index and the callable name when available.
+    gap_part: Literal['full', 'data_fid'] [default: 'full']
+        ``'full'`` uses the full primal-dual gap as before. ``'data_fid'``
+        uses only ``Setting._duality_gap_data_fid`` (the Fenchel/Bregman gap
+        for the *entire* data fidelity S), omitting the penalty contribution.
+        The latter is a diagnostic stopping heuristic, NOT a certificate of
+        primal or dual convergence: even a zero data-fidelity gap does not
+        imply ``T* p in partial R(f)``. On this criterion the rule terminates
+        with ``converged=False`` and an explanatory stop reason.
+
+        In ``'data_fid'`` mode, the relative bound uses
+        ``reltol/(1-reltol) * (S(Tf) - inf S) / alpha`` (no ``rpow`` power).
+        ``inf S = -S*(0)`` is evaluated via the conjugate at zero. If this
+        value cannot be computed, only the absolute tolerance is used.
+        This mode requires an explicit-codomain setting and both the primal
+        and dual iterates (or a reconstructible missing iterate).
+
+        ``history_dict['duality gap']`` retains the existing plotting key and
+        records the *selected* gap. In ``'data_fid'`` mode the same samples
+        are also recorded under ``history_dict['data fidelity gap']``.
     """
     def __init__(
         self,
@@ -261,7 +280,11 @@ class DualityGapStopping(StopRule):
         logging_level: LoggingLevel = "INFO",
         schedule: Schedule = _EVERY_TENTH_STEP,
         additional_gap_functions: list[GapFunctional] | None = None,
+        gap_part: Literal["full", "data_fid"] = "full",
     ) -> None:
+        if gap_part not in ("full", "data_fid"):
+            raise ValueError("gap_part must be 'full' or 'data_fid'.")
+        self.gap_part = gap_part
         super().__init__(
             logging_level=logging_level,
             schedule=schedule,
@@ -285,44 +308,70 @@ class DualityGapStopping(StopRule):
  
         self.rpow = rpow
         self.history_dict["duality gap"] = []
+        if self.gap_part == "data_fid":
+            self.history_dict["data fidelity gap"] = []
         self.stop_at_infty: bool = stop_at_infty
 
     def __repr__(self) -> str:
-        return 'DualityGapStopping(tol={})'.format(
-            self.tol)
+        return (f'DualityGapStopping(tol={self.tol}, reltol={self.reltol}, '
+                f'gap_part={self.gap_part!r})')
     
     def _complete_init_with_solver(self, solver: Solver) -> None:
         reg_solver = cast("RegSolver", solver)
         if not (reg_solver.setting.is_tikhonov
                 and reg_solver.setting.is_convex):
-            raise RuntimeError(Errors.generic_message("It is not possible to compute the dual in the implementation of this setting. The setting needs to be convex and contain a regularization parameter!"))
+            raise RuntimeError(Errors.generic_message(
+                "Duality-gap stopping requires a convex Tikhonov setting."))
+        reference_setting = (reg_solver.setting._primal_setting
+                             or reg_solver.setting)
+        if self.gap_part == "data_fid" and reference_setting.codomain_free:
+            raise ValueError(
+                "gap_part='data_fid' requires an explicit data fidelity; "
+                "codomain-free settings have no such functional.")
         reg_solver.setting.duality_gap_warning_incr = 1.
         super()._complete_init_with_solver(solver)
-        if self.reltol>0:
-            primal_setting = reg_solver.setting._primal_setting
-            reference_setting = (reg_solver.setting if primal_setting is None
-                                 else primal_setting)
-            pen = reference_setting.penalty
-            refsol = pen.reference_vector()
-            zero_covector = pen.domain.zeros(read_only=True)
-            dist = pen.dist_subdiff(zero_covector, refsol)
-            if not np.isfinite(dist) or dist > 1e-14:
-                # reference_vector() promises feasibility but not necessarily
-                # an accurately computed minimizer. Try two Newton corrections
-                # for smooth penalties with an invertible Hessian. Do not change
-                # the penalty's own reference vector or the solver's iterate.
-                if {'subgradient', 'hessian'} <= pen.methods:
-                    refsol = _refine_penalty_minimum(pen, refsol, max_steps=2)
-                    dist = pen.dist_subdiff(zero_covector, refsol)
-            if not np.isfinite(dist) or dist > 1e-14:
+        if self.reltol <= 0:
+            return
+
+        if self.gap_part == "data_fid":
+            # For a proper convex functional, inf S = -S*(0). Unlike an
+            # approximate reference_vector this gives an exact normalizer
+            # whenever S*(0) can be evaluated. No penalty minimum is needed.
+            fidelity = reference_setting.data_fid
+            self.minfid = None
+            try:
+                minfid = -float(fidelity.conj(
+                    fidelity.domain.zeros(read_only=True)))
+                if np.isfinite(minfid):
+                    self.minfid = minfid
+            except (NotImplementedError, AttributeError, ValueError,
+                    RuntimeError, ArithmeticError, TypeError):
+                pass
+            if self.minfid is None:
                 self.log.warning(
-                    'Penalty reference vector is not a verified minimizer '
-                    '(subdifferential distance: %s). Assuming 0 as infimum '
-                    'in duality-gap relative error estimate.', dist
-                )
-                self.minpen = 0.
-            else:
-                self.minpen = pen(refsol)
+                    "Cannot evaluate inf S = -S*(0). The relative "
+                    "data-fidelity-gap threshold is disabled; only the "
+                    "absolute tolerance is used.")
+            return
+
+        pen = reference_setting.penalty
+        refsol = pen.reference_vector()
+        zero_covector = pen.domain.zeros(read_only=True)
+        dist = pen.dist_subdiff(zero_covector, refsol)
+        if not np.isfinite(dist) or dist > 1e-14:
+            # The reference vector need not minimize the penalty precisely.
+            if {'subgradient', 'hessian'} <= pen.methods:
+                refsol = _refine_penalty_minimum(pen, refsol, max_steps=2)
+                dist = pen.dist_subdiff(zero_covector, refsol)
+        if not np.isfinite(dist) or dist > 1e-14:
+            self.log.warning(
+                'Penalty reference vector is not a verified minimizer '
+                '(subdifferential distance: %s). Assuming 0 as infimum '
+                'in duality-gap relative error estimate.', dist
+            )
+            self.minpen = 0.
+        else:
+            self.minpen = pen(refsol)
 
     def stop(self) -> bool:
         r"""Always record the converged solver's final gap, even off schedule.
@@ -354,53 +403,106 @@ class DualityGapStopping(StopRule):
         if self.solver is None:
             raise MissingValueError("No solver is attached to this rule.")
         solver = cast("RegSolver", self.solver)
-        primal = solver.primal() if hasattr(solver,"primal") and callable(solver.primal) else None
+        primal = (solver.primal() if hasattr(solver, "primal")
+                  and callable(solver.primal) else None)
         dual = (None if solver.setting.codomain_free else
-                solver.dual() if hasattr(solver, "dual") and callable(solver.dual) else None)
+                solver.dual() if hasattr(solver, "dual")
+                and callable(solver.dual) else None)
         if primal is None and dual is None:
-            raise RuntimeError(Errors.generic_message("The solver needs to provide at least one of the methods 'primal' or 'dual'."))        
-        gap = solver.setting.duality_gap(primal = primal, dual = dual)
-        # Evaluate before appending so a failing monitor cannot leave partial
-        # gap histories or make the final-iterate cache skip a retry.
+            raise RuntimeError(Errors.generic_message(
+                "The solver must provide 'primal' or 'dual'."))
+
+        if self.gap_part == "full":
+            gap = solver.setting.duality_gap(primal=primal, dual=dual)
+            reference_setting = (solver.setting._primal_setting
+                                 or solver.setting)
+        else:
+            # Reuse Setting's Bregman term. Complete operator images only
+            # if the solver did not supply them. For a solver working on the
+            # transformed dual setting, its primal pair is the *original*
+            # dual pair; the primal Setting owns the data-fidelity term.
+            reference_setting = (solver.setting._primal_setting
+                                 or solver.setting)
+            if solver.setting._primal_setting is None:
+                complete_primal, complete_dual = (
+                    reference_setting._complete_primal_dual_tuples(
+                        primal=primal, dual=dual))
+            else:
+                if primal is None:
+                    raise ValueError(
+                        "Data-fidelity-gap stopping on a dual setting "
+                        "requires the solver's dual-coordinate primal pair.")
+                complete_primal, complete_dual = (
+                    reference_setting._complete_primal_dual_tuples(
+                        dual=primal))
+            gap = reference_setting._duality_gap_data_fid(
+                complete_primal, complete_dual)
+
+        # Evaluate additional monitors before writing any histories.
         additional_gaps = [
             float(functional(primal, dual))
             for functional in self.additional_gap_functions
         ]
         self.history_dict["duality gap"].append(gap)
+        if self.gap_part == "data_fid":
+            self.history_dict["data fidelity gap"].append(gap)
         for key, value in zip(self.additional_gap_keys, additional_gaps):
             self.history_dict[key].append(value)
-        if self.reltol>0:
-            primal_setting = solver.setting._primal_setting
-            if primal_setting is None:
-                prim = primal[0] if isinstance(primal, tuple) else primal
-                reference_setting = solver.setting
-            else:
-                # Here solver.primal() is (p, T*p) in dual coordinates.
-                # Use the same reconstructed primal point as Setting.duality_gap.
-                pair = primal if isinstance(primal, tuple) else (primal, None)
-                prim = (primal_setting.dual_to_primal(pair)
-                        if primal is not None else None)
-                reference_setting = primal_setting
-            if prim is None:
-                raise RuntimeError(Errors.runtime_error('primal does not provide a domain solution.',primal))
-            pen_val = reference_setting.penalty(prim)
-            rel_bound = (self.reltol/(1.-self.reltol))**self.rpow * (pen_val - self.minpen)
+
+        rel_bound = None
+        if self.reltol > 0:
+            if self.gap_part == "full":
+                if solver.setting._primal_setting is None:
+                    prim = primal[0] if isinstance(primal, tuple) else primal
+                else:
+                    # solver.primal() is (p,T*p) in transformed dual coordinates.
+                    pair = primal if isinstance(primal, tuple) else (primal, None)
+                    prim = (reference_setting.dual_to_primal(pair)
+                            if primal is not None else None)
+                if prim is None:
+                    raise RuntimeError(Errors.runtime_error(
+                        'primal does not provide a domain solution.', primal))
+                pen_val = reference_setting.penalty(prim)
+                rel_bound = ((self.reltol / (1. - self.reltol)) ** self.rpow
+                             * (pen_val - self.minpen))
+            elif self.minfid is not None:
+                # This is a relative *functional-value* normalization, not
+                # the penalty-based norm-error bound used in 'full' mode.
+                fid_value = reference_setting.data_fid(complete_primal[1])
+                fid_excess = max(0., (fid_value - self.minfid)
+                                 / reference_setting.regpar)
+                rel_bound = self.reltol / (1. - self.reltol) * fid_excess
+
         finite_gap = np.isfinite(gap)
-        accepted = finite_gap and (gap <= self.tol or
-                    (self.reltol > 0 and np.isfinite(rel_bound) and gap <= rel_bound))
+        accepted = (finite_gap and
+                    (gap <= self.tol or
+                     (rel_bound is not None and np.isfinite(rel_bound)
+                      and gap <= rel_bound)))
         failed = np.isnan(gap) or (np.isinf(gap) and self.stop_at_infty)
         triggered = bool(accepted or failed)
+        label = ("Full duality gap" if self.gap_part == "full"
+                 else "Data-fidelity Bregman gap")
         if failed:
-            self.log_info = f"Nonfinite duality gap ({gap})."
+            self.log_info = f"Nonfinite {label.lower()} ({gap})."
             self._set_stop_status(False, self.log_info, failure=True)
         elif accepted:
-            self.log_info = f"Duality gap ({gap:.2e}) satisfies the tolerance."
-            self._set_stop_status(True, self.log_info)
+            if self.gap_part == "full":
+                self.log_info = f"Full duality gap ({gap:.2e}) satisfies the tolerance."
+                self._set_stop_status(True, self.log_info)
+            else:
+                self.log_info = (
+                    f"Data-fidelity Bregman gap ({gap:.2e}) satisfies the "
+                    "stopping tolerance; primal convergence is NOT certified "
+                    "(the penalty/adjoint optimality condition is unchecked).")
+                # An accepted partial gap is a *stopping* decision, not a
+                # mathematical convergence certificate.
+                self._set_stop_status(False, self.log_info)
         else:
-            self.log_info = 'duality gap:{:.2e} > {:.1e}'.format(gap, 
-                                                    rel_bound if self.reltol>0 else self.tol)
+            bound = rel_bound if rel_bound is not None else self.tol
+            self.log_info = f'{label.lower()}: {gap:.2e} > {bound:.1e}'
         if self.is_main_rule:
-            self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)    
+            self.log.log(logging.INFO if triggered else logging.DEBUG,
+                         self.log_info)
         return triggered
 
 
