@@ -162,11 +162,12 @@ class Setting:
         :attr:`init` returns a writable copy of the penalty's
         :meth:`~regpy.functionals.Functional.reference_vector`.
     incorporate_init_in_penalty: bool [default: True]
-        If true, a supplied initial guess is incorporated into the penalty by
-        making the penalty a data functional. If false, an independent copy
-        is stored in the setting. This option applies only to the ``init``
-        argument passed to the constructor and has no effect when ``init`` is
-        ``None``. Later assignments to :attr:`init` are stored independently.
+        If true, both a supplied constructor ``init`` and subsequent assignments
+        to :attr:`init` update the penalty via ``penalty.as_data_func(init)``.
+        Reassigning ``init`` replaces the penalty's previous data/center; it
+        does not add another translation. If false, ``init`` is stored without
+        changing the objective. With ``init=None``, the penalty is left alone
+        until an explicit initial guess is assigned.
     codomain_free: bool [default: False]
         If True, this indicates that vectors in the codomain of the operator should be avoided, e.g., because 
         they are too large to be stored. In this case inversion methods that only rely on 
@@ -219,13 +220,11 @@ class Setting:
                 incorporate_init_in_penalty,
             ))
 
+        self._incorporate_init_in_penalty = bool(incorporate_init_in_penalty)
         self.set_penalty(penalty)
 
         if init is not None:
-            if incorporate_init_in_penalty:
-                self.set_penalty(self.penalty.as_data_func(init))
-            else:
-                self.init = init
+            self.init = init
 
         if not codomain_free:
             if data_fid is None:
@@ -292,15 +291,27 @@ class Setting:
         return self._penalty
 
     def set_penalty(self, penalty: Functional)->None :
-        r"""Set penalty.
-        
+        r"""Replace the penalty functional.
+
+        If ``incorporate_init_in_penalty=True`` and an initial guess has been
+        assigned, the new penalty is centered at that guess as well.
+
         Parameters
         ----------
         penalty: Functional
-            Penalty.
+            New penalty.
         """
-        self._penalty = as_functional(penalty, self.op.domain)
+        updated = as_functional(penalty, self.op.domain)
+        if (getattr(self, '_incorporate_init_in_penalty', False)
+                and hasattr(self, '_init')):
+            updated = updated.as_data_func(self._init)
+        self._penalty = updated
         self._init_method_dictionary()
+
+    @property
+    def incorporate_init_in_penalty(self) -> bool:
+        """Whether assigning ``init`` also updates the penalty's center."""
+        return self._incorporate_init_in_penalty
 
     @property
     def init(self) -> Vector:
@@ -336,12 +347,18 @@ class Setting:
         self.change_init(new_init=new_init)
 
     def change_init(self, new_init: ReadOnlyVector) -> None:
-        r"""Store a supplied initial guess independently of the penalty.
-        
+        r"""Update the initial guess and, if requested, the penalty center.
+
+        The supplied vector is copied, so later changes to the caller's
+        vector cannot alter the penalty. With
+        ``incorporate_init_in_penalty=True``, the *current* penalty is updated
+        using ``as_data_func``. In particular, assigning another ``init``
+        replaces the old data/center instead of composing shifts.
+
         Parameters
         ----------
         new_init: ReadOnlyVector
-            Input vector; its coefficients are only read.
+            Initial guess in the operator domain.
         """
         if new_init not in self.op.domain:
             raise TypeError(Errors.not_in_vecsp(
@@ -350,14 +367,23 @@ class Setting:
                 vec_name='new_init',
                 space_name='domain',
             ))
-        if not hasattr(self, '_init'):
-            self._init = self.op.domain.empty()
-        if new_init is not self._init:
-            self.op.domain.copyto(self._init,new_init)
+        # Allocate before modifying the penalty: its data setters may keep a
+        # reference to the supplied vector rather than copying it.
+        center = self.op.domain.empty()
+        self.op.domain.copyto(center, new_init)
+        if self._incorporate_init_in_penalty:
+            # Do not call set_penalty here: that would rebuild the registered
+            # solver dictionary on every proximal evaluation. as_data_func
+            # updates the data of an existing data functional in place.
+            self._penalty = self.penalty.as_data_func(center)
+        self._init = center
 
     @init.deleter
     def init(self) -> None:
         r"""Discard the stored initial guess and use the penalty reference.
+
+        Deletion does not undo a shift previously incorporated in the penalty;
+        use :meth:`set_penalty` to replace the penalty itself.
         """
         self.__dict__.pop('_init', None)
 

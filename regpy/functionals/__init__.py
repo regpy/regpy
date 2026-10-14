@@ -15,7 +15,8 @@ from .vector_integral_functionals import VectorIntegralFunctional, LppL2, L1L2, 
 
 from .matrix_functionals import *
 
-__all__ = ["Functional", "L1", "Lpp", "TV", "KL", "RE", "Hub", "QuadIntv", "QuadNonneg", "QuadBil", "QuadLow", "QuadPosSemi", 
+__all__ = ["Functional", "L1", "Lpp", "TV", "KL", "RE", "Hub", 
+           "QuadIntv", "QuadNonneg", "QuadBil", "QuadLow", "QuadPosSemi", 
            "HilbertNorm", "VFunc"]
 from .vector_integral_functionals import __all__ as __mod_all__
 __all__ += __mod_all__

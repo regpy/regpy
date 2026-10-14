@@ -19,7 +19,7 @@ from regpy.util import Errors, memoized_property
 from .base import Functional, AbstractFunctional, Composed
 from .integral_functionals import LppPower, L1MeasureSpace, Huber
 
-__all__ = ["VectorIntegralFunctional", "LppL2", "L1L2", "TVUniformGridFcts"]
+__all__ = ["VectorIntegralFunctional", "LppL2", "L1L2", "HuberL2", "TVUniformGridFcts"]
 
 class VectorIntegralFunctional(Functional):
     r"""Implements a discrete version of vector-valued integral functionals 
@@ -438,16 +438,6 @@ class TVUniformGridFcts(Composed):
                                           'primal':False,
                                           'full':"Chambolle's dual fixed point iteration"}})
             return _methods
-
-        def set_penalty_shift(self, penalty_shift: ReadOnlyVector) -> None:
-            r"""Set penalty shift.
-            
-            Parameters
-            ----------
-            penalty_shift: ReadOnlyVector
-                Input vector; its coefficients are only read.
-            """
-            self.set_penalty(L2, penalty_shift=penalty_shift)
 
     #############################################################################
     from regpy.solvers.solver import RegSolver
