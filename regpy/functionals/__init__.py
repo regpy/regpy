@@ -11,7 +11,10 @@ from regpy import hilbert
 
 from .base import Functional,AbstractFunctional,SquaredNorm
 from .integral_functionals import *
-from .vector_integral_functionals import VectorIntegralFunctional, LppL2, L1L2, TVUniformGridFcts
+from .vector_integral_functionals import (VectorIntegralFunctional, 
+                                          LppL2, L1L2, HuberL2, 
+                                          TVUniformGridFcts
+                                        )
 
 from .matrix_functionals import *
 

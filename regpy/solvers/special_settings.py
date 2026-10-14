@@ -616,12 +616,17 @@ class TV_Setting(Setting):
         + H_\beta(\nabla f) + R(f),
 
     with ``H_0 = L1L2`` and ``H_beta = HuberL2(beta)`` for ``beta>0``.
-    It is represented as the standard Tikhonov/Rockafellar--Fenchel setting
+    For a positive data-operator scale ``c`` it is represented equivalently as
 
     .. math::
         \frac{1}{\alpha}
-        \bigl(S_{\rm data}\oplus(\alpha H_\beta)\bigr)
-        \bigl((T,\nabla)f\bigr)+R(f).
+        \bigl((S_{\rm data}\circ(\cdot/c))\oplus
+        (\alpha H_\beta)\bigr)
+        \bigl((cT,\nabla)f\bigr)+R(f).
+
+    This changes the PDHG operator geometry but not the objective. Choose
+    ``data_operator_scale='auto'`` to balance the norms of the forward and
+    gradient blocks, or ``1.0`` to recover the unscaled formulation.
 
     Parameters
     ----------
@@ -643,12 +648,21 @@ class TV_Setting(Setting):
         Nonnegative Huber transition parameter; zero gives exact TV.
     data : ReadOnlyVector | None
         Observed data in ``T.codomain``. Internally the observations are
-        ``(data, zero)`` in the augmented codomain, while only the first
-        *functional* component receives the observations via ``as_data_func``.
+        ``(c*data, zero)`` in the augmented codomain, where ``c`` is
+        ``data_operator_scale``; ``forward_op`` and ``data_term`` retain the
+        original (unscaled) physical data coordinates. Only the first
+        *functional* component receives the raw observations via ``as_data_func``.
         The gradient component must never be shifted.
     grad : Operator | None
         Optional gradient operator with domain ``T.domain``. By default,
         ``ForwardFDGradient`` is used.
+    data_operator_scale : float | str
+        Positive scale ``c`` for the data-forward block. The augmented
+        operator is ``(c*T, grad)`` and its first fidelity component is
+        ``S_data(y/c)``. Defaults to ``1.0`` (backward-compatible). Set to
+        ``'auto'`` to choose ``max(1, ||grad|| / ||T||)``; this estimates two
+        operator norms and may be relatively expensive. The scale is fixed at
+        construction and does not change when ``regpar`` or ``data`` changes.
     boundary_condition : str
         Boundary condition used to construct ``ForwardFDGradient``.
     init : ReadOnlyVector | None
@@ -662,10 +676,11 @@ class TV_Setting(Setting):
 
     Notes
     -----
-    * The stored ``Setting.op`` is ``VectorOfOperators((T, grad))``.
-    * The stored ``Setting.data`` is an augmented direct-sum vector when
-      observations are available. Changing the data on this subclass updates
-      *only* the fidelity's first component, preserving KL-type semantics.
+    * The stored ``Setting.op`` is ``VectorOfOperators((c*T, grad))``;
+      ``forward_op`` still refers to the original ``T``.
+    * ``Setting.data`` stores ``(c*data, 0)``. Assigning raw data in
+      ``T.codomain`` or scaled augmented data in the direct-sum codomain
+      updates *only* the first fidelity component. This preserves KL semantics.
     * ``codomain_free=True`` is not supported for this explicit formulation.
     * The default solver is PDHG. If ``R=0``, the conjugate of the penalty
       is an indicator of zero, so the duality gap may be infinite at many
@@ -684,6 +699,7 @@ class TV_Setting(Setting):
         data: ReadOnlyVector | None = None,
         grad: Operator | None = None,
         boundary_condition: str = "Neum",
+        data_operator_scale: float | str = 'auto',
         init: ReadOnlyVector | None = None,
         incorporate_init_in_penalty: bool = True,
         logging_level: int | str = "INFO",
@@ -718,8 +734,48 @@ class TV_Setting(Setting):
         if not isinstance(grad, Operator) or not grad.linear or grad.domain != op.domain:
             raise ValueError("grad must be a linear operator with domain T.domain.")
 
+        # Only the operator *coordinates* are changed, not the physical
+        # fidelity S_data: F_c(y) = S_data(y/c), F_c(c*T(f)) = S_data(T(f)).
+        # Automatic balancing uses norms of the original (unscaled) blocks.
+        if isinstance(data_operator_scale, str):
+            if data_operator_scale != "auto":
+                raise ValueError(
+                    "data_operator_scale must be a positive finite number "
+                    "or 'auto'."
+                )
+            forward_norm = float(op.norm())
+            gradient_norm = float(grad.norm())
+            if (not np.isfinite(forward_norm) or forward_norm < 0
+                    or not np.isfinite(gradient_norm) or gradient_norm < 0):
+                raise ValueError(
+                    "Cannot automatically balance data and gradient blocks: "
+                    "their operator norms must be finite and nonnegative. "
+                    "Pass an explicit data_operator_scale instead."
+                )
+            # An identically zero data operator cannot be balanced by scaling.
+            scale = (max(1., gradient_norm / forward_norm)
+                     if forward_norm > 0 else 1.)
+        elif (isinstance(data_operator_scale, (bool, np.bool_))
+              or not isinstance(data_operator_scale,
+                                (int, float, np.integer, np.floating))
+              or not np.isfinite(data_operator_scale)
+              or data_operator_scale <= 0):
+            raise ValueError(
+                "data_operator_scale must be a positive finite number "
+                "or 'auto'."
+            )
+        else:
+            scale = float(data_operator_scale)
+        if not np.isfinite(scale) or scale <= 0:
+            raise ValueError(
+                "Automatic data_operator_scale overflowed; "
+                "pass an explicit positive finite scale."
+            )
+
         alpha = float(regpar)
+        self.data_operator_scale = scale
         self.forward_op = op
+        self.scaled_forward_op = op if scale == 1. else scale * op
         self.grad = grad
         self.beta = float(beta)
         self.tv_func = (L1L2(grad.codomain, conj_tol=1e-5)
@@ -740,7 +796,7 @@ class TV_Setting(Setting):
         self._tv_FuncOnSum = FunctionalOnDirectSum
         self._tv_registered = False
 
-        augmented_op = VectorOfOperators((op, grad))
+        augmented_op = VectorOfOperators((self.scaled_forward_op, grad))
         self._tv_augmented_op = augmented_op
         additional_penalty = (NullFunctional(op.domain)
                               if penalty is None else penalty)
@@ -759,7 +815,8 @@ class TV_Setting(Setting):
                     raw_data = candidate
             except (AttributeError, TypeError):
                 pass
-        augmented_data = self._augmented_observations(raw_data, augmented_op)
+        augmented_data = self._augmented_observations(
+            raw_data, augmented_op, scale)
 
         # Do NOT pass augmented_data to Setting: Setting.change_data would
         # translate the *entire* FunctionalOnDirectSum and bypass the
@@ -792,18 +849,23 @@ class TV_Setting(Setting):
         })
 
     @staticmethod
-    def _augmented_observations(data, op):
+    def _augmented_observations(data, op, scale: float = 1.):
         if data is None:
             return None
         if data not in op.ops[0].codomain:
             raise ValueError("data must belong to the data-forward operator's codomain.")
         observations = op.codomain.zeros()
-        op.ops[0].codomain.copyto(observations[0], data)
+        op.ops[0].codomain.copyto(observations[0], scale * data)
         return observations
 
     def _tv_data_fidelity(self, alpha: float) -> Functional:
+        scale = self.data_operator_scale
+        # Apply dilation *after* incorporating observations in S_data.
+        # This is necessary for KL and other non-translation fidelities.
+        data_component = (self.data_term if scale == 1.
+                          else self.data_term.dilation(1. / scale))
         return self._tv_FuncOnSum(
-            [self.data_term, alpha * self.tv_func],
+            [data_component, alpha * self.tv_func],
             domain=(self.op.codomain if hasattr(self, "_op")
                     else self._tv_augmented_op.codomain),
         )
@@ -828,17 +890,23 @@ class TV_Setting(Setting):
             self._protect_pdhg_from_infinite_gaps()
 
     def change_data(self, new_data) -> None:
-        """Update only S_data, accepting raw observations or (data, zero)."""
+        """Update only S_data, accepting raw data or (c*data, zero).
+
+        Raw observations are expressed in ``forward_op.codomain``;
+        augmented observations are expressed in the scaled operator's
+        codomain and therefore have first component ``c*data``.
+        """
         if new_data in self.forward_op.codomain:
             raw_data = new_data
         elif new_data in self.op.codomain:
-            raw_data = new_data[0]
             # Nonzero second components would encode an unwanted shift of TV.
             if np.any(np.asarray(new_data[1]) != 0):
                 raise ValueError("The augmented gradient-data component must be zero.")
+            raw_data = new_data[0] / self.data_operator_scale
         else:
             raise ValueError("data must belong to T.codomain or augmented codomain.")
         # Updating a KL/Poisson fidelity is *not* the same as shifting it.
         self.data_term = deepcopy(self._tv_base_data_term).as_data_func(raw_data)
         self._data_fid = self._tv_data_fidelity(self.regpar)
-        self._data = self._augmented_observations(raw_data, self.op)
+        self._data = self._augmented_observations(
+            raw_data, self.op, self.data_operator_scale)
