@@ -5,9 +5,11 @@ import pytest
 from regpy.vecsps import NumPyVectorSpace, MeasureSpaceFcts,UniformGridFcts
 from regpy.functionals import *
 from regpy.functionals import SquaredNorm, KullbackLeibler, RelativeEntropy
-from regpy.functionals.base import HorizontalShiftDilation, LinearFunctional, FunctionalOnDirectSum
+from regpy.functionals.base import HorizontalShiftDilation, LinearFunctional, FunctionalOnDirectSum, as_functional
 from regpy.functionals.integral_functionals import Quadratic, Huber, Huber_old
 from regpy.hilbert import L2
+from regpy.operators import Identity
+from regpy.solvers.special_settings import TV_Setting
 from regpy.util import functional_tests as ft
 from regpy.util import set_rng_seed
 
@@ -509,3 +511,132 @@ def test_bregman_functional_with_noncanonical_boundary_subgradient():
     assert dual_divergence(gradient) == pytest.approx(
         functional.conj.bregman(gradient, ystar, y), abs=1e-11)
     ft.test_functional(dual_divergence, test_second_deriv=False, test_second_deriv_conj=False)
+
+
+def _example():
+    grid = UniformGridFcts((0., 1., 9), (0., 1., 11))
+    assert grid.shape_codomain == ()
+    i, j = np.meshgrid(grid.axes[0], grid.axes[1], indexing='ij')
+    u = 0.52 + 0.1 * np.cos(2 * np.pi * i) * np.cos(2 * np.pi * j)
+    data = 0.6 + 0.07 * np.sin(2 * np.pi * i)
+    return grid, u, data
+
+
+@pytest.mark.parametrize('c', [0.4, 1., 7., 200.])
+def test_offset_kl_dilation_remains_callable(c):
+    grid, u, data = _example()
+    fid = as_functional(KL(offset=0.1), grid).as_data_func(data)
+    assert isinstance(fid, HorizontalShiftDilation)
+    assert callable(fid.dilation)
+    assert fid.dilation_factor == pytest.approx(1.)
+
+    scaled = fid.dilation(1. / c)
+    assert callable(scaled.dilation)
+    assert scaled.dilation_factor == pytest.approx(1. / c)
+    np.testing.assert_allclose(scaled(c * u), fid(u), rtol=1e-9, atol=1e-10)
+    np.testing.assert_allclose(
+        scaled.subgradient(c * u), fid.subgradient(u) / c,
+        rtol=2e-9, atol=1e-10,
+    )
+    p = fid.subgradient(u)
+    np.testing.assert_allclose(
+        scaled.conj(p / c), fid.conj(p),
+        rtol=2e-9, atol=1e-10,
+    )
+
+    # The same instance supports further dilation. This previously raised
+    # TypeError: 'float' object is not callable, too.
+    nested = scaled.dilation(2.)
+    assert nested.dilation_factor == pytest.approx(2. / c)
+    np.testing.assert_allclose(nested(c * u / 2), fid(u), rtol=1e-9, atol=1e-10)
+
+
+@pytest.mark.parametrize('c', [0.4, 7., 200.])
+def test_offset_kl_proximal_scaling(c):
+    grid, u, data = _example()
+    fid = as_functional(KL(offset=0.1), grid).as_data_func(data)
+    scaled = fid.dilation(1. / c)
+    tau = 0.07
+    np.testing.assert_allclose(
+        scaled.proximal(c * u, tau),
+        c * fid.proximal(u, tau / c**2),
+        rtol=2e-8, atol=2e-8,
+    )
+    p = fid.subgradient(u)
+    np.testing.assert_allclose(
+        scaled.conj.proximal(p / c, tau),
+        fid.conj.proximal(p, tau * c**2) / c,
+        rtol=3e-8, atol=3e-8,
+    )
+
+
+def test_generic_shifted_functional_can_be_dilated_repeatedly():
+    grid, u, _ = _example()
+    f = as_functional(L2, grid)
+    shift = .08 * grid.ones()
+    translation = .02 * grid.ones()
+    a, b = 1.7, 0.6
+    wrapped = HorizontalShiftDilation(f, shift=shift).dilation(a).shift(translation).dilation(b)
+    assert wrapped.dilation_factor == pytest.approx(a * b)
+    np.testing.assert_allclose(
+        wrapped(u), f(a * (b * u - translation) - shift),
+        rtol=1e-11, atol=1e-11,
+    )
+
+@pytest.mark.parametrize('scale', [1., 2.5])
+def test_direct_sum_shift_dilation_essential_domain_sampling(scale):
+    """The common functional test helper must read the numeric dilation factor.
+
+    Before the rename from HorizontalShiftDilation.dilation (attribute) to
+    .dilation_factor, ft.sample_essential_domain passed the *bound method*
+    Functional.dilation to a fresh wrapper and raised ValueError.
+    """
+    grid1 = UniformGridFcts((0., 1., 10))
+    grid2 = UniformGridFcts((0., 1., 12))
+    fid = FunctionalOnDirectSum((KL(grid1, w=grid1.ones()), L1(grid2)))
+    shifted_scaled = fid.shift(fid.domain.ones()).dilation(scale)
+    assert isinstance(shifted_scaled, HorizontalShiftDilation)
+    assert shifted_scaled.dilation_factor == pytest.approx(scale)
+    assert callable(shifted_scaled.dilation)
+    sample = ft.sample_essential_domain(shifted_scaled)
+    assert np.isfinite(shifted_scaled(sample))
+    ft.test_functional(shifted_scaled)
+
+
+@pytest.mark.parametrize('beta', [0., 0.03], ids=['TV', 'Huber-TV'])
+@pytest.mark.parametrize('scale', [1., 7., 200.])
+def test_tv_setting_scaled_scalar_kl_has_identical_objective(beta, scale):
+    """Balancing (c*T, grad) must not change a scalar KL-TV objective.
+
+    Check exact and Huber TV and ensure updating the observed data does not
+    shift the TV block or rescale the *physical* KL observation.
+    """
+    grid, u, data = _example()
+    op = Identity(grid)
+    alpha = 0.012
+    setting = TV_Setting(
+        op, data_fid=KL(offset=0.1), data=data, regpar=alpha,
+        beta=beta, data_operator_scale=scale,
+    )
+    raw = as_functional(KL(offset=0.1), grid).as_data_func(data)
+    actual = setting.data_fid(setting.op(u)) / alpha + setting.penalty(u)
+    expected = (
+        raw(op(u)) / alpha
+        + setting.tv_func(setting.grad(u))
+        + setting.penalty(u)
+    )
+    np.testing.assert_allclose(actual, expected, rtol=1e-9, atol=1e-9)
+    np.testing.assert_allclose(setting.data[0], scale * data)
+    assert np.all(np.asarray(setting.data[1]) == 0)
+
+    new_data = data + 0.03
+    setting.change_data(new_data)
+    new_raw = as_functional(KL(offset=0.1), grid).as_data_func(new_data)
+    np.testing.assert_allclose(
+        setting.data_fid(setting.op(u)) / alpha,
+        new_raw(op(u)) / alpha + setting.tv_func(setting.grad(u)),
+        rtol=1e-9, atol=1e-9,
+    )
+    np.testing.assert_allclose(setting.data[0], scale * new_data)
+    assert np.all(np.asarray(setting.data[1]) == 0)
+

@@ -454,9 +454,9 @@ class SemiSmoothNewton(RegSolver):
             shift = penalty.shift_val
             inner_lower = lower if shift is None else lower - shift
             inner_upper = upper if shift is None else upper - shift
-            inner_lower = penalty.dilation * inner_lower
-            inner_upper = penalty.dilation * inner_upper
-            if penalty.dilation < 0:
+            inner_lower = penalty.dilation_factor * inner_lower
+            inner_upper = penalty.dilation_factor * inner_upper
+            if penalty.dilation_factor < 0:
                 inner_lower, inner_upper = inner_upper, inner_lower
             result = deepcopy(penalty)
             result.func = self._extended_penalty(penalty.func, inner_lower, inner_upper)

@@ -3621,7 +3621,7 @@ class HorizontalShiftDilation(Functional):
             if func.is_data_func and not func._shifted_data_fid:
                 translated_data = func.data / dilation
                 data = translated_data if data is None else data + translated_data
-            dilation *= func.dilation
+            dilation *= func.dilation_factor
             func = func.func
         # Data owned by the underlying functional stay in its own coordinates.
         # Additional outer data are a translation, and must not be discarded.
@@ -3629,7 +3629,7 @@ class HorizontalShiftDilation(Functional):
             shift = data if shift is None else shift + data
             data = None
         self.func = func
-        self.dilation = dilation
+        self._dilation_factor = dilation
         self._shift_val = shift
         if self.func.is_data_func:
             if data is not None:
@@ -3650,6 +3650,17 @@ class HorizontalShiftDilation(Functional):
                          is_data_func = self.is_data_func#(shift is not None)
                          )
         
+    @property
+    def dilation_factor(self) -> float:
+        """Scalar argument multiplier in ``x -> F(factor * (x - shift))``.
+
+        This intentionally has a different name from the inherited
+        ``Functional.dilation(a)`` constructor method. In particular,
+        ``f.dilation(a)`` must remain callable for already-shifted functionals
+        such as ``KL(offset=sigma)`` and for repeated rescaling.
+        """
+        return self._dilation_factor
+
     @util.memoized_property
     def shift_val(self) -> Vector | None:
         r"""Shift val.
@@ -3750,7 +3761,7 @@ class HorizontalShiftDilation(Functional):
         argument = self._copy_vector(x, out=out)
         if shift is not None:
             argument -= shift
-        argument *= self.dilation
+        argument *= self.dilation_factor
         return argument, shift
 
     def _dual_argument(
@@ -3772,7 +3783,7 @@ class HorizontalShiftDilation(Functional):
             Writable result vector.
         """
         argument = self._copy_vector(xstar, out=out)
-        argument *= 1. / self.dilation
+        argument *= 1. / self.dilation_factor
         return argument
 
     def _eval(self, x: ReadOnlyVector, **kwargs: Any) -> float:
@@ -3786,7 +3797,7 @@ class HorizontalShiftDilation(Functional):
         result = self.func.subgradient(
             argument, out=argument, **subgradient_par
         )
-        result *= self.dilation
+        result *= self.dilation_factor
         return result
 
     def dist_subdiff(
@@ -3819,12 +3830,12 @@ class HorizontalShiftDilation(Functional):
             dual_argument, argument, best_approx=best_approx, **kwargs
         )
         if best_approx is not None:
-            best_approx *= self.dilation
-        return abs(self.dilation) * distance
+            best_approx *= self.dilation_factor
+        return abs(self.dilation_factor) * distance
 
     def _hessian(self, x: ReadOnlyVector, **kwargs: Any) -> operators.Operator:
         argument, _ = self._shifted_argument(x)
-        return self.dilation**2 * self.func._hessian(argument, **kwargs)
+        return self.dilation_factor**2 * self.func._hessian(argument, **kwargs)
 
     def _proximal(
         self,
@@ -3835,10 +3846,10 @@ class HorizontalShiftDilation(Functional):
     ) -> Vector:
         argument, shift = self._shifted_argument(x, out=out)
         result = self.func.proximal(
-            argument, tau * self.dilation ** 2,
+            argument, tau * self.dilation_factor ** 2,
             out=argument, **proximal_par
         )
-        result *= 1. / self.dilation
+        result *= 1. / self.dilation_factor
         if shift is not None:
             result += shift
         return result
@@ -3868,7 +3879,7 @@ class HorizontalShiftDilation(Functional):
         result = self.func.conj_subgradient(
             argument, out=argument, **subgradient_par
         )
-        result *= 1. / self.dilation
+        result *= 1. / self.dilation_factor
         if shift is not None:
             result += shift
         return result
@@ -3904,21 +3915,21 @@ class HorizontalShiftDilation(Functional):
             primal_argument -= shift
             if best_approx is not None and self._shares_memory(best_approx, shift):
                 shift = self._copy_vector(shift)
-        primal_argument *= self.dilation
+        primal_argument *= self.dilation_factor
         distance = self.func._conj_dist_subdiff(
             primal_argument, dual_argument, best_approx=best_approx, **kwargs
         )
         if best_approx is not None:
-            best_approx *= 1. / self.dilation
+            best_approx *= 1. / self.dilation_factor
             if shift is not None:
                 best_approx += shift
-        return distance / abs(self.dilation)
+        return distance / abs(self.dilation_factor)
 
     def _conj_hessian(
         self, x_star: ReadOnlyVector, **kwargs: Any
     ) -> operators.Operator:
         argument = self._dual_argument(x_star)
-        return self.dilation**(-2)*self.func._conj_hessian(argument,**kwargs)
+        return self.dilation_factor**(-2)*self.func._conj_hessian(argument,**kwargs)
 
     def _conj_proximal(
         self,
@@ -3932,15 +3943,15 @@ class HorizontalShiftDilation(Functional):
         if shift is not None:
             gram_shift = self.domain.empty()
             self.h_domain.gram(shift, out=gram_shift)
-            gram_shift *= tau / self.dilation
+            gram_shift *= tau / self.dilation_factor
         argument = self._dual_argument(xstar, out=out)
         if gram_shift is not None:
             argument -= gram_shift
         result = self.func.conj_proximal(
-            argument, tau / self.dilation ** 2,
+            argument, tau / self.dilation_factor ** 2,
             out=argument, **proximal_par
         )
-        result *= self.dilation
+        result *= self.dilation_factor
         return result
     @property
     def Lipschitz(self) -> float:
@@ -3952,7 +3963,7 @@ class HorizontalShiftDilation(Functional):
         float
             Computed scalar value.
         """
-        return self.func.Lipschitz * self.dilation**2
+        return self.func.Lipschitz * self.dilation_factor**2
     
     @property
     def convexity_param(self) -> float:
@@ -3964,7 +3975,7 @@ class HorizontalShiftDilation(Functional):
         float
             Computed scalar value.
         """
-        return self.func.convexity_param  * self.dilation**2
+        return self.func.convexity_param  * self.dilation_factor**2
     
     @property
     def is_strictly_convex(self) -> bool:
@@ -4049,10 +4060,10 @@ class HorizontalShiftDilation(Functional):
             Result described above.
         """
         if self.func.is_separable:
-            if self.dilation>0:
-                return self.func.dom_l/self.dilation if self.shift_val is None else self.func.dom_l/self.dilation + self.shift_val
+            if self.dilation_factor>0:
+                return self.func.dom_l/self.dilation_factor if self.shift_val is None else self.func.dom_l/self.dilation_factor + self.shift_val
             else:
-                return self.func.dom_u/self.dilation if self.shift_val is None else self.func.dom_u/self.dilation + self.shift_val
+                return self.func.dom_u/self.dilation_factor if self.shift_val is None else self.func.dom_u/self.dilation_factor + self.shift_val
         else:
             return None
 
@@ -4067,10 +4078,10 @@ class HorizontalShiftDilation(Functional):
             Result described above.
         """
         if self.func.is_separable:
-            if self.dilation>0:
-                return self.func.dom_u/self.dilation if self.shift_val is None else self.func.dom_u/self.dilation + self.shift_val
+            if self.dilation_factor>0:
+                return self.func.dom_u/self.dilation_factor if self.shift_val is None else self.func.dom_u/self.dilation_factor + self.shift_val
             else:
-                return self.func.dom_l/self.dilation if self.shift_val is None else self.func.dom_l/self.dilation + self.shift_val
+                return self.func.dom_l/self.dilation_factor if self.shift_val is None else self.func.dom_l/self.dilation_factor + self.shift_val
         else:
             return None
 
@@ -4085,7 +4096,7 @@ class HorizontalShiftDilation(Functional):
             Result described above.
         """
         if self.func.is_separable:
-            return  self.func.conj_dom_l*self.dilation if self.dilation>0. else self.func.conj_dom_u*self.dilation
+            return  self.func.conj_dom_l*self.dilation_factor if self.dilation_factor>0. else self.func.conj_dom_u*self.dilation_factor
         else:
             return None
 
@@ -4100,7 +4111,7 @@ class HorizontalShiftDilation(Functional):
             Result described above.
         """
         if self.func.is_separable:
-            return  self.func.conj_dom_u*self.dilation if self.dilation>0. else self.func.conj_dom_l*self.dilation
+            return  self.func.conj_dom_u*self.dilation_factor if self.dilation_factor>0. else self.func.conj_dom_l*self.dilation_factor
         else:
             return None
   
