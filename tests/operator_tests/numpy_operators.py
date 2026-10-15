@@ -424,3 +424,54 @@ class TestEinSum():
         else:
             res = np.einsum(s,x,*self.tensors)
         op_evaluation_and_ot(op,x=x,res=res)
+
+def rgb_grid():
+    return UniformGridFcts((0, 1, 5), (0, 1, 6), shape_codomain=(3,))
+
+
+def example_rgb(grid):
+    rng = np.random.default_rng(42)
+    return rng.normal(size=grid.shape)
+
+
+@pytest.mark.parametrize('boundary', ['Neum', 'Diri', 'per'])
+@pytest.mark.parametrize('value_shape', [(), (3,), (2, 2)])
+def test_gradient_spatial_axes_and_adjoint(boundary, value_shape):
+    grid = UniformGridFcts((0, 1, 5), (0, 1, 6),
+                           shape_codomain=value_shape)
+    grad = ForwardFDGradient(grid, boundary_condition=boundary)
+    assert grad.codomain.shape_codomain == value_shape + (2,)
+    assert grad.codomain.shape == grid.shape_domain + value_shape + (2,)
+
+    rng = np.random.default_rng(101)
+    x = rng.normal(size=grid.shape)
+    q = rng.normal(size=grad.codomain.shape)
+    gx = grad(x)
+
+    for ax, h in enumerate(grid.spacing):
+        expected = np.zeros(grid.shape)
+        mid = [slice(None)] * grid.ndim
+        # Use spatial axes only; the point-value axes are left untouched.
+        mid[ax] = slice(None, -1)
+        plus = mid.copy()
+        plus[ax] = slice(1, None)
+        expected[tuple(mid)] = (x[tuple(plus)] - x[tuple(mid)]) / h
+        last = [slice(None)] * grid.ndim_domain
+        last[ax] = -1
+        if boundary in ('Diri', 'per'):
+            expected[tuple(last)] = -x[tuple(last)] / h
+            if boundary == 'per':
+                first = last.copy()
+                first[ax] = 0
+                expected[tuple(last)] += x[tuple(first)] / h
+        np.testing.assert_allclose(gx[..., ax], expected)
+
+        matrix = grad.matrices()[ax]
+        np.testing.assert_allclose(
+            (matrix @ x.reshape(-1)).reshape(grid.shape), expected,
+        )
+
+    np.testing.assert_allclose(
+        np.vdot(gx, q), np.vdot(x, grad.adjoint(q)),
+        rtol=2e-13, atol=1e-12,
+    )

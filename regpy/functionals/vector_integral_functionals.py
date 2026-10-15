@@ -34,7 +34,9 @@ class VectorIntegralFunctional(Functional):
     
     for v in  `regpy.vecsps.MeasureSpaceFcts`. 
     Here, :math:`f_i` are scalar functions on the real line that are assumed to be even and convex, 
-    and :math:`\|\cdot\|` some norm on the vector values. 
+    and :math:`\|\cdot\|` is the entrywise point-value norm. For a
+    matrix-valued field such as a color-image gradient, p=2 yields the
+    Frobenius norm over both the color and spatial-derivative axes.
     
     The norm on the vector values can be given as a method taking the vector-valued function and the vector axis 
     as tuple and returning the norm values. By default, the Euclidean norm is used.  
@@ -73,8 +75,12 @@ class VectorIntegralFunctional(Functional):
                  Lipschitz: float =np.inf, convexity_param: float = 0.,
                  methods: set[str] | None = None, conj_methods: set[str] | None = None
                  ) -> None:
-        if not isinstance(vdomain,MeasureSpaceFcts) and vdomain.ndim_codomain>=1:
-            raise ValueError(Errors.not_instance(vdomain,MeasureSpaceFcts,f"The vector domain needs to be an instance of MeasureSpaceFcts with ndim_codomain>1 since vector-valued functions need a measure and a vector domain."))
+        if not isinstance(vdomain, MeasureSpaceFcts) or vdomain.ndim_codomain < 1:
+            raise ValueError(Errors.not_instance(
+                vdomain, MeasureSpaceFcts,
+                "The vector domain must be a measure space with at least "
+                "one point-value axis.",
+            ))
         self.vdomain = vdomain
         self.sdomain = vdomain.scalar_space()
         self.scalar_func_args = scalar_func_args if scalar_func_args is not None else {}
@@ -91,8 +97,13 @@ class VectorIntegralFunctional(Functional):
         if isinstance(vector_norm_p,(int,float)) and vector_norm_p >1 and vector_norm_p<np.inf:
             self.p = vector_norm_p
             self.q = vector_norm_p / (vector_norm_p - 1) 
-            self.vector_norm = partial(np.linalg.norm, ord = self.p)
-            self.dual_vector_norm = partial(np.linalg.norm, ord = self.q)
+            # np.linalg.norm(ord=2, axis=(-2, -1)) computes the *spectral*
+            # norm of a matrix, not its Frobenius norm. For TV of a vector-
+            # valued function, a pointwise Jacobian has one value axis for
+            # channels and one for spatial derivatives. Use the entrywise
+            # ell_p norm over *all* value axes (Frobenius for p=2).
+            self.vector_norm = partial(self._pointwise_lp_norm, p=self.p)
+            self.dual_vector_norm = partial(self._pointwise_lp_norm, p=self.q)
         else:
             raise ValueError(Errors.value_error("Not p-Norm", f"The provided p ={vector_norm_p} is not between 1< p < inf."))
 
@@ -115,6 +126,21 @@ class VectorIntegralFunctional(Functional):
         self._sbuf = self.sdomain.zeros()
         self._vbuf = vdomain.zeros()
         self._vaxes = tuple(range(-self.vdomain.ndim+self.vdomain.ndim_domain,0))
+
+    @staticmethod
+    def _pointwise_lp_norm(x: ReadOnlyVector, axis: tuple[int, ...],
+                           p: float) -> np.ndarray:
+        """Entrywise l_p norm over all trailing value axes.
+
+        For matrices and higher tensors this is a vector (Schatten-free)
+        entrywise norm; for p=2 it is the Frobenius norm. Never pass a
+        multi-axis tuple with ord=2 to numpy.linalg.norm, because that
+        requests a spectral matrix norm instead.
+        """
+        magnitude = np.abs(x)
+        if p == 2:
+            return np.sqrt(np.sum(magnitude * magnitude, axis=axis))
+        return np.sum(magnitude ** p, axis=axis) ** (1. / p)
 
     @property
     def _sbuf_ext(self) -> np.ndarray:
@@ -247,6 +273,7 @@ class VectorIntegralFunctional(Functional):
         if self.p != 2:
             raise NotImplementedError('proximal only implemented for L2 norm')
         self._sbuf = self.vector_norm(vec, axis=self._vaxes)
+        self._vbuf.fill(0)
         np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
         fp = self.scalar_func.subgradient(self._sbuf)
         fp = np.expand_dims(fp,self._vaxes)
@@ -258,12 +285,12 @@ class VectorIntegralFunctional(Functional):
         fp[~(self._sbuf_ext>0)] = fpp[~(self._sbuf_ext>0)]
         scal_mult =rop.PtwScalarMultiplication(self.domain,fp)
         proj = rop.PtwMatrixVectorMultiplication(self.vdomain,
-                                             np.expand_dims(self._vbuf,axis=-2).copy()
+                                             np.expand_dims(self._vbuf, axis=self.vdomain.ndim_domain).copy()
                                              )
         # actually just a pointwise multiplication, but implemented multiplication with a 1x1 matrix 
         # to avoid conversions to scalar functions
         ptw_mult = rop.PtwMatrixVectorMultiplication(self.sdomain.vector_valued_space(1),
-                                                 np.expand_dims(fpp-fp,axis=-2)
+                                                 np.reshape(fpp - fp, self.sdomain.shape + (1, 1))
                                                 )
 
         return scal_mult + proj.adjoint * ptw_mult * proj                                             
@@ -274,6 +301,7 @@ class VectorIntegralFunctional(Functional):
         if self.p != 2:
             raise NotImplementedError('proximal only implemented for L2 norm')
         self._sbuf = self.dual_vector_norm(vec, axis=self._vaxes)
+        self._vbuf.fill(0)
         np.divide(vec,self._sbuf_ext,where=self._sbuf_ext>0,out=self._vbuf)
         fp = self.scalar_func.conj.subgradient(self._sbuf)
         fp = np.expand_dims(fp,self._vaxes)
@@ -284,10 +312,10 @@ class VectorIntegralFunctional(Functional):
         fp[~(self._sbuf_ext>0)] = fpp[~(self._sbuf_ext>0)]
         scal_mult = rop.PtwScalarMultiplication(self.domain,fp)
         proj = rop.PtwMatrixVectorMultiplication(self.vdomain,
-                                             np.expand_dims(self._vbuf,axis=-2).copy()
+                                             np.expand_dims(self._vbuf, axis=self.vdomain.ndim_domain).copy()
                                              )
         ptw_mult = rop.PtwMatrixVectorMultiplication(self.sdomain.vector_valued_space(1),
-                                                 np.expand_dims(fpp-fp,axis=-2)
+                                                 np.reshape(fpp - fp, self.sdomain.shape + (1, 1))
                                                 )
 
         return scal_mult + proj.adjoint * ptw_mult * proj   
@@ -336,7 +364,11 @@ class L1L2(VectorIntegralFunctional):
         super().__init__(vdomain, scalar_func= sfunc, Lipschitz=np.inf)
 
 class HuberL2(VectorIntegralFunctional):
-    r"""VectorIntegralFunctional with Huber functional as :math:`f_i`.
+    r"""Isotropic Huber functional of the pointwise Euclidean/Frobenius norm.
+
+    Vector and matrix point values share the same radial Huber envelope.
+    For a color-image Jacobian, each pixel uses the Frobenius norm across
+    all colors and all spatial derivatives (joint isotropic TV).
     
     Parameters
     ----------
@@ -497,9 +529,16 @@ class TVUniformGridFcts(Composed):
                 #compute projection of x + update onto feasible set
                 ptw_norms = self.S.vector_norm(x = self.x + self.update, axis=self.S._vaxes)
                 ptw_norms[ptw_norms<=self.ub] = self.ub
-                self.x = (self.ub / np.expand_dims(ptw_norms,-1)) * (self.x+self.update)
+                self.x = (
+                    self.ub / np.expand_dims(ptw_norms, axis=self.S._vaxes)
+                ) * (self.x + self.update)
             else:         
-                self.x = (self.x+self.update) / np.expand_dims(1.+(1./self.ub)*self.S.vector_norm(x = self.update, axis=self.S._vaxes),-1)
+                denom = 1. + (1. / self.ub) * self.S.vector_norm(
+                    x=self.update, axis=self.S._vaxes,
+                )
+                self.x = (self.x + self.update) / np.expand_dims(
+                    denom, axis=self.S._vaxes,
+                )
             self.y = self.grad.adjoint(self.x)
 
         def primal(self) -> tuple[Vector | None, Vector | None]:
