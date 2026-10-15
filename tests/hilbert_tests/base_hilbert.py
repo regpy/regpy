@@ -4,9 +4,17 @@ import traceback
 import numpy as np
 import pytest
 
-from regpy.vecsps import NumPyVectorSpace
-from regpy.operators import MatrixMultiplication
+from regpy.vecsps import NumPyVectorSpace, UniformGridFcts, DirectSum as VectorDirectSum
+from regpy.operators import MatrixMultiplication, Identity
+from regpy.functionals.base import as_functional
+from regpy.hilbert import as_hilbert_space
 from regpy.hilbert.base import *
+from regpy.hilbert.base import (
+    AbstractScaledSpace,
+    AbstractSum,
+    ScaledHilbertSpace,
+    DirectSum as HilbertDirectSum,
+)
 from regpy.util import set_rng_seed, Errors
 
 set_rng_seed(15873098306879350073259142812684978477)
@@ -265,3 +273,78 @@ def test_masked_l2_rejects_unrecognized_gram_types(monkeypatch, matrix):
     np.testing.assert_allclose(
         explicit.gram(x), matrix[np.ix_([0, 2], [0, 2])] @ x
     )
+
+
+def small_grid():
+    return UniformGridFcts((0., 1., 7), (0., 1., 8))
+
+
+@pytest.mark.parametrize('factor', [0.001, 0.5, 1., 2., np.float64(3.), np.int64(4)])
+def test_abstract_and_concrete_scale_norm_on_same_vector_space(factor):
+    grid = small_grid()
+    x = grid.ones()
+    x[2:5, 1:4] += 0.3
+    base = L2(grid)
+    deferred = factor * L2
+    actual = as_hilbert_space(deferred, grid)
+    direct = factor * base
+
+    assert isinstance(deferred, AbstractScaledSpace)
+    assert isinstance(actual, ScaledHilbertSpace)
+    assert isinstance(direct, ScaledHilbertSpace)
+    assert actual.vecsp == grid
+    assert direct.vecsp == grid
+    assert not isinstance(actual, HilbertDirectSum)
+    np.testing.assert_allclose(actual.norm(x), factor * base.norm(x))
+    np.testing.assert_allclose(direct.norm(x), factor * base.norm(x))
+    np.testing.assert_allclose(actual.gram(x), factor**2 * base.gram(x))
+    np.testing.assert_allclose(actual.gram_inv(x), float(factor)**-2 * base.gram_inv(x))
+    np.testing.assert_allclose(as_functional(deferred, grid)(x),
+                               factor**2 * as_functional(L2, grid)(x))
+
+
+def test_nested_scaling_is_combined():
+    grid = small_grid()
+    abstract = 2. * (3. * L2)
+    concrete = 2. * (3. * L2(grid))
+    assert abstract.factor == 6.
+    assert concrete.factor == 6.
+    assert abstract.space is L2
+    assert not isinstance(concrete.space, ScaledHilbertSpace)
+    np.testing.assert_allclose(abstract(grid).gram(grid.ones()),
+                               36. * L2(grid).gram(grid.ones()))
+
+
+def test_abstract_direct_sum_addition_is_not_changed():
+    grid1, grid2 = small_grid(), small_grid()
+    vecsp = VectorDirectSum(grid1, grid2)
+    abstract = L2 + 2. * L2
+    concrete = abstract(vecsp)
+    assert isinstance(abstract, AbstractSum)
+    assert isinstance(concrete, HilbertDirectSum)
+    assert concrete.vecsp == vecsp
+    x = vecsp.ones()
+    expected = L2(grid1).norm(x[0])**2 + 4. * L2(grid2).norm(x[1])**2
+    np.testing.assert_allclose(concrete.norm(x)**2, expected)
+
+
+def test_scalar_multiplier_is_a_norm_factor_not_a_penalty_weight():
+    grid = small_grid()
+    weight = 0.001
+    x = grid.ones()
+    # To obtain weight * ||x||_L2**2 one must scale the Hilbert norm by sqrt(weight).
+    penalty = as_functional(np.sqrt(weight) * L2, grid)
+    reference = weight * as_functional(L2, grid)
+    np.testing.assert_allclose(penalty(x), reference(x))
+    np.testing.assert_allclose(penalty.conj(grid.ones()),
+                               reference.conj(grid.ones()))
+
+
+@pytest.mark.parametrize('invalid', [0., -2., np.nan, np.inf])
+def test_invalid_norm_scales_rejected(invalid):
+    grid = small_grid()
+    with pytest.raises(ValueError):
+        _ = invalid * L2
+    with pytest.raises(ValueError):
+        _ = invalid * L2(grid)
+

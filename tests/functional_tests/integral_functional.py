@@ -57,7 +57,6 @@ class TestDataFunc():
         ft.test_functional(data_func, test_second_deriv=False, test_second_deriv_conj=False)
 
         data_func_shifted = data_func.shift(self.dom.ones()*0.4)
-        ft.test_functional(data_func, test_second_deriv=False, test_second_deriv_conj=False)
         x = ft.sample_essential_domain(self.func)
         assert data_func_shifted(x) == pytest.approx(data_func(x-0.4))
 
@@ -123,9 +122,7 @@ class TestKullbackLeibler():
         ft.test_functional(F,test_second_deriv=False,test_second_deriv_conj=False)
 
     def test_data(self):
-        data = self.dom.rand()
         func = KL(self.dom,w=self.dom.ones())
-
         data = self.dom.rand()
         data_func = func.as_data_func(data)
         ft.test_functional(data_func)
@@ -140,17 +137,17 @@ class TestKullbackLeibler():
         assert data_func(x) == pytest.approx(func(x))
 
 
-@pytest.mark.parametrize("kwargs", [{},{"lin_taylor_l" : 0.2}, {"constr_u":3.}])
 class TestRelativeEntropy():
     dom=UniformGridFcts((-5,7,4),(100,200,3))
 
+    @pytest.mark.parametrize("kwargs", [{},{"lin_taylor_l" : 0.2}, {"constr_u":3.}])
     def test_ft(self,kwargs):
         F=RE(self.dom,w=self.dom.ones(), **kwargs)
         ft.test_functional(F)
         F.w = 2*self.dom.ones()
         ft.test_functional(F)
 
-    def test_shifted(self, kwargs):
+    def test_shifted(self):
         F = RE(self.dom,w=self.dom.ones(),lin_taylor_l=0.2)
         ft.test_functional(F+LinearFunctional(F.domain.ones(),domain=F.domain),test_second_deriv=False)
         ft.test_functional(HorizontalShiftDilation(F,dilation=3.,shift=F.domain.ones()),test_second_deriv=False)
@@ -186,21 +183,6 @@ def test_quadratic_intv():
     assert F(2*dom.ones())==np.inf
     ft.test_functional(F)
 
-def test_quadnonneg():
-    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64))
-    func = QuadNonneg(dom)
-    ft.test_functional(func)
-
-def test_quadbil():
-    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64))
-    func = QuadBil(dom,lb = dom.zeros(), ub = dom.ones())
-    ft.test_functional(func)
-
-def test_quadlow():
-    dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64))
-    func = QuadLow(dom)
-    ft.test_functional(func)
-
 def test_Composed():
     dom = UniformGridFcts((0,1,10))
     func = Lpp(dom,p=2.5) * np.arange(1,11)
@@ -230,7 +212,18 @@ def test_FunctionalOnDirectSum():
     f = FunctionalOnDirectSum((f1,f2))
     ft.test_functional(f)
     ft.test_functional(f+2.)
-    ft.test_functional(f.shift(f.domain.ones()))
+    shifted = f.shift(f.domain.ones())
+    ft.test_functional(shifted)
+
+    # Regression: sample_essential_domain must receive the numerical factor,
+    # not the bound Functional.dilation method.
+    scaled = shifted.dilation(2.5)
+    assert isinstance(scaled, HorizontalShiftDilation)
+    assert scaled.dilation_factor == pytest.approx(2.5)
+    assert callable(scaled.dilation)
+    sample = ft.sample_essential_domain(scaled)
+    assert np.isfinite(scaled(sample))
+    ft.test_functional(scaled)
 
 def test_hilbertnorm():
     dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.complex128)
@@ -238,7 +231,7 @@ def test_hilbertnorm():
     func = HilbertNorm(l2)
     ft.test_functional(func)
 
-def test_quadNonneg():
+def test_quadnonneg():
     dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.float64)
     func = QuadNonneg(dom)
     ft.test_functional(func)
@@ -247,6 +240,8 @@ def test_quadNonneg():
     
 def test_quadlow():
     dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.float64)
+    # Cover the default as well as the explicitly bounded cases.
+    ft.test_functional(QuadLow(dom))
     func = QuadLow(dom,lb=-1)
     ft.test_functional(func)
     func = QuadLow(dom,lb=10,x0=-5)
@@ -257,6 +252,23 @@ def test_quadlow():
 
 def test_quadbil():
     dom=MeasureSpaceFcts(measure=np.array([[1,2,3],[4,5,6]],dtype=np.float64),dtype=np.float64)
+    # The conjugate of a box-constrained quadratic is C1 but not C2 at
+    # the active-set transitions.  The generic test may probe these kinks,
+    # where a conjugate Hessian does not exist; keep all other checks.
+    box = QuadBil(dom, lb=dom.zeros(), ub=dom.ones())
+    ft.test_functional(box, test_second_deriv_conj=False)
+
+    # Separately check the conjugate Hessian in the smooth region where
+    # the primal maximizer is strictly inside the box (0 < x < 1).
+    interior = 0.5 * dom.ones()
+    dual = box.subgradient(interior)
+    direction = 0.1 * dom.ones()
+    eps = 1e-5
+    numerical = (box.conj.subgradient(dual + eps * direction)
+                 - box.conj.subgradient(dual - eps * direction)) / (2 * eps)
+    np.testing.assert_allclose(
+        box.conj.hessian(dual)(direction), numerical, rtol=1e-5, atol=1e-7,
+    )
     func = QuadBil(dom,lb=-5,ub=3)
     ft.test_functional(func)
     func = QuadBil(dom,lb=9,ub=10,x0=0)
@@ -582,26 +594,6 @@ def test_generic_shifted_functional_can_be_dilated_repeatedly():
         wrapped(u), f(a * (b * u - translation) - shift),
         rtol=1e-11, atol=1e-11,
     )
-
-@pytest.mark.parametrize('scale', [1., 2.5])
-def test_direct_sum_shift_dilation_essential_domain_sampling(scale):
-    """The common functional test helper must read the numeric dilation factor.
-
-    Before the rename from HorizontalShiftDilation.dilation (attribute) to
-    .dilation_factor, ft.sample_essential_domain passed the *bound method*
-    Functional.dilation to a fresh wrapper and raised ValueError.
-    """
-    grid1 = UniformGridFcts((0., 1., 10))
-    grid2 = UniformGridFcts((0., 1., 12))
-    fid = FunctionalOnDirectSum((KL(grid1, w=grid1.ones()), L1(grid2)))
-    shifted_scaled = fid.shift(fid.domain.ones()).dilation(scale)
-    assert isinstance(shifted_scaled, HorizontalShiftDilation)
-    assert shifted_scaled.dilation_factor == pytest.approx(scale)
-    assert callable(shifted_scaled.dilation)
-    sample = ft.sample_essential_domain(shifted_scaled)
-    assert np.isfinite(shifted_scaled(sample))
-    ft.test_functional(shifted_scaled)
-
 
 @pytest.mark.parametrize('beta', [0., 0.03], ids=['TV', 'Huber-TV'])
 @pytest.mark.parametrize('scale', [1., 7., 200.])
