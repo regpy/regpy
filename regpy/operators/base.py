@@ -433,9 +433,9 @@ class Operator:
         r"""Zero enabled counters without enabling counting or touching children.
         """
         if self.eval_count_enabled:
-            self._eval_counts = dict.fromkeys(
+            self._eval_counts.update(dict.fromkeys(
                 ('eval', 'deriv', 'adjoint', 'adjoint_eval', 'adjoint_deriv', 'adjoint_data'), 0
-            )
+            ))
 
     def total_eval_count(self) -> int:
         r"""Return counts weighted by two for adjoint_eval and adjoint_deriv.
@@ -612,6 +612,17 @@ class Operator:
         # cached value makes the next access observe the new flag and return
         # ``self``.
         del self.adjoint
+
+    def copy_with_shared_eval_counts(self, owner: Operator) -> Operator:
+        """Copy operator state while charging evaluations to owner's counters.
+
+        Intended for derivative snapshots containing ``owner``. Numerical
+        state is independent; the instrumented owner's counter dictionary
+        is shared. Ordinary deepcopy retains its independent-copy semantics.
+        Counting is enabled on owner without resetting accumulated work.
+        """
+        owner.enable_eval_count(reset=False)
+        return deepcopy(self, {id(owner._eval_counts): owner._eval_counts})
 
     def __deepcopy__(self, memo: dict[int, Any]) -> Operator:
         cls = type(self)

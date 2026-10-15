@@ -5,13 +5,91 @@ if TYPE_CHECKING:
     from typing import Any
     from regpy.vecsps.base import ReadOnlyVector, Vector, VectorSpaceBase
     from regpy.operators.base import Operator
+from numpy.typing import ArrayLike
+from scipy.spatial import cKDTree
 import numpy as np
 from collections.abc import Callable
 from regpy.util import Errors
 from abc import ABC, abstractmethod
 from .numpy import UniformGridFcts,NumPyVectorSpace
 
-__all__ = ["GenCurve","StarCurve","Kite","Peanut","Round_rect","Apple","Three_lobes","Pinched_ellipse","Smoothed_rectangle","Nonsym_shape","Circle","ParameterizedCurve","ParameterizedCurveSpc","GenTrigSpc","GenTrig","StarTrigRadialFcts","StarTrigCurve"]
+__all__ = ["hausdorff_dist","GenCurve","StarCurve","Kite","Peanut","Round_rect","Apple","Three_lobes","Pinched_ellipse","Smoothed_rectangle","Nonsym_shape","Circle","ParameterizedCurve","ParameterizedCurveSpc","GenTrigSpc","GenTrig","StarTrigRadialFcts","StarTrigCurve"]
+
+def _area_centroid(points: np.ndarray) -> np.ndarray:
+    """Area centroid of a sampled simple closed polygon."""
+    points = np.asarray(points, dtype=float)
+    if points.ndim != 2 or points.shape[0] != 2 or points.shape[1] < 3:
+        raise ValueError("A planar boundary with at least three samples is required.")
+    if not np.all(np.isfinite(points)):
+        raise ValueError("Boundary samples must be finite.")
+    # Translate before forming cross products to reduce cancellation.
+    origin = points[:, 0]
+    q = points - origin[:, None]
+    following = np.roll(q, -1, axis=1)
+    cross = q[0] * following[1] - following[0] * q[1]
+    twice_area = np.sum(cross)
+    if abs(twice_area) <= 32 * np.finfo(float).eps * np.sum(np.abs(cross)):
+        raise ValueError("Boundary encloses numerically zero signed area.")
+    return origin + np.sum((q + following) * cross, axis=1) / (3 * twice_area)
+
+
+def hausdorff_dist(curve1: ArrayLike, curve2: ArrayLike,
+                   align_cog: bool = False) -> float:
+    """Return the symmetric Hausdorff distance between sampled boundaries.
+
+    Parameters
+    ----------
+    curve1: ArrayLike
+        Real boundary coordinates with shape (2, n), as in ``GenCurve.z``,
+        or a one-dimensional radial function sampled at angles
+        ``2*pi*j/n`` for j=0,...,n-1 (without a repeated endpoint).
+    curve2: ArrayLike
+        Second boundary in the same formats; sample counts may differ.
+    align_cog: bool [default: False]
+        Translate each boundary by minus its enclosed-area centroid before
+        comparison, using the same polygon approximation as
+        ``GenCurve.center_of_gravity``. Requires simple boundaries with
+        nonzero area, each given in boundary order.
+
+    Returns
+    -------
+    float
+        Maximum of the two directed nearest-sample distances. This measures
+        finite point sets, not interpolated segments; different samplings of
+        the same geometric curve can therefore have nonzero distance.
+
+    Notes
+    -----
+    Inputs are not modified. Repeated endpoints are allowed for (2, n)
+    boundaries. Nearest-neighbor trees avoid forming a dense distance matrix.
+    Without alignment, any nonempty finite point sets are accepted.
+    """
+    if not isinstance(align_cog, (bool, np.bool_)):
+        raise TypeError("align_cog must be boolean.")
+
+    def points(curve: ArrayLike) -> np.ndarray:
+        array = np.asarray(curve)
+        if np.iscomplexobj(array):
+            raise ValueError("Curve coordinates must be real.")
+        array = np.asarray(array, dtype=float)
+        if array.ndim == 1:
+            if not array.size:
+                raise ValueError("Radial samples must not be empty.")
+            angles = 2 * np.pi * np.arange(array.size) / array.size
+            array = np.vstack((array * np.cos(angles), array * np.sin(angles)))
+        elif array.ndim != 2 or array.shape[0] != 2:
+            raise ValueError("Expected radial samples or boundary coordinates of shape (2, n).")
+        if array.shape[1] == 0 or not np.all(np.isfinite(array)):
+            raise ValueError("Boundary samples must be nonempty and finite.")
+        if align_cog:
+            array = array - _area_centroid(array)[:, None]
+        return array.T
+
+    first, second = points(curve1), points(curve2)
+    forward = cKDTree(second).query(first)[0].max()
+    backward = cKDTree(first).query(second)[0].max()
+    return float(max(forward, backward))
+
 
 class GenCurve:
     r"""Base class for parameterized smooth, non self-intersecting, closed curves in :math:`R^2`. 
@@ -199,6 +277,26 @@ class GenCurve:
             return self._z[3]
         else:
             raise RuntimeError(Errors.runtime_error("To return the evaluation of the third derivative the self.nderivs >=3 please change that!",self,"zppp"))
+
+    def center_of_gravity(self) -> np.ndarray:
+        """Return the area centroid of the enclosed planar obstacle.
+
+        Returns
+        -------
+        numpy.ndarray
+            Two coordinates of the centroid for uniform area density,
+            approximated by the polygon through ``self.z``. The polygon is
+            closed implicitly; either orientation is accepted. This is not
+            the arclength-weighted centroid of the boundary. No curve state
+            is changed and no derivatives are required.
+
+        Raises
+        ------
+        ValueError
+            If samples are nonfinite or enclose numerically zero signed area.
+            The boundary is assumed simple (not self-intersecting).
+        """
+        return _area_centroid(self.z)
 
     def param_derivative(self,u:np.ndarray) -> np.ndarray : 
         r"""Computes the derivative(s) of one or several complex periodic functions :math:`u:[0,2 pi]       o C`,

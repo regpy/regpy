@@ -64,7 +64,9 @@ class PDHG(RegSolver):
         Relaxation parameter. For theta==0 PDHG is the Arrow-Hurwicz-Uzawa algorithm.
         If -1, a suitable value is selected automatically based on the convexity parameters of penalty and data fidelity term.
     op_norm: float | None [default: None]
-        The operator norm of the forward operator. If None, it is computed numerically.
+        The operator norm of the forward operator. If None, it is estimated
+        using the original primal setting's operator and Hilbert geometries
+        when ``setting`` is a transformed dual setting.
     proximal_pars_data_fidelity_conjugate: dict | None [default: None]
         Parameter dictionary passed to the computation of the prox-operator of the data fidelity functional.
     proximal_pars_penalty: dict | None [default: None]
@@ -217,7 +219,8 @@ class PDHG(RegSolver):
         setting: Setting
             Problem setting containing the operator, penalty, and data fidelity.
         op_norm: float | None [default: None]
-            Operator-norm estimate; None requests numerical estimation.
+            Operator-norm estimate. If None, estimate on the original primal
+            setting for transformed dual problems.
         tau: int [default: 0]
             Proximal or iteration step size.
         sigma: int [default: 0]
@@ -253,7 +256,19 @@ class PDHG(RegSolver):
                 out['rate']=np.nan
                 par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':0,'muSstar':0}
             else:
-                L = setting.op.norm(setting.h_domain,setting.h_codomain) if op_norm is None else op_norm  
+                if op_norm is None:
+                    # A transformed dual setting has op = T*.  Its operator norm
+                    # equals the primal norm in the corresponding dual Hilbert
+                    # geometries.  Estimate via T rather than the (potentially
+                    # much larger) domain of T*.
+                    norm_setting = (setting._primal_setting
+                                    if setting._primal_setting is not None
+                                    else setting)
+                    L = norm_setting.op.norm(
+                        norm_setting.h_domain, norm_setting.h_codomain
+                    )
+                else:
+                    L = op_norm
                 if tau==0 and sigma==0:
                     tau = 1/L
                     sigma = 1/L
@@ -283,6 +298,36 @@ class PDHG(RegSolver):
                     theta =1.
                 par = {'tau':tau, 'sigma':sigma, 'theta':theta, 'muR':muR, 'muSstar':muSstar}
         return out, par
+
+    def reconstruct_original_primal(self) -> Vector:
+        r"""Return the original primal reconstruction from transformed dual PDHG.
+
+        For a primal problem ``S(Tf)/alpha + R(f)``, the transformed
+        dual setting has regularization parameter ``alpha_d = 1/alpha``.
+        PDHG's codomain saddle variable ``pstar`` then represents
+        ``-f / alpha_d``. Unlike the generic ``Setting.dual_to_primal``
+        mapping, this conversion is well-defined even for ``R = 0``.
+
+        This returns the *current* iterate. ``Setting.run`` may use it for
+        final-result conversion only when the stopping rule selects the
+        final iterate (not an earlier parameter-choice iterate).
+
+        Returns
+        -------
+        Vector
+            A newly allocated reconstruction in the original primal domain.
+
+        Raises
+        ------
+        RuntimeError
+            If this is not PDHG on a transformed dual setting.
+        """
+        if self.is_primal or self.setting._primal_setting is None:
+            raise RuntimeError(
+                "Original primal reconstruction requires PDHG on a "
+                "transformed dual setting."
+            )
+        return -self.regpar * self.pstar
 
     def primal(self) -> tuple[Vector | None, Vector | None]:
         r"""Return the current primal iterate and operator image, when available.

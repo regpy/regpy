@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from .fista import *
 from .forward_backward_splitting import *
-from .irgnm_semismooth import *
 from .irgnm import *
 from .landweber import *
 from .newton import *
@@ -34,8 +33,6 @@ __all__ = []
 from .fista import __all__ as mod_all
 __all__ += mod_all
 from .forward_backward_splitting import __all__ as mod_all
-__all__ += mod_all
-from .irgnm_semismooth import __all__ as mod_all
 __all__ += mod_all
 from .irgnm import __all__ as mod_all
 __all__ += mod_all

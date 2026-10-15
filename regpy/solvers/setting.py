@@ -82,7 +82,16 @@ def _with_stoprule_defaults(methods: dict, factory: Callable[[Setting, dict], St
             50 if name in short_runs else 1000)
         params = {'max_it': max_it, 'factory': factory}
         if factory is default_convex_stoprule:
-            params['tol'] = 1e-3
+            # TikhonovCG already has its own (absolute/relative) CG stopping
+            # criteria. An additional duality-gap or relative-change rule can
+            # otherwise terminate it before those criteria are satisfied,
+            # including at the initial correction h=0.
+            if getattr(method.get('class'), '__name__', None) == 'TikhonovCG':
+                params['factory'] = CountIterations_factory
+            # Do not supply an absolute duality-gap tolerance. The gap is
+            # problem-scaled; DualityGapStopping uses its relative criterion
+            # by default (tol=0). The fallback RelativeChangeSol factory
+            # provides its own dimensionless relative-change tolerance.
             if name in ('SSN', 'dSSN'):
                 params['schedule'] = None
         elif factory is default_nonconvex_stoprule:
@@ -153,11 +162,12 @@ class Setting:
         :attr:`init` returns a writable copy of the penalty's
         :meth:`~regpy.functionals.Functional.reference_vector`.
     incorporate_init_in_penalty: bool [default: True]
-        If true, a supplied initial guess is incorporated into the penalty by
-        making the penalty a data functional. If false, an independent copy
-        is stored in the setting. This option applies only to the ``init``
-        argument passed to the constructor and has no effect when ``init`` is
-        ``None``. Later assignments to :attr:`init` are stored independently.
+        If true, both a supplied constructor ``init`` and subsequent assignments
+        to :attr:`init` update the penalty via ``penalty.as_data_func(init)``.
+        Reassigning ``init`` replaces the penalty's previous data/center; it
+        does not add another translation. If false, ``init`` is stored without
+        changing the objective. With ``init=None``, the penalty is left alone
+        until an explicit initial guess is assigned.
     codomain_free: bool [default: False]
         If True, this indicates that vectors in the codomain of the operator should be avoided, e.g., because 
         they are too large to be stored. In this case inversion methods that only rely on 
@@ -210,13 +220,11 @@ class Setting:
                 incorporate_init_in_penalty,
             ))
 
+        self._incorporate_init_in_penalty = bool(incorporate_init_in_penalty)
         self.set_penalty(penalty)
 
         if init is not None:
-            if incorporate_init_in_penalty:
-                self.set_penalty(self.penalty.as_data_func(init))
-            else:
-                self.init = init
+            self.init = init
 
         if not codomain_free:
             if data_fid is None:
@@ -271,6 +279,22 @@ class Setting:
         return self._op
     
     @property
+    def evaluation_operator(self) -> Operator:
+        """Operator whose evaluations count toward solver work budgets.
+
+        Normally this is ``op``.  A primal-dual solver operating on a dual
+        setting counts the *original* forward operator instead of its adjoint
+        proxy.  Specialized settings may override this property when their
+        optimization operator is an augmentation of a physical forward model.
+
+        The returned operator must actually be used in the computation (or
+        share evaluation counters with the operator that is used).  Merely
+        returning an unrelated operator does not transfer evaluation counts.
+        """
+        primal = getattr(self, '_primal_setting', None)
+        return primal.evaluation_operator if primal is not None else self.op
+
+    @property
     def penalty(self)->Functional:
         r"""The penalty functional.
         
@@ -283,15 +307,27 @@ class Setting:
         return self._penalty
 
     def set_penalty(self, penalty: Functional)->None :
-        r"""Set penalty.
-        
+        r"""Replace the penalty functional.
+
+        If ``incorporate_init_in_penalty=True`` and an initial guess has been
+        assigned, the new penalty is centered at that guess as well.
+
         Parameters
         ----------
         penalty: Functional
-            Penalty.
+            New penalty.
         """
-        self._penalty = as_functional(penalty, self.op.domain)
+        updated = as_functional(penalty, self.op.domain)
+        if (getattr(self, '_incorporate_init_in_penalty', False)
+                and hasattr(self, '_init')):
+            updated = updated.as_data_func(self._init)
+        self._penalty = updated
         self._init_method_dictionary()
+
+    @property
+    def incorporate_init_in_penalty(self) -> bool:
+        """Whether assigning ``init`` also updates the penalty's center."""
+        return self._incorporate_init_in_penalty
 
     @property
     def init(self) -> Vector:
@@ -327,12 +363,18 @@ class Setting:
         self.change_init(new_init=new_init)
 
     def change_init(self, new_init: ReadOnlyVector) -> None:
-        r"""Store a supplied initial guess independently of the penalty.
-        
+        r"""Update the initial guess and, if requested, the penalty center.
+
+        The supplied vector is copied, so later changes to the caller's
+        vector cannot alter the penalty. With
+        ``incorporate_init_in_penalty=True``, the *current* penalty is updated
+        using ``as_data_func``. In particular, assigning another ``init``
+        replaces the old data/center instead of composing shifts.
+
         Parameters
         ----------
         new_init: ReadOnlyVector
-            Input vector; its coefficients are only read.
+            Initial guess in the operator domain.
         """
         if new_init not in self.op.domain:
             raise TypeError(Errors.not_in_vecsp(
@@ -341,14 +383,23 @@ class Setting:
                 vec_name='new_init',
                 space_name='domain',
             ))
-        if not hasattr(self, '_init'):
-            self._init = self.op.domain.empty()
-        if new_init is not self._init:
-            self.op.domain.copyto(self._init,new_init)
+        # Allocate before modifying the penalty: its data setters may keep a
+        # reference to the supplied vector rather than copying it.
+        center = self.op.domain.empty()
+        self.op.domain.copyto(center, new_init)
+        if self._incorporate_init_in_penalty:
+            # Do not call set_penalty here: that would rebuild the registered
+            # solver dictionary on every proximal evaluation. as_data_func
+            # updates the data of an existing data functional in place.
+            self._penalty = self.penalty.as_data_func(center)
+        self._init = center
 
     @init.deleter
     def init(self) -> None:
         r"""Discard the stored initial guess and use the penalty reference.
+
+        Deletion does not undo a shift previously incorporated in the penalty;
+        use :meth:`set_penalty` to replace the penalty itself.
         """
         self.__dict__.pop('_init', None)
 
@@ -1237,7 +1288,12 @@ class Setting:
         dual: tuple[Vector | None, Vector | None] | None [default: None]
             tuple of dual variable :math:`p` and :math:`T*p`. If :math:`T*p` is None, it will be computed.
         use_bregman_formula: bool [default: True]
-            If True, the second formula above is used.
+            If True, the second formula above is used. For codomain-free
+            settings only this representation is available, and ``primal``
+            must supply ``f``. The implicit dual covector is
+            ``(op.adjoint_data(data) - op.adjoint_eval(f)) / regpar``;
+            the fidelity Bregman term vanishes for this dual choice.
+            ``dual`` is not needed in this case.
         
         
         Returns
@@ -1250,8 +1306,40 @@ class Setting:
         if not self.is_convex:
             raise RuntimeError(Errors.not_linear_op(self.op,add_info="The duality gap can only be computed for convex settings with linear operators!"))
 
-        if self._primal_setting is not None and primal is not None: 
+        if self._primal_setting is not None and primal is not None and dual is None:
+            # Backward-compatible one-sided dual-setting evaluation: the
+            # transformed dual iterate p supplies the original dual variable,
+            # and the original penalty's conjugate reconstructs f when possible.
+            # If both saddle-point iterates are available, DO NOT discard the
+            # supplied dual-setting dual variable: it encodes the actual
+            # original primal iterate f = -alpha_dual * q. Instead compute
+            # the dual-setting gap below and scale it by alpha_dual.
             return self._primal_setting.duality_gap(dual=primal)
+
+        if self.codomain_free:
+            # The codomain-free objective is, up to an irrelevant constant,
+            #   (1/alpha) * (1/2 <f, A f> - <b, f>) + R(f),
+            # where A f = op.adjoint_eval(f), b = op.adjoint_data(data).
+            # Select the implicit dual p = -S'(Tf)/alpha. The fidelity's
+            # Fenchel/Bregman gap is then zero; only the penalty gap remains.
+            if not use_bregman_formula:
+                raise ValueError(
+                    'Codomain-free duality gaps require use_bregman_formula=True; '
+                    'the separate fidelity and its conjugate are unavailable.'
+                )
+            if primal is None or primal[0] is None:
+                raise ValueError(
+                    'Codomain-free duality gap requires a primal reconstruction f.'
+                )
+            if self.data is None:
+                raise ValueError('Codomain-free duality gap requires data.')
+            f = primal[0]
+            if f not in self.op.domain:
+                raise ValueError('Primal reconstruction is not in the operator domain.')
+            Tsp = self.op.adjoint_data(self.data)
+            Tsp -= self.op.adjoint_eval(f)
+            Tsp /= self.regpar
+            return self._duality_gap_pen((f, None), (None, Tsp))
 
         (f,Tf),(p,Tsp) = self._complete_primal_dual_tuples(primal,dual)
         alpha = self.regpar
@@ -2029,7 +2117,8 @@ class Setting:
         # Capture each rule's time origin and evaluation baseline before
         # constructor-time work. CountIterations leaves the shared operator's
         # counters intact, so nested runs retain cumulative outer counts.
-        # Attachment to this operator preserves the prepared baseline.
+        # Attachment to this setting's evaluation_operator preserves the
+        # prepared baseline, even for augmented or dual optimization operators.
         pending_counters = [themethod['stoprule']]
         seen_counters = set()
         while pending_counters:
@@ -2038,7 +2127,7 @@ class Setting:
                 continue
             seen_counters.add(id(rule))
             if isinstance(rule, CountIterations):
-                rule.prepare_run(thesetting.op)
+                rule.prepare_run(thesetting.evaluation_operator)
             pending_counters.extend(getattr(rule, 'rules', ()))
 
         solver = themethod['class'](thesetting,**kwargs)
@@ -2058,8 +2147,17 @@ class Setting:
         x,y = solver.run(themethod['stoprule'])
         
         if self.is_tikhonov and not solver.is_primal:
-            x_star,y_star = x,y
-            x = self.dual_to_primal((x_star,y_star))
+            # Some dual solvers (notably PDHG) retain the original primal
+            # variable as an independent saddle-point iterate. Prefer that
+            # direct reconstruction if available; the generic subgradient
+            # mapping may be undefined or nonunique, e.g. for R = 0.
+            # The optional hook reconstructs the *current* iterate, so it is
+            # appropriate for stop rules selecting the final solver iterate.
+            reconstruct = getattr(solver, "reconstruct_original_primal", None)
+            if callable(reconstruct):
+                x = reconstruct()
+            else:
+                x = self.dual_to_primal((x, y))
             y = self.op(x)
         return x,y
 

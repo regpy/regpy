@@ -271,6 +271,7 @@ def _evals_for_history(rule: StopRule, key: Any, length: int, components: list[s
         Computed array.
     """
     target_steps = _history_steps(rule, key, length)
+    stagnant = None
     for counter in components:
         if not isinstance(counter, CountIterations):
             continue
@@ -280,7 +281,25 @@ def _evals_for_history(rule: StopRule, key: Any, length: int, components: list[s
             continue
         by_step = dict(zip(steps, totals, strict=True))
         if all(int(step) in by_step for step in target_steps):
-            return np.asarray([by_step[int(step)] for step in target_steps])
+            result = np.asarray([by_step[int(step)] for step in target_steps])
+            if (result.size > 1 and np.unique(target_steps).size > 1
+                    and np.all(result == result[0])):
+                # Do not take a stagnant counter if another rule in the
+                # combination recorded a meaningful evaluation history.
+                stagnant = float(result[0])
+                continue
+            return result
+    if stagnant is not None:
+        # A flat evaluation axis collapses the convergence curve into a
+        # vertical line.  Surface the counting mismatch explicitly instead.
+        raise ValueError(
+            "Operator evaluation counts did not change over the recorded "
+            f"iterations (constant count {stagnant:g}). Check that "
+            "CountIterations.counting_operator is on the solver's actual "
+            "evaluation path. In TV_Setting, instrument the physical "
+            "forward operator before constructing composite operators, "
+            "then rerun the solver."
+        )
     raise ValueError(
         f"Cannot align history {key!r} with operator evaluation counts. "
         "Rerun with CountIterations(eval_count=True)."
@@ -547,10 +566,9 @@ def convergence_plots(
         scale_samples = []
 
         def include_for_scaling(values: np.ndarray) -> None:
-            # Keep all plotted points, but ignore terminal drops/spikes when
-            # choosing limits. A singleton has no earlier point to use.
+            # Include the final recorded iterate: a terminal decrease is
+            # commonly the most important convergence information.
             values = np.asarray(values, dtype=float)
-            values = values[:-1] if values.size > 1 else values
             valid = values[np.isfinite(values) & (values > 0)]
             if valid.size:
                 scale_samples.append(valid)

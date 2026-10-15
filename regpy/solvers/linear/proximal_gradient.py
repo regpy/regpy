@@ -41,7 +41,8 @@ class ForwardBackwardSplitting(RegSolver):
     op_norm: float | None [default: None]
         Norm of the forward operator. If supplied, it is used to compute the
         default step size ``1 / (op_norm**2 * data_fid.Lipschitz)`` instead of
-        estimating the norm numerically. An explicitly supplied ``tau`` takes
+        estimating the norm numerically (on the originating primal operator
+        for a transformed dual setting). An explicitly supplied ``tau`` takes
         precedence.
     update_setting: bool [default: False]
         If True, explicitly supplied data and initial guess are stored in the setting.
@@ -96,7 +97,8 @@ class ForwardBackwardSplitting(RegSolver):
         setting: Setting
             Problem setting containing the operator, penalty, and data fidelity.
         op_norm: float | None [default: None]
-            Operator-norm estimate; None requests numerical estimation.
+            Operator-norm estimate. If None, use the originating primal
+            setting when called on a transformed dual setting.
         op_lower_bound: float [default: 0.0]
             Op lower bound.
         
@@ -124,7 +126,15 @@ class ForwardBackwardSplitting(RegSolver):
                 out['info']+='Gradient of data functional not Lipschitz.'
         out['applicable'] = out['info']==''
         if out['applicable']: 
-            op_norm = setting.op.norm(setting.h_domain,setting.h_codomain) if op_norm is None else op_norm
+            if op_norm is None:
+                # Use the original primal operator for a transformed dual
+                # setting: ||T*|| = ||T|| in the dual Hilbert geometries.
+                norm_setting = (setting._primal_setting
+                                if setting._primal_setting is not None
+                                else setting)
+                op_norm = norm_setting.op.norm(
+                    norm_setting.h_domain, norm_setting.h_codomain
+                )
             par = {'tau':1/(op_norm**2 * setting.data_fid.Lipschitz)}
             mu_penalty  = setting.regpar * setting.penalty.convexity_param
             mu_data_fidelity = setting.data_fid.convexity_param * op_lower_bound**2 
@@ -214,8 +224,9 @@ class FISTA(RegSolver):
         Norm of the forward operator. If supplied, it is used to compute the
         default step size ``1 / (op_norm**2 * data_fid.Lipschitz)`` instead of
         estimating the norm numerically. For codomain-free settings, the data
-        fidelity Lipschitz factor is one. An explicitly supplied ``tau`` takes
-        precedence.
+        fidelity Lipschitz factor is one. For transformed dual settings the
+        operator norm is estimated on the originating primal operator.
+        An explicitly supplied ``tau`` takes precedence.
     logging_level: int | str [default: 'INFO']
         logging level
     update_setting: bool [default: False]
@@ -336,7 +347,8 @@ class FISTA(RegSolver):
         op_lower_bound: float [default: 0.0]
             Op lower bound.
         op_norm: float | None [default: None]
-            Operator-norm estimate; None requests numerical estimation.
+            Operator-norm estimate. If None, use the originating primal
+            setting when called on a transformed dual setting.
         
         
         Returns
@@ -376,10 +388,17 @@ class FISTA(RegSolver):
             )
             par['mu'] = par['mu_data_fidelity']+par['mu_penalty']
             if op_norm is None:
-                op_norm = setting.op.norm(
-                    setting.h_domain,
-                    None if setting.codomain_free else setting.h_codomain,
-                    codomain_free=setting.codomain_free,
+                # Avoid estimating ||T*|| on the transformed dual domain.
+                # The norm equals ||T|| when the respective Hilbert spaces
+                # are dual to each other, as in Setting.get_dual_setting().
+                norm_setting = (setting._primal_setting
+                                if setting._primal_setting is not None
+                                else setting)
+                op_norm = norm_setting.op.norm(
+                    norm_setting.h_domain,
+                    (None if norm_setting.codomain_free
+                     else norm_setting.h_codomain),
+                    codomain_free=norm_setting.codomain_free,
                 )
             data_lipschitz = (
                 1. if setting.codomain_free else setting.data_fid.Lipschitz
