@@ -463,7 +463,8 @@ class TVUniformGridFcts(Composed):
             super().__init__(op=tv.grad,
                              data_fid = tv.func, 
                              penalty = L2, 
-                             init = penalty_shift, 
+                             init = penalty_shift,
+                             incorporate_init_in_penalty=True,
                              regpar = 1./tau,
                              explicitDataWarning=False)
 
@@ -668,7 +669,18 @@ class TVUniformGridFcts(Composed):
             self.prox_method = prox_method      
         self._fista_zero_data = {}
         if prox_stop_rule is None:
-            prox_stop_rule = DualityGapStopping(tol=1e-4,stop_at_infty = False,logging_level=prox_it_logging_level) + CountIterations(500,logging_level=prox_it_logging_level)
+            # The TV proximal objective may be extremely small, especially on
+            # masked grids or for small-amplitude iterates.  An absolute
+            # duality-gap tolerance such as 1e-4 can therefore certify the
+            # initial (nonoptimal) iterate before FISTA has taken a step.
+            # Use a scale-independent relative criterion instead.
+            prox_stop_rule = (
+                DualityGapStopping(
+                    tol=1e-12, reltol=0.1, stop_at_infty=False,
+                    logging_level=prox_it_logging_level,
+                )
+                + CountIterations(500, logging_level=prox_it_logging_level)
+            )
         elif not isinstance(prox_stop_rule,StopRule):
             raise ValueError(Errors.value_error(f"{prox_stop_rule} is not a StopRule."))
         if not isinstance(prox_method_param,dict):
@@ -731,6 +743,8 @@ class TVUniformGridFcts(Composed):
         return func
       
     def _proximal(self, x: ReadOnlyVector, tau: float, out: Vector | None=None, **kwargs: Any) -> Vector:
+        # Setting.init also updates penalty.as_data_func(x) because the
+        # proximal setting uses incorporate_init_in_penalty=True.
         self.prox_setting.init = x
         self.prox_setting.regpar = 1. / tau
         prox_method_param = self.prox_method_param.copy()

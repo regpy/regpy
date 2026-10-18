@@ -226,6 +226,17 @@ class Setting:
         if init is not None:
             self.init = init
 
+        # Exact observations are meaningful also in codomain-free settings:
+        # synthetic noise is generated in the *physical* codomain before the
+        # resulting observation is passed to op.adjoint_data by the solver.
+        # Keep an independent copy so caller-side mutation cannot alter it.
+        if exact_data is not None:
+            if exact_data not in op.codomain:
+                raise ValueError(Errors.value_error(
+                    'exact_data must be in codomain of operator.'))
+            self._exact_data = op.codomain.empty()
+            op.codomain.copyto(self._exact_data, exact_data)
+
         if not codomain_free:
             if data_fid is None:
                 raise ValueError(Errors.value_error('data_fid must not be None unless codomain_free is True'))
@@ -236,13 +247,12 @@ class Setting:
                 self._data = None
             if self.data_fid.is_data_func:
                 self._data=self.data_fid.data #just update internal data, update of data functional not necessary
-            if exact_data is not None:
-                if not exact_data in op.codomain:
-                    raise ValueError(Errors.value_error("exact_data must be in codomain of operator."))
-                self._exact_data = exact_data
         elif data_fid is not None:
             _data_fid = as_functional(data_fid, self.op.codomain)
             hilb = _data_fid.h_domain
+            # The fidelity itself is inactive in codomain-free mode, but its
+            # codomain Hilbert geometry is needed for synthetic noise.
+            self._noise_h_codomain = hilb
             if not _data_fid.is_norm_squared_type:
                 raise ValueError(Errors.value_error('Can only treat norm_squared_type functionals in the codomain_free case.', _data_fid))
             try:
@@ -507,15 +517,22 @@ class Setting:
     
     @exact_data.setter
     def exact_data(self, new_exact_data:ReadOnlyVector) -> None:
-        r"""Exact data.
-        
-        Parameters
-        ----------
-        new_exact_data: ReadOnlyVector
-            Input vector; its coefficients are only read.
+        r"""Replace exact observations, invalidating any previous noisy data.
+
+        The exact data are copied and validated against the physical codomain,
+        also when ``codomain_free=True``.
         """
-        self._exact_data = new_exact_data
-        del self.data
+        if new_exact_data not in self.op.codomain:
+            raise ValueError(Errors.value_error(
+                'exact_data must be in codomain of operator.'))
+        stored = self.op.codomain.empty()
+        self.op.codomain.copyto(stored, new_exact_data)
+        self._exact_data = stored
+        if getattr(self, '_data', None) is not None:
+            if self.codomain_free:
+                del self._data
+            else:
+                del self.data
 
     @property
     def h_domain(self)->HilbertSpace:
@@ -531,15 +548,20 @@ class Setting:
 
     @property   
     def h_codomain(self)->HilbertSpace:
-        r"""The Hilbert space associated to data fidelity functional
-        
-        
-        Returns
-        -------
-        HilbertSpace
-            Result described above.
+        r"""The Hilbert geometry associated with the data fidelity.
+
+        In codomain-free mode the fidelity functional is inactive, but when
+        provided at construction its Hilbert geometry is retained for noise
+        simulation and discrepancy measurements.
         """
-        return self.data_fid.h_domain if not isinstance(self.data_fid,Composed) else self.data_fid.func.h_domain
+        if self.codomain_free:
+            if not hasattr(self, '_noise_h_codomain'):
+                raise NotImplementedError(
+                    'Codomain-free noise generation requires a data_fid '
+                    '(e.g. L2) to specify the codomain Hilbert geometry.')
+            return self._noise_h_codomain
+        return (self.data_fid.h_domain if not isinstance(self.data_fid, Composed)
+                else self.data_fid.func.h_domain)
 
     @property
     def is_tikhonov(self) -> bool:
@@ -746,10 +768,22 @@ class Setting:
             raise ValueError(Errors.value_error("Either relative or absolute noise level must be given."))
         if relative_noise_level is not None and absolute_noise_level is not None:
             raise ValueError(Errors.value_error("Your cannot provide both relative or absolute noise level!"))
-        if relative_noise_level is not None and not isinstance(relative_noise_level,float) and not relative_noise_level>0:
-            raise ValueError(Errors.value_error("ralative_noise_level must be a positive float.")) 
-        if absolute_noise_level is not None and not isinstance(absolute_noise_level,float) and not absolute_noise_level>0:
-            raise ValueError(Errors.value_error("absolute_noise_level must be a positive float.")) 
+        if relative_noise_level is not None:
+            if (isinstance(relative_noise_level, (bool, np.bool_))
+                    or not isinstance(relative_noise_level,
+                                      (int, float, np.integer, np.floating))
+                    or not np.isfinite(relative_noise_level)
+                    or relative_noise_level <= 0):
+                raise ValueError(Errors.value_error(
+                    'relative_noise_level must be a finite, positive real number.'))
+        if absolute_noise_level is not None:
+            if (isinstance(absolute_noise_level, (bool, np.bool_))
+                    or not isinstance(absolute_noise_level,
+                                      (int, float, np.integer, np.floating))
+                    or not np.isfinite(absolute_noise_level)
+                    or absolute_noise_level <= 0):
+                raise ValueError(Errors.value_error(
+                    'absolute_noise_level must be a finite, positive real number.'))
         if not isinstance(white_noise,bool):
             raise TypeError(Errors.type_error("white_noise must be a boolean."))
         if not hasattr(self,'_exact_data'):
