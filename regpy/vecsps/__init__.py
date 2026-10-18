@@ -34,7 +34,7 @@ from .curve import *
 
 __all__ = ["ReadOnlyVector", "Vector", "TupleVector", "VectorSpaceBase", "VectorSpace", "DirectSum",
            "MaskableVectorSpace", "MaskedVectorSpace", "TupleMask", "MaskableDirectSum",
-           "NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts", "Prod",
+           "NumPyVectorSpace", "MeasureSpaceFcts", "MaskedMeasureSpaceFcts", "GridFcts", "UniformGridFcts", "Prod",
            "GenCurve","StarCurve","Kite","Peanut","Round_rect","Apple","Three_lobes","Pinched_ellipse",
            "Smoothed_rectangle","Nonsym_shape","Circle","ParameterizedCurve","ParameterizedCurveSpc",
            "GenTrigSpc","GenTrig","StarTrigRadialFcts","StarTrigCurve"]

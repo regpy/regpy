@@ -15,9 +15,9 @@ import numpy as np
 
 from regpy.util import is_complex_dtype,is_real_dtype, Errors, complex2real,real2complex, make_repr, is_uniform, set_rng_seed
 from .base import ReadOnlyVector, Scalar, VectorSpaceBase
-from .maskable import MaskableVectorSpace
+from .maskable import MaskableVectorSpace, MaskedVectorSpace
 
-__all__ = ["NumPyVectorSpace", "MeasureSpaceFcts", "GridFcts", "UniformGridFcts","Prod"]
+__all__ = ["NumPyVectorSpace", "MeasureSpaceFcts", "MaskedMeasureSpaceFcts", "GridFcts", "UniformGridFcts", "Prod"]
 
 class NumPyVectorSpace(MaskableVectorSpace):
     r"""Arrays over real or complex storage with a selectable scalar field.
@@ -739,6 +739,16 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         self.measure=measure
         r"""The measure on the domain of the functions (`N`)."""
 
+    def get_masked_space(self, mask) -> MaskedMeasureSpaceFcts:
+        """Restrict coordinates while retaining the spatial integration weights.
+
+        A masked space stores its selected coefficients as a flat vector.
+        Accordingly, its measure contains one weight per selected coefficient;
+        for vector-valued functions the spatial weights are repeated over the
+        point-value components before applying the coordinate mask.
+        """
+        return MaskedMeasureSpaceFcts(self, mask)
+
     @property
     def ndim_domain(self) -> int:
         r"""The number of domain dimensions.
@@ -858,7 +868,7 @@ class MeasureSpaceFcts(NumPyVectorSpace):
         broadcasted = np.expand_dims(broadcasted, axis=tuple(range(len(self.shape_domain), len(self.shape))))
         if(not (np.issubdtype(broadcasted.dtype, np.floating) or np.issubdtype(broadcasted.dtype, np.integer))):
             raise ValueError(Errors._compose_message("Mismatch of dtype", f'Type {broadcasted.dtype} is invalid type for measure.'))
-        if(np.min(broadcasted)<0):
+        if(broadcasted.size and np.min(broadcasted)<0):
             raise ValueError(Errors._compose_message("Not a Measure"),'Negative values are not allowed in measure.')
         return broadcasted
     
@@ -872,6 +882,44 @@ class MeasureSpaceFcts(NumPyVectorSpace):
             return make_repr(self,self.shape,self.is_complex,f"mask = {self.mask}",f"measure= ({self.measure})",f"shape_codomain= {self.shape_codomain}")
         else: 
             return make_repr(self,self.shape,self.is_complex,f"measure= ({self.measure})",f"shape_codomain= {self.shape_codomain}")
+
+
+class MaskedMeasureSpaceFcts(MaskedVectorSpace, MeasureSpaceFcts):
+    r"""A masked coefficient space that retains a restricted point measure.
+
+    Instances are both :class:`MaskedVectorSpace` and
+    :class:`MeasureSpaceFcts`. They keep the original full space and immutable
+    bitmap, so ``restrict`` and ``extend`` have their usual meanings.
+
+    The masked representation is a flat, scalar-valued coefficient array:
+    ``shape_domain == (mask.sum(),)`` and ``shape_codomain == ()``. Even when
+    the full space is vector-valued, each selected point-value coefficient
+    retains the measure of its spatial point. This supports arbitrary masks,
+    including masks that select only some components at a spatial point.
+    """
+
+    def __init__(self, full_space: MeasureSpaceFcts, mask: np.ndarray) -> None:
+        if not isinstance(full_space, MeasureSpaceFcts):
+            raise TypeError("full_space must be a MeasureSpaceFcts.")
+        super().__init__(full_space, mask)
+        # MaskedVectorSpace sets the flat coefficient layout and preserves the
+        # full_space/mask pair. Make that layout explicit to MeasureSpaceFcts.
+        self.shape_domain = self.shape
+        self.shape_codomain = ()
+        self.dtype = np.dtype(full_space.dtype)
+        weights = np.broadcast_to(full_space.measure, full_space.shape)
+        self.measure = np.array(weights[self.mask], copy=True)
+
+    def vector_valued_space(self, shape_codomain):
+        """Reject reshaping masked coefficients without adapting the full mask.
+
+        Construct the vector-valued *full* space first and then mask it.
+        A generic coefficient mask need not select complete point-value blocks.
+        """
+        raise NotImplementedError(
+            "Construct a vector-valued full space before calling get_masked_space; "
+            "masked coefficients need not form complete point-value blocks."
+        )
 
 
 class GridFcts(MeasureSpaceFcts):

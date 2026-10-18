@@ -404,9 +404,14 @@ class MaskedVectorSpace(MaskableVectorSpace):
         if isinstance(self.mask, np.ndarray):
             self.mask.flags.writeable = False
         self.shape = (full_space.nrTrues(self.mask),)
-        super().__init__(np.ndarray, self.shape[0],
-                         complex=full_space.is_complex, type=np,
-                         as_real_space=full_space.as_real_space)
+        # Initialize the coordinate representation directly: a specialized
+        # masked space may also inherit from a richer NumPy vector space
+        # (e.g. MeasureSpaceFcts), whose constructor has different arguments.
+        VectorSpaceBase.__init__(
+            self, np.ndarray, self.shape[0],
+            complex=full_space.is_complex, type=np,
+            as_real_space=full_space.as_real_space,
+        )
         self.dtype = np.dtype(complex if self.is_complex else float)
 
     def get_full_space(self) -> VectorSpaceBase:

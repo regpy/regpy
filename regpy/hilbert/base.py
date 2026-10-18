@@ -310,14 +310,23 @@ class MaskedHilbertSpace(HilbertSpace):
 
     @memoized_property
     def gram(self) -> Operator:
-        r"""Return the Gram operator representing the Hilbert inner product.
-        
-        
-        Returns
-        -------
-        Operator
-            Constructed operator.
+        r"""Gram on masked coefficients, with a direct diagonal representation.
+
+        If the full-space Gram is coordinate-diagonal, restricting it preserves
+        diagonality.  Returning PtwMultiplication rather than P G P* is useful
+        beyond evaluating the Gram: solvers may need ``gram.inverse`` (e.g. the
+        inverse of a squared-norm penalty Hessian).  A generic composition has
+        no inverse because the projection and its adjoint are rectangular.
+
+        For non-diagonal full-space Grams, retain the original P G P* form.
         """
+        diagonal = self._coordinate_diagonal(self.space.gram)
+        if diagonal is not None:
+            mask = np.fromiter(
+                self.space.vecsp.iter_mask(self.vecsp.mask), dtype=bool,
+            )
+            retained = np.asarray(diagonal)[mask]
+            return PtwMultiplication(self.vecsp, retained)
         return self.projection * self.space.gram * self.projection.adjoint
 
     @memoized_property

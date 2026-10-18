@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from regpy.vecsps.base import VectorSpaceBase
-    from regpy.hilbert.base import HilbertSpace
 import logging
 
 from regpy.vecsps import *
@@ -71,6 +70,8 @@ def _register_functionals() -> None:
     L1.register(MeasureSpaceFcts, L1MeasureSpace)
 
     TV.register(UniformGridFcts, TVUniformGridFcts)
+    # Masked uniform grids retain their full grid and coefficient bitmap.
+    TV.register(MaskedMeasureSpaceFcts, TVUniformGridFcts)
 
     Lpp.register(MeasureSpaceFcts, LppPower)
  
