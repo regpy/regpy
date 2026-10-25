@@ -154,7 +154,15 @@ class Discrepancy(StopRule):
         discrepancy = self.norm(residual)
         rel = discrepancy / self.noiselevel
         self.history_dict["relative discrepancy"].append(rel)
-        self.log_info = 'discr./noiselevel = {:3.2f}< {:1.2f}'.format(rel, self.tau)
+        threshold = self.tau * self.noiselevel
+        # Report the physical residual and its absolute threshold, including
+        # for non-triggering iterations. The stopping inequality is strict.
+        self.log_info = (
+            f"residual = {discrepancy:.3e}; "
+            f"stop if residual < {threshold:.3e} "
+            f"(tau={self.tau:g}, noiselevel={self.noiselevel:.3e})"
+        )
+        self.log.info(self.log_info)
         if not np.isfinite(discrepancy):
             return self._set_stop_status(False, "Nonfinite discrepancy.", failure=True)
         self._min_residual = min(self._min_residual, discrepancy)
@@ -166,8 +174,6 @@ class Discrepancy(StopRule):
                 "relative to its smallest recorded value.", failure=True)
         if triggered:
             self._set_stop_status(True, "Discrepancy principle satisfied: " + self.log_info)
-        if self.is_main_rule:
-            self.log.log(logging.INFO if triggered else logging.DEBUG,self.log_info)
         return triggered
 
 class GeneralizedDiscrepancy(StopRule):
