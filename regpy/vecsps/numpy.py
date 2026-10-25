@@ -13,7 +13,7 @@ from typing import *
 
 import numpy as np
 
-from regpy.util import is_complex_dtype,is_real_dtype, Errors, complex2real,real2complex, make_repr, is_uniform, set_rng_seed
+from regpy.util import is_complex_dtype,is_real_dtype, Errors, complex2real,real2complex, make_repr, set_rng_seed
 from .base import ReadOnlyVector, Scalar, VectorSpaceBase
 from .maskable import MaskableVectorSpace, MaskedVectorSpace
 
@@ -920,6 +920,28 @@ class MaskedMeasureSpaceFcts(MaskedVectorSpace, MeasureSpaceFcts):
             "Construct a vector-valued full space before calling get_masked_space; "
             "masked coefficients need not form complete point-value blocks."
         )
+
+def is_uniform(x: ReadOnlyVector) -> bool:
+    r"""Checks whether the neighboring entries of a one-dimensional vector all have the same distance
+    
+    Parameters
+    ----------
+    x: ReadOnlyVector
+        Input vector; its coefficients are only read.
+    
+    
+    Returns
+    -------
+    bool
+        Whether the stated condition is satisfied.
+    """
+    x = np.asarray(x)
+    if x.ndim != 1:
+        raise ValueError(Errors.value_error("To determine if a vector is uniform, the vector need to be one dimensional. Given vector has dimension {x.ndim}"))
+    if(x.shape[0]==1):
+        return True
+    diffs = x[1:] - x[:-1]
+    return np.allclose(diffs, diffs[0])
 
 
 class GridFcts(MeasureSpaceFcts):

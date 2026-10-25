@@ -586,30 +586,6 @@ def is_complex_dtype(obj: object) -> bool:
         dtype = np.dtype(obj)
     return np.issubdtype(dtype, np.complexfloating)
 
-
-def is_uniform(x: ReadOnlyVector) -> bool:
-    r"""Is uniform.
-    
-    Parameters
-    ----------
-    x: ReadOnlyVector
-        Input vector; its coefficients are only read.
-    
-    
-    Returns
-    -------
-    bool
-        Whether the stated condition is satisfied.
-    """
-    x = np.asarray(x)
-    if x.ndim != 1:
-        raise ValueError(Errors.value_error("To determine if a vector is uniform the vector need to be one dimensional was given vector of dimension {x.ndim}"))
-    if(x.shape[0]==1):
-        return True
-    diffs = x[1:] - x[:-1]
-    return np.allclose(diffs, diffs[0])
-
-
 def linspace_circle(num: int, *, start: int=0, stop: int | None=None, endpoint: bool=False) -> np.ndarray:
     r"""Linspace circle.
     
