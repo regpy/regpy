@@ -162,7 +162,11 @@ class Discrepancy(StopRule):
             f"stop if residual < {threshold:.3e} "
             f"(tau={self.tau:g}, noiselevel={self.noiselevel:.3e})"
         )
-        self.log.info(self.log_info)
+        # A parent CombineRules reports the successful stopping reason.
+        # Avoid logging that same message twice for a triggering child rule.
+        # Standalone rules report their own successful check.
+        if self.is_main_rule or not (discrepancy < threshold):
+            self.log.info(self.log_info)
         if not np.isfinite(discrepancy):
             return self._set_stop_status(False, "Nonfinite discrepancy.", failure=True)
         self._min_residual = min(self._min_residual, discrepancy)
