@@ -2179,6 +2179,20 @@ class Setting:
             rule.log.setLevel(configured_level)
             pending_rules.extend(getattr(rule, 'rules', ()))
         x,y = solver.run(themethod['stoprule'])
+
+        # Some solvers (notably TikhonovCG) augment the supplied stopping
+        # rule inside run() with their own convergence criteria.  The rule
+        # registered before the call then contains only the external rules;
+        # the internal CG histories belong to the solver's executed tree.
+        # Retain that tree *without copying/resetting it*, so get_stoprule()
+        # and convergence_plots() can inspect all recorded criteria.
+        executed_stoprule = getattr(solver, 'stoprule', None)
+        if not isinstance(executed_stoprule, StopRule):
+            # Codomain-free TikhonovCG delegates to LavrentievCG.
+            delegated = getattr(solver, '_lavrentiev', None)
+            executed_stoprule = getattr(delegated, 'stoprule', None)
+        if isinstance(executed_stoprule, StopRule):
+            themethod['stoprule'] = executed_stoprule
         
         if self.is_tikhonov and not solver.is_primal:
             # Some dual solvers (notably PDHG) retain the original primal
