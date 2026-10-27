@@ -4,9 +4,17 @@ import traceback
 import numpy as np
 import pytest
 
-from regpy.vecsps import NumPyVectorSpace
-from regpy.operators import MatrixMultiplication
+from regpy.vecsps import NumPyVectorSpace, UniformGridFcts, DirectSum as VectorDirectSum
+from regpy.operators import MatrixMultiplication, Identity
+from regpy.functionals.base import as_functional
+from regpy.hilbert import as_hilbert_space
 from regpy.hilbert.base import *
+from regpy.hilbert.base import (
+    AbstractScaledSpace,
+    AbstractSum,
+    ScaledHilbertSpace,
+    DirectSum as HilbertDirectSum,
+)
 from regpy.util import set_rng_seed, Errors
 
 set_rng_seed(15873098306879350073259142812684978477)
@@ -132,3 +140,211 @@ def test_AbstractSpace():
     except Exception as e:
         tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
         raise AssertionError(Errors.failed_test(f"Trying to evaluate on the registered space failed with exception {e} from: {tb}",AbstractSpace,meth="evaluation"))
+
+
+# Masked Hilbert geometries: deterministic vectors make these tests reproducible.
+from regpy.hilbert import L2
+from regpy.vecsps import UniformGridFcts
+from regpy.vecsps.maskable import MaskableDirectSum, TupleMask
+from regpy.operators import Identity, PtwMultiplication
+from regpy.operators import DirectSum as OperatorDirectSum
+
+
+@pytest.mark.parametrize("dtype", [float, complex])
+@pytest.mark.parametrize("kind", ["identity", "scaled_identity", "pointwise"])
+def test_masked_hilbert_diagonal_inverse(dtype, kind):
+    full = NumPyVectorSpace(4, dtype=dtype)
+    diagonal = {
+        "identity": np.ones(4),
+        "scaled_identity": np.full(4, 3.0),
+        "pointwise": np.array([2., 3., 5., 7.]),
+    }[kind]
+    gram = (Identity(full) if kind == "identity" else
+            3 * Identity(full) if kind == "scaled_identity" else
+            PtwMultiplication(full, diagonal))
+    masked = full.get_masked_space(np.array([True, False, True, False]))
+    h = MaskedHilbertSpace(GramHilbertSpace(gram), masked)
+    x = np.array([1., -2.], dtype=dtype)
+    if dtype is complex:
+        x += np.array([2j, 1j])
+    expected = diagonal[[0, 2]] * x
+    np.testing.assert_allclose(h.gram(x), expected)
+    np.testing.assert_allclose(h.gram_inv(expected), x)
+    np.testing.assert_allclose(h.gram(h.gram_inv(x)), x)
+    assert h.inner(x, x) == pytest.approx(h.space.inner(masked.extend(x), masked.extend(x)))
+    assert h.gram_inv is h.gram_inv  # Cached construction.
+
+
+def test_masked_l2_registration_preserves_grid_weights():
+    full = UniformGridFcts(np.linspace(0., 1., 5))
+    mask = np.array([True, False, True, True, False])
+    masked = full.get_masked_space(mask)
+    weights = np.array([1., 2., 3., 4., 5.])
+    h = L2(masked, weights=weights)
+    assert isinstance(h, MaskedHilbertSpace)
+    x = np.array([1., 2., -1.])
+    diagonal = full.volume_elem * weights[mask]
+    np.testing.assert_allclose(h.gram(x), diagonal * x)
+    np.testing.assert_allclose(h.gram_inv(x), x / diagonal)
+    assert h.norm(x) == pytest.approx(L2(full, weights=weights).norm(masked.extend(x)))
+
+
+def test_masked_l2_registration_nested_masks():
+    full = NumPyVectorSpace(4)
+    first = full.get_masked_space(np.array([True, False, True, True]))
+    second = first.get_masked_space(np.array([False, True, True]))
+    # A restricted Gram is represented by projections, not by one of the
+    # recognized diagonal operator types. The registry deliberately rejects it.
+    with pytest.raises(ValueError, match="recognized as coordinate-diagonal"):
+        L2(second)
+    h = MaskedHilbertSpace(L2(first), second)
+    assert isinstance(h.space, MaskedHilbertSpace)
+    x = np.array([2., -3.])
+    np.testing.assert_allclose(h.gram(x), x)
+
+
+def test_masked_hilbert_direct_sum_inverse():
+    a, b = NumPyVectorSpace(3), NumPyVectorSpace(2)
+    full = MaskableDirectSum(a, b)
+    gram = OperatorDirectSum(
+        2 * Identity(a), PtwMultiplication(b, np.array([3., 5.])),
+        domain=full, codomain=full,
+    )
+    mask = TupleMask((np.array([True, False, True]), np.array([False, True])))
+    masked = full.get_masked_space(mask)
+    h = MaskedHilbertSpace(GramHilbertSpace(gram), masked)
+    x = np.array([1., -2., 4.])
+    np.testing.assert_allclose(h.gram(x), np.array([2., 2., 5.]) * x)
+    np.testing.assert_allclose(h.gram_inv(h.gram(x)), x)
+    default = L2(masked)
+    assert isinstance(default, MaskedHilbertSpace)
+    np.testing.assert_allclose(default.gram(x), x)
+    np.testing.assert_allclose(default.gram_inv(x), x)
+
+
+def test_masked_hilbert_coupled_gram():
+    full = NumPyVectorSpace(3)
+    matrix = np.array([[4., 1., 2.], [1., 3., .5], [2., .5, 5.]])
+    gram = MatrixMultiplication(matrix, domain=full, codomain=full)
+    masked = full.get_masked_space(np.array([True, False, True]))
+    h = MaskedHilbertSpace(GramHilbertSpace(gram), masked)
+    restricted = matrix[np.ix_([0, 2], [0, 2])]
+    x = np.array([1., -2.])
+    np.testing.assert_allclose(h.gram(x), restricted @ x)
+    with pytest.raises(NotImplementedError):
+        _ = h.gram_inv
+    inverse = MatrixMultiplication(
+        np.linalg.inv(restricted), domain=masked, codomain=masked
+    )
+    explicit = MaskedHilbertSpace(h.space, masked, inverse=inverse)
+    assert explicit.gram_inv is inverse
+    np.testing.assert_allclose(explicit.gram_inv(h.gram(x)), x)
+    # Restricting the full inverse would incorrectly retain eliminated couplings.
+    assert not np.allclose(
+        np.linalg.inv(restricted), np.linalg.inv(matrix)[np.ix_([0, 2], [0, 2])]
+    )
+
+
+@pytest.mark.parametrize("matrix", [
+    np.diag([2., 3., 4.]),
+    np.array([[4., 1., 0.], [1., 3., 0.], [0., 0., 2.]]),
+])
+def test_masked_l2_rejects_unrecognized_gram_types(monkeypatch, matrix):
+    import regpy.hilbert as hilbert
+
+    full = NumPyVectorSpace(3)
+    masked = full.get_masked_space(np.array([True, False, True]))
+    geometry = GramHilbertSpace(
+        MatrixMultiplication(matrix, domain=full, codomain=full)
+    )
+    # Use the registered dispatcher, but replace only its recursive full-space
+    # lookup. Even a diagonal dense matrix is intentionally not recognized.
+    registered_l2 = hilbert.L2
+
+    def full_l2(vecsp, **kwargs):
+        assert vecsp == full
+        return geometry
+
+    monkeypatch.setattr(hilbert, "L2", full_l2)
+    with pytest.raises(ValueError, match="recognized as coordinate-diagonal"):
+        registered_l2(masked)
+    explicit = MaskedHilbertSpace(geometry, masked)
+    x = np.array([1., -2.])
+    np.testing.assert_allclose(
+        explicit.gram(x), matrix[np.ix_([0, 2], [0, 2])] @ x
+    )
+
+
+def small_grid():
+    return UniformGridFcts((0., 1., 7), (0., 1., 8))
+
+
+@pytest.mark.parametrize('factor', [0.001, 0.5, 1., 2., np.float64(3.), np.int64(4)])
+def test_abstract_and_concrete_scale_norm_on_same_vector_space(factor):
+    grid = small_grid()
+    x = grid.ones()
+    x[2:5, 1:4] += 0.3
+    base = L2(grid)
+    deferred = factor * L2
+    actual = as_hilbert_space(deferred, grid)
+    direct = factor * base
+
+    assert isinstance(deferred, AbstractScaledSpace)
+    assert isinstance(actual, ScaledHilbertSpace)
+    assert isinstance(direct, ScaledHilbertSpace)
+    assert actual.vecsp == grid
+    assert direct.vecsp == grid
+    assert not isinstance(actual, HilbertDirectSum)
+    np.testing.assert_allclose(actual.norm(x), factor * base.norm(x))
+    np.testing.assert_allclose(direct.norm(x), factor * base.norm(x))
+    np.testing.assert_allclose(actual.gram(x), factor**2 * base.gram(x))
+    np.testing.assert_allclose(actual.gram_inv(x), float(factor)**-2 * base.gram_inv(x))
+    np.testing.assert_allclose(as_functional(deferred, grid)(x),
+                               factor**2 * as_functional(L2, grid)(x))
+
+
+def test_nested_scaling_is_combined():
+    grid = small_grid()
+    abstract = 2. * (3. * L2)
+    concrete = 2. * (3. * L2(grid))
+    assert abstract.factor == 6.
+    assert concrete.factor == 6.
+    assert abstract.space is L2
+    assert not isinstance(concrete.space, ScaledHilbertSpace)
+    np.testing.assert_allclose(abstract(grid).gram(grid.ones()),
+                               36. * L2(grid).gram(grid.ones()))
+
+
+def test_abstract_direct_sum_addition_is_not_changed():
+    grid1, grid2 = small_grid(), small_grid()
+    vecsp = VectorDirectSum(grid1, grid2)
+    abstract = L2 + 2. * L2
+    concrete = abstract(vecsp)
+    assert isinstance(abstract, AbstractSum)
+    assert isinstance(concrete, HilbertDirectSum)
+    assert concrete.vecsp == vecsp
+    x = vecsp.ones()
+    expected = L2(grid1).norm(x[0])**2 + 4. * L2(grid2).norm(x[1])**2
+    np.testing.assert_allclose(concrete.norm(x)**2, expected)
+
+
+def test_scalar_multiplier_is_a_norm_factor_not_a_penalty_weight():
+    grid = small_grid()
+    weight = 0.001
+    x = grid.ones()
+    # To obtain weight * ||x||_L2**2 one must scale the Hilbert norm by sqrt(weight).
+    penalty = as_functional(np.sqrt(weight) * L2, grid)
+    reference = weight * as_functional(L2, grid)
+    np.testing.assert_allclose(penalty(x), reference(x))
+    np.testing.assert_allclose(penalty.conj(grid.ones()),
+                               reference.conj(grid.ones()))
+
+
+@pytest.mark.parametrize('invalid', [0., -2., np.nan, np.inf])
+def test_invalid_norm_scales_rejected(invalid):
+    grid = small_grid()
+    with pytest.raises(ValueError):
+        _ = invalid * L2
+    with pytest.raises(ValueError):
+        _ = invalid * L2(grid)
+

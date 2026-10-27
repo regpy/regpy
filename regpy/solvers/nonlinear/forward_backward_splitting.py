@@ -1,48 +1,66 @@
-import numpy as np
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.vecsps.base import ReadOnlyVector
+from typing import Any
 
 from regpy.util import Errors
+from regpy.vecsps import Vector
 
-from ..general import RegSolver
+from ..solver import RegSolver
+from ..setting import Setting
 
+from numpy import isfinite
 __all__ = ["ForwardBackwardSplitting"]
 
 
 class ForwardBackwardSplitting(RegSolver):
     r"""Minimize :math:`\mathcal{S}(F(x))+\alpha\mathcal{R}(x)` with
     forward-backward splitting.
-
-    Setting ``without_codomain_vectors=True`` computes the data-term gradient
+    
+    Setting ``codomain_free=True`` computes the data-term gradient
     from ``F'[x]^* G_Y F(x)`` and ``F'[x]^* G_Y data`` directly in the
     operator domain. This requires optimized implementations of
     ``Operator.linearize(..., return_adjoint_eval=True)`` and
     ``Derivative.adjoint_data`` that incorporate the codomain Hilbert metric.
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         Setting of the forward problem.
-    init : setting.op.domain, optional
+    init: ReadOnlyVector | None [default: None]
         Initial guess. If omitted, it is taken from ``setting``.
-    data : setting.op.codomain or operator-specific data handle, optional
+    data: Vector | Any | None [default: None]
         Measured data. In domain-only mode, the object is passed directly to
         ``Derivative.adjoint_data`` and is not copied into solver-owned
         codomain storage.
-    tau : float, optional
+    tau: float | None [default: None]
         Positive step size. If omitted, the derivative norm at the initial
         guess is used.
-    proximal_pars : dict, optional
+    proximal_pars: dict | None [default: None]
         Keyword arguments for the penalty proximal mapping.
-    without_codomain_vectors : bool, default: False
-        Avoid solver-owned vectors in ``setting.op.codomain``.
-    update_setting : bool, default: True
+    logging_level: int | str [default: 'INFO']
+        Logging level for this object.
+    update_setting: bool [default: True]
         Update the setting with explicitly supplied initial values in the
-        ordinary mode.
+        setting.
+    
+    Notes
+    -----
+    If ``setting.codomain_free`` is True, the solver avoids vectors in
+    ``setting.op.codomain``.
     """
 
     def __init__(
-            self, setting, init=None, data=None, tau=None,
-            proximal_pars=None, logging_level="INFO",
-            update_setting=True, without_codomain_vectors=False):
+            self,
+            setting: Setting,
+            init: ReadOnlyVector | None = None,
+            data: Vector | Any | None = None,
+            tau: float | None = None,
+            proximal_pars: dict | None = None,
+            logging_level: int | str = "INFO",
+            update_setting: bool = True) -> None:
         if not setting.is_tikhonov:
             raise ValueError(Errors.value_error(
                 "ForwardBackwardSplitting requires the setting to contain a "
@@ -60,7 +78,7 @@ class ForwardBackwardSplitting(RegSolver):
         self.x = domain.empty()
         domain.copyto(self.x, initial)
 
-        self.without_codomain_vectors = bool(without_codomain_vectors)
+        self.codomain_free = setting.codomain_free
         self.proximal_pars = (
             {} if proximal_pars is None else dict(proximal_pars)
         )
@@ -68,8 +86,8 @@ class ForwardBackwardSplitting(RegSolver):
         self.log.setLevel(logging_level)
         self._gradient = domain.empty()
 
-        if self.without_codomain_vectors:
-            self.data = data if data is not None else setting.data
+        if self.codomain_free:
+            self.data = setting.get_or_update_data(data, update_setting)
             if self.data is None:
                 raise ValueError(Errors.value_error(
                     "ForwardBackwardSplitting without codomain vectors "
@@ -83,13 +101,9 @@ class ForwardBackwardSplitting(RegSolver):
                 return_adjoint_eval=True
             )
 
-            # Keep the usual ``y`` attribute without allocating a codomain
-            # vector. It is only a compatibility placeholder and must not be
-            # interpreted as the current forward image.
-            zero = np.zeros((), dtype=getattr(codomain, "dtype", float))
-            self.y = np.broadcast_to(zero, codomain.shape)
+            self.y = None
         else:
-            setting.get_or_update_data(data, update_setting)
+            self.data = setting.get_or_update_data(data, update_setting)
             self.y = codomain.empty()
             self._data_gradient = codomain.empty()
             _, self.deriv = self.op.linearize(self.x, out=self.y)
@@ -97,8 +111,8 @@ class ForwardBackwardSplitting(RegSolver):
         self.tau = (
             1 / self.deriv.norm(
                 setting.h_domain,
-                setting.h_codomain,
-                without_codomain_vectors=self.without_codomain_vectors
+                None if self.codomain_free else setting.h_codomain,
+                codomain_free=self.codomain_free
             )**2
             if tau is None else tau
         )
@@ -107,8 +121,8 @@ class ForwardBackwardSplitting(RegSolver):
                 "tau, the step size, needs to be positive!"
             ))
 
-    def _next(self):
-        if self.without_codomain_vectors:
+    def _next(self) -> None:
+        if self.codomain_free:
             # ``_adjoint_eval`` contains F'[x]^* G_Y F(x) from the most
             # recent linearization. Subtract F'[x]^* G_Y data in place.
             self.deriv.adjoint_data(
@@ -136,7 +150,7 @@ class ForwardBackwardSplitting(RegSolver):
             **self.proximal_pars
         )
 
-        if self.without_codomain_vectors:
+        if self.codomain_free:
             _, self.deriv = self.op.linearize(
                 self.x, out=self._adjoint_eval,
                 return_adjoint_eval=True
@@ -145,3 +159,39 @@ class ForwardBackwardSplitting(RegSolver):
             _, self.deriv = self.op.linearize(
                 self.x, out=self.y
             )
+
+    @staticmethod
+    def check_applicability(setting: Setting) -> tuple[dict, dict]:
+        r"""Check whether ``setting`` provides the operations ForwardBackwardSplitting needs.
+                
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
+
+        out = {"info": "",  "warning": ""}
+        par = {}
+
+        if not setting.is_tikhonov:
+            out["info"] += "Setting has no regularization parameter. "
+        if "proximal" not in setting.penalty.methods:
+            out["info"] += "Penalty has no prox method. "
+        if not setting.codomain_free:
+            if "subgradient" not in setting.data_fid.methods:
+                out["info"] += "Missing subgradient of data fidelity functional. "
+            if not isfinite(setting.data_fid.Lipschitz):
+                out["warning"] += (
+                    "Lipschitz constant of data fidelity functional is not "
+                    "finite; backtracking will be used for step-size "
+                    "selection."
+                )
+
+        out["applicable"] = out["info"] == ""
+        return out, par

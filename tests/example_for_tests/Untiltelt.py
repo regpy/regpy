@@ -1,1 +1,0 @@
-from potential import test_potential

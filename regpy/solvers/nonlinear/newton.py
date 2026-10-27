@@ -1,68 +1,100 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.functionals.base import Functional
+from collections.abc import Callable, Iterable
+from numbers import Integral
 from math import sqrt
-from copy import deepcopy,copy
+from copy import copy, deepcopy
 
-from regpy.stoprules import CountIterations
 from regpy.util import Errors
-from regpy.operators import Operator
+from regpy.operators import Operator, ObsDataT
+from regpy.functionals import Functional
+from regpy.vecsps import Vector, ReadOnlyVector
 
-from ..general import RegSolver, Setting
-from ..linear import SemismoothNewton_bilateral
+from ..sequences import Naturals
+from regpy.stoprules import StopRule, resolve_stoprule_factory
+from ..solver import RegSolver
+from ..setting import Setting, check_Hilbert_applicability
 
-__all__ = ["NewtonCG","NewtonCGFrozen","NewtonSemiSmoothFrozen","IterativelyRegularizedNewton"]
+__all__ = ["NewtonCG", "IterativelyRegularizedNewton", "NonlinBregman"]
+
+class _OuterEvaluationBudget(StopRule):
+    """Read the outer budget without advancing its stopping rule."""
+
+    def __init__(self, limits):
+        super().__init__(logging_level='WARNING')
+        self.limits = tuple(limits)
+
+    def __deepcopy__(self, memo):
+        # Limits refer to the live outer run, never to a copied solver.
+        result = type(self)(self.limits)
+        memo[id(self)] = result
+        return result
+
+    def _stop(self):
+        if any(rule.remaining_op_evals() == 0 for rule in self.limits):
+            return self._set_stop_status(False, 'Outer operator evaluation cap reached.')
+        return False
+
 
 class NewtonCG(RegSolver):
     r"""The Newton-CG method. Solves the potentially nonlinear, ill-posed equation:
     
     .. math::
         T(x) = y,
-
+    
     where :math:`T` is a Fréchet-differentiable operator. The Newton equations are solved by the
     conjugate gradient method applied to the normal equation (CGNE) using the regularizing
     properties of CGNE with early stopping (see Hanke 1997).
-
+    
     If simplified_op is specified, it will be used to generate an approximation of the derivative 
     of the forward operator setting.op, which may be cheaper to evaluate. E.g., it may be the 
     derivative at the initial guess, which would yield a frozen Newton method. 
-
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
+    setting: Setting
         The regularization setting includes the operator and penalty and data fidelity functionals.
-    data : array-like
-        The rhs y of the equation to be solved. Must be in setting.op.codomain.
-    init : array-like, optional
-        Initial guess to exact solution. (Default: setting.op.domain.zeros())
-    cgmaxit : number, optional
-        Maximal number of inner CG iterations. (Default: 50)
-    rho : number, optional
-        A fix number related to the termination (0<rho<1). (Default: 0.8)
-    simplified_op : regpy.operators.Operator, optional
-        Simplified operator to be used for the derivative. (Default: None)
-    logging_level:str
-        logging level
+    data: ReadOnlyVector | None [default: None]
+        Right-hand side in ``setting.op.codomain``. In the default case,
+        ``setting.data`` is used.
+    init: ReadOnlyVector | None [default: None]
+        Initial guess. In the default case, it is taken from the setting.
+    cgmaxit: int [default: 50]
+        Maximum number of inner CG iterations.
+    rho: float [default: 0.8]
+        Inner discrepancy factor; must lie in ``(0, 1)``.
+    simplified_op: Operator | None [default: None]
+        Optional operator used to approximate the derivative.
+    logging_level: int | str [default: 'INFO']
+        Logging level.
     """
 
     def __init__(self, 
                  setting:Setting, 
-                 data=None, 
-                 init=None, 
+                 data:ReadOnlyVector | None=None,
+                 init:ReadOnlyVector | None=None,
                  cgmaxit:int=50, rho:float=0.8, 
-                 simplified_op:Operator = None,
-                 logging_level:str = 'INFO'):
+                 simplified_op:Operator | None = None,
+                 logging_level:int | str = 'INFO') -> None:
+        out, par = self.check_applicability(
+            setting, user_data=data, user_init=init
+        )
+        if not out['applicable']:
+            raise ValueError('NewtonCG not applicable to this setting. ' + out['info'])
         super().__init__(setting)
-        if init is not None and init not in self.op.domain:
-            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
-        if data is None:
-            if(setting.data is not None):
-                data=setting.data
-            else:
-                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
-        if data not in self.op.codomain:
-            raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
-        self.data = data
+        initial = par['init']
+        self.data = par['data']
+        if self.data is None:
+            raise ValueError(Errors.value_error(
+                "Data have to be included in the setting or given directly."
+            ))
         """The measured data."""
 
-        self.x = init.copy() if init is not None else self.op.domain.zeros()
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, initial)
         if simplified_op:
             self.simplified_op = simplified_op
             """Simplified operator for derivative.
@@ -77,8 +109,47 @@ class NewtonCG(RegSolver):
         """Maximum number of iterations for inner CG solver."""
         self._k = 0
         self.log.setLevel(logging_level)
+
+    @staticmethod
+    def check_applicability(
+        setting: Setting,
+        op_norm: float | None = None,
+        user_data: ReadOnlyVector | None = None,
+        user_init: ReadOnlyVector | None = None,
+    ) -> tuple[dict, dict]:
+        r"""Check whether Newton-CG can be used for ``setting``.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        user_data: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        user_init: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
+        out, par = check_Hilbert_applicability(
+            setting,
+            op_norm=op_norm,
+            user_data=user_data,
+            user_init=user_init,
+        )
+        if setting.codomain_free:
+            out['info'] += (
+                'NewtonCG has no implementation without codomain vectors. '
+            )
+        out['applicable'] = out['info'] == ''
+        return out, par
     
-    def _next(self):
+    def _next(self) -> None:
         self._k = 0
         self._s = self.data - self.y  
         # aux plays the role of s here to avoid storage for another vector in codomain
@@ -113,272 +184,452 @@ class NewtonCG(RegSolver):
         else:
             self.y , self.deriv = self.op.linearize(self.x)
 
-    def nr_inner_its(self):
+    def nr_inner_its(self) -> int:
+        r"""Nr inner its.
+        
+        
+        Returns
+        -------
+        int
+            Computed scalar value.
+        """
         return self._k
 
-class NewtonCGFrozen(RegSolver):
-    r"""The frozen Newton-CG method. Like Newton-CG but freezes the derivative for some time to avoid 
-    recomputing it. 
-
-    Parameters
-    ----------
-    setting : regpy.solvers.Setting
-        The regularization setting includes the operator and penalty and data fidelity functionals.
-    data : array-like
-        The rhs y of the equation to be solved. Must be in setting.op.codomain.
-    init : array-like, optional
-        Initial guess to exact solution. (Default: setting.op.domain.zeros())
-    cgmaxit : int, optional
-        Maximal number of inner CG iterations. (Default: 50)
-    rho : float, optional
-        A fix number related to the termination (0<rho<1). (Default: 0.8)
-    """
-    def __init__(self, setting:Setting, 
-                 data = None, init = None, 
-                 cgmaxit:int=50, rho:float=0.8):
-        super().__init__(setting)
-        if init is not None and init not in self.op.domain:
-            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
-        if data is None:
-            data = setting.data
-        if data not in self.op.codomain:
-            raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
-        self.data = data
-        
-        self.x = init.copy() if init is not None else self.op.domain.zeros()
-        _, self.deriv = self.op.linearize(self.x)
-        self._n = 1
-        self._op_copy = deepcopy(self.op)
-        self._outer_update()
-        self.rho = rho
-        self.cgmaxit = cgmaxit
-
-    def _outer_update(self):
-        if int(self._n / 10) * 10 == self._n:
-            _, self.deriv = self.op.linearize(self.x)
-        self._x_k = self.op.domain.zeros()
-        self.y = self._op_copy(self.x)
-        self._residual = self.data - self.y
-        self._s = self._residual - self.deriv(self._x_k)
-        self._s2 = self.h_codomain.gram(self._s)
-        self._rtilde = self.deriv.adjoint(self._s2)
-        self._r = self.h_domain.gram_inv(self._rtilde)
-        self._d = self._r
-        self._inner_prod = self.op.domain.vdot(self._r, self._rtilde).real
-        self._norms0 = sqrt(self.op.codomain.vdot(self._s2, self._s).real)
-        self._k = 1
-        self._n += 1
-
-    def _inner_update(self):
-        _, self.deriv = self.op.linearize(self.x)
-        self._q = self.deriv(self._d)
-        self._q2 = self.h_codomain.gram(self._q)
-        self._alpha = self._inner_prod / self.op.codomain.vdot(self._q, self._q2).real
-        self._s += -self._alpha * self._q
-        self._s2 += -self._alpha * self._q2
-        self._rtilde = self.deriv.adjoint(self._s2)
-        self._r = self.h_domain.gram_inv(self._rtilde)
-        self._beta = self.op.domain.vdot(self._r, self._rtilde).real / self._inner_prod
-
-    def _next(self):
-        while (
-            sqrt(self.op.codomain.vdot(self._s2, self._s).real) > self.rho * self._norms0
-            and self._k <= self.cgmaxit
-        ):
-            self._inner_update()
-            self._x_k += self._alpha * self._d
-            self._d = self._r + self._beta * self._d
-            self._k += 1
-        self.x += self._x_k
-        self._outer_update()
-
-
-class NewtonSemiSmoothFrozen(RegSolver):
-    r"""The frozen Newton-CG method. Like Newton-CG adds constraints :math:`\psi_+` and :math:`\psi_-` and efficiently
-    only updates the parts needed to be updated. 
-
-    Parameters
-    ----------
-    setting : regpy.solvers.Setting
-        The regularization setting includes the operator and penalty and data fidelity functionals.
-    data : array-like
-        The data from which to recover. Initializes the rhs y of the equation to be solved. Must 
-        be in setting.op.codomain.
-    alphas: iterable object or tuple
-        Either an iterable giving the grid of alphas or a tuple (alpha0,q)
-        In the latter case the sequence :math:`(alpha0*q^n)_{n=0,1,2,...}` is generated.
-    psi_minus : scalar
-        lower constraint of the minimization. Must be larger then `psi_plus`
-    psi_plus : scalar
-        upper constraint of the minimization. Must be smaller than `psi_minus`
-    init : array-like, optional
-        Initial guess to exact solution. (Default: setting.op.domain.zeros())
-    xref : array-like, optional
-        Reference value in the Tikhonov functional. (Default: setting.op.domain.zeros())
-    inner_NSS_iter_max : int, optional
-        The number of maximal iterations when solving the linearized problem. (Default: 50)
-    cg_pars : dictionary, optional
-        Parameters of the CG method for minimizing the Tikhonov functional in the inner 
-        Semi-Smooth Newton. (Default: None)
-    """
-    def __init__(self, setting, data, alphas, psi_minus, psi_plus, init = None, xref =None, inner_NSS_iter_max = 50, cg_pars = None):
-        from regpy.solvers.nonlinear.gen_tikhonov import GeometricSequence
-        super().__init__(setting)
-        if init is not None and init not in self.op.domain:
-            raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
-        if data not in self.op.codomain:
-            raise ValueError(Errors.not_in_vecsp(data,self.op.codomain,vec_name="data",space_name="codomain"))
-        self.rhs = data
-        """The rhs y of the equation to be solved. Initialized by data
-        """
-        self.x = init if init is not None else setting.op.domain.zeros()
-        """The iterate of x.
-        """
-        self.xref = xref if xref is not None else setting.op.domain.zeros()
-        """Reference value in the Tikhonov functional.
-        """
-        if isinstance(alphas,tuple) and len(alphas)==2:
-            self._alphas = GeometricSequence(alphas[0],alphas[1])
-        else:
-            self._alphas = iter(alphas)
-        self.alpha = next(self._alphas)
-        r"""Initial regularization parameter :math:`\alpha`.
-        """
-        self.alpha_old = self.alpha
-        self.psi_minus = psi_minus
-        """lower constraint of the minimization.
-        """
-        self.psi_plus = psi_plus
-        """upper constraint of the minimization.
-        """
-        self.cg_pars = cg_pars
-        """Parameters passed to inner Semi Smooth Newton for the used Tikhonov Solver. 
-        """
-        self.inner_NSS_iter_max = inner_NSS_iter_max
-        self.y, deriv = self.op.linearize(self.x)
-        self.deriv = deepcopy(deriv)
-        
-        self.active_plus = (self.alpha*(self.x-self.psi_plus ))>=0 
-        self.active_minus = (self.alpha*(self.x-self.psi_minus))>=0 
-
-        self.lam_plus = setting.op.domain.zeros()
-        self.lam_minus = setting.op.domain.zeros()
-        
-
-    def _next(self):
-        self.lin_NSS = SemismoothNewton_bilateral(
-            Setting(
-                self.deriv,
-                self.penalty,
-                self.data_fid
-                ),
-            self.rhs-self.y+self.deriv(self.x),
-            self.alpha,
-            x0 = self.x,
-            psi_minus=self.psi_minus,
-            psi_plus=self.psi_plus,
-            logging_level= "WARNING",
-            cg_logging_level="WARNING",
-            cg_pars = self.cg_pars
-        )
-        self.lin_NSS.lam_minus = (self.alpha/self.alpha_old)*self.lam_minus
-        self.lin_NSS.lam_plus = (self.alpha/self.alpha_old)*self.lam_plus
-        self.lin_NSS.active_minus = self.active_minus
-        self.lin_NSS.active_plus = self.active_plus
-        self.x, _ = self.lin_NSS.run(
-            CountIterations(max_iterations=self.inner_NSS_iter_max)
-        )
-        self.y , deriv = self.op.linearize(self.x)
-        self.deriv = deepcopy(deriv)
-
-        self.lam_minus = self.lin_NSS.lam_minus
-        self.lam_plus = self.lin_NSS.lam_plus
-        self.active_minus = self.lin_NSS.active_minus         
-        self.active_plus = self.lin_NSS.active_plus 
-        
-        try:
-            self.alpha_old = self.alpha
-            self.alpha = next(self._alphas)
-        except StopIteration:
-            return self.converge()
-
-
-
 class IterativelyRegularizedNewton(RegSolver):
-    r"""General method for iterated linearization of operator and subsequent solution of linearized problem. In each iteration, minimizes
-
+    r"""General method for iterated linearization of a forward operator :math:`F`
+    and subsequent solution of regularized linearized operator equations. 
+    In each iteration, an update :math:`h =x_{n+1}-x_n` is computed by minimizing
+    
     .. math::
-        S_{data}(T'[x_n]h+T(x_n)) + regpar_{n} \cdot R(h+x_n)
-
-    where :math:`T` is a Fréchet-differentiable operator, using the given `inner_solver`.
-    :math:`regpar_n` is a decreasing geometric sequence of regularization parameters.
-
+        S_{data}(F'[x_n]h+F(x_n)) + regpar_{n} \cdot R(h+x_n)
+    
+    using a given `inner_solver`.
+    :math:`regpar_n` is a decreasing sequence of regularization parameters.
+    
     Parameters
     ----------
-    setting : regpy.solvers.Setting
-        The setting of the forward problem.
-    inner_solver : Solver class
-        Solver class used for the solution of the linearized problem.
-    inner_solver_stoprule: stoprule or callable
-        Either a callable that can be applied to a setting to yield a stoprule or a Stoprule which is used for the inner solver.
-    inner_solver_pars : dict, optional default: dict()
-        Parameter dictionary for the inner solver. Should contain all necessary parameters which are not included in the linearized setting.
-    data : array-like, optional default: None
-        The measured data. If None it is taken from setting.
-    regpar : float, optional default: None
-        The initial regularization parameter. Must be positive. If None it is taken from setting.
-    regpar_step : float, optional
-        The factor by which to reduce the `regpar` in each iteration. Default: :math:`2/3`.
-    init : array-like, optional default: None
-        The initial guess. If None it is set to the zero array.
-    """
-    def __init__(
-               self, setting, 
-               inner_solver,
-               inner_solver_stoprule,
-               inner_solver_pars=dict(),
-               data=None, regpar=None,
-                regpar_step=2 / 3, 
-                 init=None, 
-         ):
-        super().__init__(setting)
-        if data is None:
-            if(setting.data is not None):
-                data=setting.data
-            else:
-                raise ValueError(Errors.value_error("Data has to be included in setting or given directly."))
-        else:
-            setting.data=data#sets data in setting if there is no data
-        if(regpar is None):
-            if(not setting.is_tikhonov):
-                raise ValueError(Errors.value_error("Regularization parameter has to be included in setting or given directly."))
-            regpar=setting.regpar
-        self.data=data
-        """The measured data."""
-        if init is None:
-            init = self.op.domain.zeros()
-        self.init = init
-        """The initial guess."""
-        self.x = copy(self.init)
-        self.y, self.deriv = self.op.linearize(self.x)
-        self.regpar = regpar
-        """The regularization parameter."""
-        self.regpar_step = regpar_step
-        """The `regpar` factor."""
-        self.inner_solver=inner_solver
-        self.inner_solver_pars=inner_solver_pars
-        self.inner_solver_stoprule=inner_solver_stoprule
+    setting : Setting
+        Non-Tikhonov setting. Codomain-free settings are supported for the
+        quadratic fidelity encoded by the operator's normal/adjoint-data
+        interface; the selected inner solver must support that interface.
+    inner_solver: str | dict | None [default: None]
+        Convex solver label, method dictionary, or None, as in Bregman.
+        None uses ``setting._default_inner_solver``. A label retains the
+        constructor and stopping parameters in ``setting._convex_solvers``.
+        Dictionaries contain 'class' and may specify 'primal', 'full',
+        'method_params', and 'stoprule_params'. Each step creates a fresh
+        solver and stopping history. Dual solvers return a primal correction
+        through Setting.run().
+    data : ReadOnlyVector or ObsDataT or None, optional
+        Optional replacement data. Otherwise retain the setting's fidelity,
+        including data already incorporated into it. For codomain-free
+        settings, observations may be any object accepted by adjoint_data.
+    regpar: float [default: 1.0]
+        First regularization parameter;
+    regpar_step: float [default: 2 / 3]
 
-    def _next(self):
-        # Linearized setting
-        inner_setting=Setting(self.deriv,self.setting.penalty,self.data_fid.shift(data_shift=-self.y),regpar=self.regpar,penalty_shift=-self.x)        
-        if(callable(self.inner_solver_stoprule)):
-            inner_stoprule=self.inner_solver_stoprule(inner_setting)
+        Geometric factor, default 2/3.
+    init: ReadOnlyVector | None [default: None]
+        Initial guess;init. Copied into solver storage.
+    regpars: Iterable[float] | None [default: None]
+        Explicit sequence of positive parameters, overriding regpar and
+        regpar_step. Otherwise use regpar * regpar_step**Naturals().
+        Empty sequences raise ValueError; finite sequences stop after their
+        last inner solve. Parameter validation and advancement match IRGNM.
+    inner_solver_configurator: Callable[[Setting, tuple[Vector, Vector], dict], None] | None [default: None]
+        Called as ``configurator(inner_setting, (x, y), method_dict)``
+        immediately before the inner run. x and y are the current outer
+        iterate and its nonlinear operator image; treat them as read-only.
+        In the codomain-free case, y is None.
+        The dictionary is the actual entry in inner_setting._methods.
+        Modify its method_params and/or stoprule_params in place; the return
+        value is ignored. The inner unknown is h, not x, so initial guesses
+        supplied through method_params must be in correction coordinates.
+        Runs after applying the inner_solver configuration and may override
+        it for the current step. None leaves that configuration unchanged.
+    logging_level: int | str [default: 'INFO']
+        Outer logging level, including an INFO summary of each inner run when
+        CountIterations is present. Inner logging defaults to WARNING. Override
+        it through inner_solver's method_params or stoprule_params, or through
+        inner_solver_configurator.
+
+    derivative_update_schedule: Iterable[int] | None [default: Naturals()]
+        Strictly increasing nonnegative iterate indices at which to compute
+        the derivative. Must start with 0; [0] gives frozen Newton. A finite
+        schedule retains its final derivative after exhaustion. Entries are
+        validated lazily, with one-entry lookahead. None creates a fresh
+        Naturals() for each solver, avoiding a shared single-pass default.
+        The forward value and residual model are refreshed at every iterate.
+        Codomain-free frozen steps require ordinary forward evaluation to
+        form the frozen derivative's adjoint applied to the current value.
+        During frozen steps, deriv is the derivative at derivative_iteration,
+        not necessarily at the current iterate; derivative-based external
+        optimality monitors must take this into account.
+    """
+
+    def __init__(
+        self, setting: Setting, inner_solver: str | dict | None = None,
+        data: ReadOnlyVector | ObsDataT | None = None, regpar: float = 1.,
+        regpar_step: float = 2 / 3, init: ReadOnlyVector | None = None,
+        regpars: Iterable[float] | None = None,
+        inner_solver_configurator: Callable[
+            [Setting, tuple[ReadOnlyVector, ReadOnlyVector | None], dict], None
+        ] | None = None,
+        logging_level: int | str = 'INFO',
+        *,
+        derivative_update_schedule: Iterable[int] | None = None,
+    ) -> None:
+        from .irgnm import (
+            _regularization_parameter_iterator, _next_regularization_parameter,
+        )
+
+        from ..linear.bregman import Bregman
+
+        out, _ = IterativelyRegularizedNewton.check_applicability(setting)
+        if not out['applicable']:
+            raise ValueError('IterativelyRegularizedNewton not applicable. ' + out['info'])
+        self._inner_template = Bregman._method_template(setting, inner_solver)
+        if setting.codomain_free and not self._inner_template['primal']:
+            raise ValueError('Codomain-free Newton requires a primal inner solver.')
+        if issubclass(self._inner_template['class'], IterativelyRegularizedNewton):
+            raise ValueError('A Newton outer solver is not an inner convex minimizer.')
+        if inner_solver_configurator is not None and not callable(inner_solver_configurator):
+            raise TypeError('inner_solver_configurator must be callable or None.')
+        initial = setting.init if init is None else init
+        if initial not in setting.op.domain:
+            raise ValueError('init must belong to the operator domain.')
+        if data is not None and not setting.codomain_free and data not in setting.op.codomain:
+            raise ValueError('data must belong to the operator codomain.')
+        super().__init__(setting)
+        self.log.setLevel(logging_level)
+        self.init = self.op.domain.empty()
+        self.op.domain.copyto(self.init, initial)
+        self.x = self.op.domain.empty()
+        self.op.domain.copyto(self.x, self.init)
+        self.data = setting.data if data is None else data
+        # Keep constructor-supplied data local to this solver. The helper
+        # below must see the effective fidelity, not the original data.
+        self._linearization_setting = setting
+        if data is not None:
+            self._linearization_setting = copy(setting)
+            if not setting.codomain_free:
+                self._linearization_setting._data_fid = deepcopy(setting.data_fid)
+            self._linearization_setting.change_data(data)
+            if not setting.codomain_free:
+                self.data_fid = self._linearization_setting.data_fid
+        if setting.codomain_free and self.data is None:
+            raise ValueError('Codomain-free Newton iteration requires data.')
+        self._regpar_iterator = _regularization_parameter_iterator(
+            regpars, regpar, regpar_step
+        )
+        try:
+            self.regpar = _next_regularization_parameter(self._regpar_iterator)
+        except StopIteration as error:
+            raise ValueError('regpars must provide at least one regularization parameter.') from error
+        self.regpar_step = regpar_step
+        self.inner_method_name = '_newton_inner'
+        self.inner_setting: Setting | None = None
+        self.inner_solver_configurator = inner_solver_configurator
+        self._previous_regpar: float | None = None
+        self.derivative_update_schedule = iter(
+            Naturals() if derivative_update_schedule is None
+            else derivative_update_schedule
+        )
+        self._last_derivative_schedule_index = -1
+        self._derivative_update_index = self._next_derivative_update()
+        if self._derivative_update_index != 0:
+            raise ValueError("derivative_update_schedule must start with 0.")
+        self._linearize_current()
+
+    def _next_derivative_update(self) -> int | None:
+        """Consume one validated schedule entry; exhaustion freezes the derivative."""
+        try:
+            index = next(self.derivative_update_schedule)
+        except StopIteration:
+            return None
+        if isinstance(index, bool) or not isinstance(index, Integral):
+            raise TypeError("derivative_update_schedule entries must be integers.")
+        if index < 0 or index <= self._last_derivative_schedule_index:
+            raise ValueError("derivative_update_schedule must be nonnegative and strictly increasing.")
+        self._last_derivative_schedule_index = int(index)
+        return int(index)
+
+    def _linearize_current(self) -> None:
+        """Refresh F(x) every step, and the derivative only on its schedule."""
+        step = self.iteration_step_nr
+        if self._derivative_update_index == step:
+            if self.setting.codomain_free:
+                self._adjoint_eval, self.deriv = self.op.linearize(
+                    self.x, return_adjoint_eval=True
+                )
+                self.y = None
+            else:
+                self.y, self.deriv = self.op.linearize(self.x)
+            self.derivative_iteration = step
+            self._derivative_update_index = self._next_derivative_update()
+            if self._derivative_update_index != step + 1:
+                # Ordinary evaluation revokes a nonlinear operator's derivative
+                # proxy. Snapshot only when it must survive skipped updates.
+                self.deriv = self.deriv.copy_with_shared_eval_counts(self.op)
+        elif self.setting.codomain_free:
+            # F'(x)^*F(x) from a fresh linearization would use the wrong
+            # Jacobian. Form the mixed product with the frozen derivative.
+            value = self.op(self.x)
+            self._adjoint_eval = self.deriv.adjoint(value)
+            self._adjoint_eval *= self.deriv.gram_factor
+            self.y = None
         else:
-            inner_stoprule=copy(self.inner_solver_stoprule)
-        # Running inner solver
-        step, _ = self.inner_solver(inner_setting,**self.inner_solver_pars).run(stoprule=inner_stoprule)
+            self.y = self.op(self.x)
+
+    def _inner_penalty(self) -> Functional | None:
+        """None lets Setting construct the shifted original penalty."""
+        return None
+
+    def _next(self) -> None:
+        from .irgnm import _next_regularization_parameter
+
+        inner_setting = self._linearization_setting.get_linearized_tikh_setting(
+            self.x, self.regpar, y0=self.y, deriv=self.deriv,
+            inner_penalty=self._inner_penalty(),
+            adjoint_y0=self._adjoint_eval if self.setting.codomain_free else None,
+        )
+        self.inner_setting = inner_setting
+        template = self._inner_template
+        name = self.inner_method_name
+        inner_setting.add_method(name, template['class'], primal=template['primal'],
+                                 full_method_name=template['full'])
+        entry = inner_setting._methods[name]
+        entry['method_params'].update(template['method_params'])
+        entry['stoprule_params'].update(deepcopy(template['stoprule_params']))
+        if self.inner_solver_configurator is not None:
+            self.inner_solver_configurator(
+                inner_setting, (self.op.domain.read_only(self.x),
+                                None if self.y is None else
+                                self.op.codomain.read_only(self.y)), entry,
+            )
+        entry['stoprule_params'].setdefault('logging_level', 'WARNING')
+        level = entry['method_params'].get('logging_level', 'WARNING')
+        limits = getattr(self, '_operator_evaluation_limits', ())
+        run_options = {}
+        if limits:
+            params = deepcopy(entry['stoprule_params'])
+            factory = resolve_stoprule_factory(params.pop('factory'))
+            params.setdefault('logging_level', 'WARNING')
+            params['solver_class'] = template['class']
+            # Keep configured inner criteria/caps and add a live outer budget.
+            # This covers constructor work and every subsequent inner step.
+            run_options['stoprule'] = (
+                factory(inner_setting, params) + _OuterEvaluationBudget(limits)
+            )
+        step, _ = inner_setting.run(name, logging_level=level, **run_options)
+        from ..linear.bregman import _log_inner_summary
+        _log_inner_summary(self.log, template['class'].__name__,
+                           inner_setting.get_stoprule(name))
+        if step not in self.op.domain:
+            raise RuntimeError('The inner solver did not return a domain correction.')
         self.x += step
-        self.y , self.deriv = self.op.linearize(self.x)
-        self.regpar *= self.regpar_step
-        self.log.info(f"its.{self.iteration_step_nr}: alpha={self.regpar}")
+        self._linearize_current()
+        self.log.info('its.%s: alpha=%s', self.iteration_step_nr, self.regpar)
+        self._previous_regpar = self.regpar
+        try:
+            self.regpar = _next_regularization_parameter(self._regpar_iterator)
+        except StopIteration:
+            self.converge()
+
+    @staticmethod
+    def check_applicability(
+        setting: Setting, op_norm: float | None = None,
+    ) -> tuple[dict, dict]:
+        r"""Check outer requirements; the inner setting checks its own method.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
+        out = {'info': '', 'warning': ''}
+        if setting.is_tikhonov:
+            out['info'] += 'Setting must not have a regularization parameter. '
+        out['applicable'] = out['info'] == ''
+        return out, {}
+
+
+class NonlinBregman(IterativelyRegularizedNewton):
+    r"""Newton steps regularized by a Bregman divergence of the original R.
+    
+    At x_n, solve the convex problem in the correction h = x_{n+1} - x_n:
+    
+    .. math::
+        \min_h S_{data}(F'[x_n]h + F(x_n))
+        + \alpha_n \Delta_R^{q_n}(h+x_n, x_n).
+    
+    The first divergence uses R.subgradient(x_0). In analogy to Bregman,
+    subsequent steps form the candidate
+    
+    .. math::
+        \widetilde q_n = -F'[x_n]^* S_{data}'(F(x_n))/\alpha_{n-1},
+    
+    and use ``R.dist_subdiff`` to project it onto the subdifferential of R
+    at x_n before constructing ``R.bregman_func(x_n, q_n)``. The derivative
+    and fidelity argument are evaluated at the current nonlinear iterate;
+    the denominator is the parameter of the completed step, not the next
+    parameter. If the fidelity has no subgradient implementation, use
+    R.subgradient(x_n) instead.
+    
+    Parameters are those of IterativelyRegularizedNewton, with the additional
+    keyword-only ``select_subgradient``. This optional callable receives
+    ``(setting, x)`` with the original setting and a read-only iterate and
+    returns a penalty subgradient covector, as in Bregman. It overrides the
+    default selection, including at initialization. Selection is performed
+    once at initialization and once before each later solve, never after the
+    last solve. Each divergence is built from the original penalty.
+
+    The setting must have no regularization parameter and have convex
+    penalty and fidelity. The forward operator may be nonlinear. Quadratic
+    codomain-free fidelity is supported via the normal/adjoint-data interface.
+    There, the subgradient candidate is computed as
+    ``(deriv.adjoint_data(data) - adjoint_eval) / previous_regpar`` and
+    ``y`` remains None.
+    Inner guesses are in correction coordinates (or the selected dual
+    solver's coordinates). The default primal correction guess is zero.
+    ``x`` and ``y`` are the current nonlinear iterate and F(x), respectively.
+    
+    Parameters
+    ----------
+    setting: Setting
+        Problem setting containing the operator, penalty, and data fidelity.
+    inner_solver: str | dict | None [default: None]
+        Inner solver.
+    data: ReadOnlyVector | None [default: None]
+        Observed data.
+    regpar: float [default: 1.0]
+        Regularization parameter.
+    regpar_step: float [default: 2 / 3]
+        Regpar step.
+    init: ReadOnlyVector | None [default: None]
+        Initial iterate in the operator domain.
+    regpars: Iterable[float] | None [default: None]
+        Regpars.
+    inner_solver_configurator: Callable[[Setting, tuple[Vector, Vector], dict], None] | None [default: None]
+        Writable vector used by this operation.
+    logging_level: int | str [default: 'INFO']
+        Outer logging level. Inner logging defaults to WARNING, with explicit
+        configuration taking precedence. CountIterations enables an INFO run summary.
+    select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None [default: None]
+        Input vector; its coefficients are only read.
+
+    derivative_update_schedule: Iterable[int] | None [default: Naturals()]
+        Strictly increasing nonnegative iterate indices at which to compute
+        the derivative. Must start with 0; [0] gives frozen Newton. A finite
+        schedule retains its final derivative after exhaustion. Entries are
+        validated lazily, with one-entry lookahead. None creates a fresh
+        Naturals() for each solver, avoiding a shared single-pass default.
+        The forward value and residual model are refreshed at every iterate.
+        Codomain-free frozen steps require ordinary forward evaluation to
+        form the frozen derivative's adjoint applied to the current value.
+        During frozen steps, deriv is the derivative at derivative_iteration,
+        not necessarily at the current iterate; derivative-based external
+        optimality monitors must take this into account.
+    """
+
+    def __init__(
+        self, setting: Setting, inner_solver: str | dict | None = None,
+        data: ReadOnlyVector | ObsDataT | None = None, regpar: float = 1.,
+        regpar_step: float = 2 / 3, init: ReadOnlyVector | None = None,
+        regpars: Iterable[float] | None = None,
+        inner_solver_configurator: Callable[
+            [Setting, tuple[ReadOnlyVector, ReadOnlyVector | None], dict], None
+        ] | None = None,
+        logging_level: int | str = 'INFO',
+        *,
+        select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None = None,
+        derivative_update_schedule: Iterable[int] | None = None,
+    ) -> None:
+        if select_subgradient is not None and not callable(select_subgradient):
+            raise TypeError('select_subgradient must be callable or None.')
+        out, _ = self.check_applicability(setting, select_subgradient=select_subgradient)
+        if not out['applicable']:
+            raise ValueError('NonlinBregman not applicable. ' + out['info'])
+        self.select_subgradient = select_subgradient
+        super().__init__(
+            setting, inner_solver=inner_solver, data=data, regpar=regpar,
+            regpar_step=regpar_step, init=init, regpars=regpars,
+            inner_solver_configurator=inner_solver_configurator,
+            logging_level=logging_level,
+            derivative_update_schedule=derivative_update_schedule,
+        )
+        self.inner_method_name = '_nonlin_bregman_inner'
+        self._bregman_penalty = self._make_bregman_penalty()
+
+    @staticmethod
+    def check_applicability(
+        setting: Setting, op_norm: float | None = None,
+        select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None = None,
+    ) -> tuple[dict, dict]:
+        r"""Check the requirements of this solver for the supplied setting.
+        
+        Parameters
+        ----------
+        setting: Setting
+            Problem setting containing the operator, penalty, and data fidelity.
+        op_norm: float | None [default: None]
+            Operator-norm estimate; None requests numerical estimation.
+        select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        tuple[dict, dict]
+            Result described above.
+        """
+        out, par = IterativelyRegularizedNewton.check_applicability(setting, op_norm)
+        if not setting.penalty.is_convex:
+            out['info'] += 'The penalty must be convex. '
+        if 'eval' not in setting.penalty.methods:
+            out['info'] += 'The penalty must implement evaluation. '
+        if select_subgradient is None and 'subgradient' not in setting.penalty.methods:
+            out['info'] += 'The penalty must implement a subgradient or a selector must be supplied. '
+        if select_subgradient is not None and not callable(select_subgradient):
+            out['info'] += 'select_subgradient must be callable or None. '
+        if not setting.codomain_free and not setting.data_fid.is_convex:
+            out['info'] += 'The data fidelity must be convex. '
+        out['applicable'] = out['info'] == ''
+        return out, par
+
+    def _make_bregman_penalty(self) -> Functional:
+        # Bregman construction and subgradient projection may use caches.
+        penalty = deepcopy(self.penalty)
+        if self.select_subgradient is not None:
+            subgradient = self.select_subgradient(
+                self.setting, self.op.domain.read_only(self.x))
+            if subgradient is None:
+                raise ValueError('select_subgradient must return a subgradient vector.')
+            return penalty.bregman_func(self.x, subgradient)
+        if self._previous_regpar is None:
+            return penalty.bregman_func(self.x)
+        if self.setting.codomain_free:
+            candidate = self.deriv.adjoint_data(self.data)
+            candidate -= self._adjoint_eval
+            candidate /= self._previous_regpar
+        else:
+            if 'subgradient' not in self.data_fid.methods:
+                return penalty.bregman_func(self.x)
+            p = self.data_fid.subgradient(self.y)
+            p *= -1. / self._previous_regpar
+            candidate = self.deriv.adjoint(p)
+        penalty.dist_subdiff(candidate, self.x, best_approx=candidate)
+        return penalty.bregman_func(self.x, candidate)
+
+    def _inner_penalty(self) -> Functional | None:
+        if self._previous_regpar is not None:
+            self._bregman_penalty = self._make_bregman_penalty()
+        return self._bregman_penalty.shift(v=-self.x)

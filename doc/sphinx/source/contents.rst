@@ -11,6 +11,7 @@
    Spaces
    Functionals
    Solvers
+   Settings
 
 .. toctree::
    :caption: Installation

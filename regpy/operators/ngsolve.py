@@ -1,5 +1,13 @@
 r"""PDE forward operators using NGSolve
 """
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from numpy.typing import ArrayLike
+    from regpy.vecsps.base import ReadOnlyVector, Scalar, Vector, VectorSpaceBase
+    from regpy.solvers.solver import RegSolver
 import types 
 
 import ngsolve as ngs
@@ -15,15 +23,15 @@ __all__ = ["NgsOperator", "NgsMatrixMultiplication", "SecondOrderEllipticCoeffic
 
 class NgsOperator(Operator):
     r"""The Base class for operators defined on `vecsps.ngsolve.NgsSpace`\s.
-
+    
     Parameters
     ----------
-    domain : NgsSpace 
+    domain: NgsVectorSpace
         The space for the domain.
-    codomain : NgsSpace
+    codomain: NgsVectorSpace
         The space for the codomain.
-    linear : boolean, optional
-        True if linear else False. (Defaults: False)
+    linear: bool [default: False]
+        True if linear else False.
     """
     def __init__(self, 
             domain : NgsVectorSpace, 
@@ -39,20 +47,20 @@ class NgsOperator(Operator):
     '''Reads in a coefficient vector of the domain and interpolates in the codomain.
     The result is saved in gfu'''
     def _read_in(self, 
-            vector, 
-            gfu,
-            definedonelements =None):
+            vector: ReadOnlyVector, 
+            gfu: ngs.GridFunction,
+            definedonelements: BitArray | None =None) -> None:
         r"""Read in of a NumPy array into a ngsolve grid function. Note You can also read into
         ngsolve LinearForm.
-
+        
         Parameters
         ----------
-        vector : numpy.array
+        vector: ReadOnlyVector
             NumPy array to be put into the `GridFunction`
-        gfu : ngsolve.GridFunction or ngsolve.LinearForm
+        gfu: ngs.GridFunction
             ngsolve element to be written into.
-        definedonelements : pyngcore.pyngcore.BitArray, optional
-            BitArray representing the finite elements to be projected onto, by default None
+        definedonelements: BitArray | None [default: None]
+            BitArray representing the finite elements to be projected onto, by
         """
         gfu.vec.FV().NumPy()[:] = vector
         if definedonelements is not None:
@@ -62,41 +70,59 @@ class NgsOperator(Operator):
             bf : ngs.comp.BilinearForm, 
             lf : ngs.comp.LinearForm, 
             gf : ngs.comp.GridFunction, 
-            pre = None,
-            solver = None,
-            **kwargs) -> None:
+            pre: ngs.Preconditioner | None = None,
+            solver: RegSolver = None,
+            **kwargs: Any) -> None:
         r"""Solves the problem 
         \begin{align*}
         b(u,v) = f(v) \;\forall v\; test\; functions,\\
         u|_\Gamma = g
         \end{align*}
         The boundary values are given by what `gf` has as values on the boundary. 
-
+        
         Parameters
         ----------
-        bf : ngs.BilinearForm
+        bf: ngs.comp.BilinearForm
             the bilinear form of the problem.
-        lf : ngs.LinearFrom
-            the linear form of the problem. 
-        gf : ngs.GridFunction
+        lf: ngs.comp.LinearForm
+            the linear form of the problem.
+        gf: ngs.comp.GridFunction
             The grid functions on which to solve the solution will be put into these and they have to satisfy 
             the boundary condition that you want.
-        prec : BaseMatrix or class or Sting, default None
-            preconditioner to be used with ngsolve.
-        solver : class or None
+        pre: ngs.Preconditioner | None [default: None]
+            Pre.
+        solver: RegSolver [default: None]
             A solver instance that is passed to the ngs.solvers.BVP
-        kwargs : dict
+        **kwargs: Any
             Dictionary of possible arguments that can be passed to the ngs.solvers.BVP
+        
+        Other Parameters
+        ----------------
+        prec: BaseMatrix or class or Sting, default None
+            preconditioner to be used with ngsolve.
         """
         ngs.solvers.BVP(bf, lf, gf, pre = pre, solver = solver, **kwargs)
 
     @staticmethod
-    def _source_vec(x: NgsBaseVector, out: NgsBaseVector):
+    def _source_vec(x: NgsBaseVector, out: NgsBaseVector) -> ngs.BaseVector:
         r"""Return an input vector that remains valid when ``out`` aliases ``x``.
-
+        
         NGSolve matrix-vector products are represented lazily.  When source and
         destination are the same vector, evaluating the expression after assigning
         to ``out.vec.data`` may therefore overwrite data that is still needed.
+        
+        Parameters
+        ----------
+        x: NgsBaseVector
+            X.
+        out: NgsBaseVector
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        ngs.BaseVector
+            Result described above.
         """
         if out is x or out.vec is x.vec:
             if getattr(x, "is_dynamic", False):
@@ -106,15 +132,41 @@ class NgsOperator(Operator):
 
     @staticmethod
     def _prepare_out(out: NgsBaseVector) -> NgsBaseVector:
-        """Ensure that ``out`` wraps writable NGSolve vector storage."""
+        r"""Ensure that ``out`` wraps writable NGSolve vector storage.
+        
+        Parameters
+        ----------
+        out: NgsBaseVector
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        NgsBaseVector
+            Result described above.
+        """
         if getattr(out, "is_dynamic", False):
             out.vec = out.vec.Evaluate()
             out.is_dynamic = False
         return out
 
     @classmethod
-    def _write_vec(cls, out: NgsBaseVector, value) -> NgsBaseVector:
-        """Assign an NGSolve vector or vector expression to ``out``."""
+    def _write_vec(cls, out: NgsBaseVector, value: Scalar | ArrayLike) -> NgsBaseVector:
+        r"""Assign an NGSolve vector or vector expression to ``out``.
+        
+        Parameters
+        ----------
+        out: NgsBaseVector
+            Writable output buffer. If None, allocate a new result.
+        value: Scalar | ArrayLike
+            Value.
+        
+        
+        Returns
+        -------
+        NgsBaseVector
+            Result described above.
+        """
         cls._prepare_out(out)
         if isinstance(value, NgsBaseVector):
             value = value.vec
@@ -124,16 +176,16 @@ class NgsOperator(Operator):
 class NgsMatrixMultiplication(NgsOperator):
     r"""An operator defined by an NGSolve bilinear form. This is a helper to define 
     Gram matrices by a bilinear form.  
-
+    
     Parameters
     ----------
-    domain : NgsVectorSpace
+    domain: VectorSpaceBase
         The vector space.
-    form : ngsolve.BilinearForm or ngsolve.BaseMatrix
+    form: ngs.BilinearForm
         The bilinear form or matrix. A bilinear form will be assembled.
     """
 
-    def __init__(self, domain, form):
+    def __init__(self, domain: VectorSpaceBase, form: ngs.BilinearForm) -> None:
         super().__init__(domain, domain, linear=True)
         if isinstance(form, ngs.BilinearForm):
             if domain.fes != form.space:
@@ -148,17 +200,24 @@ class NgsMatrixMultiplication(NgsOperator):
         """The assembled matrix."""
         self._inverse = None
 
-    def _ieval(self, x, out):
+    def _ieval(self, x: ReadOnlyVector, out: Vector) -> Vector:
         source = self._source_vec(x, out)
         return self._write_vec(out, self.mat * source)
 
-    def _iadjoint(self, y, out):
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector) -> Vector:
         source = self._source_vec(y, out)
         return self._write_vec(out, self.mat.T * source)
 
     @property
-    def inverse(self):
-        """The inverse as a `Matrix` instance."""
+    def inverse(self) -> Operator:
+        r"""The inverse as a `Matrix` instance.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         if self._inverse is not None:
             return self._inverse
         elif isinstance(self.mat,ngs.la.ProductMatrix):
@@ -172,7 +231,14 @@ class NgsMatrixMultiplication(NgsOperator):
             return self._inverse
     
     @inverse.setter
-    def inverse(self, inv):
+    def inverse(self, inv: Operator) -> None:
+        r"""Inverse.
+        
+        Parameters
+        ----------
+        inv: Operator
+            Inv.
+        """
         if inv is None:
             self._inverse = None
             self.log.info("Setting the inverse of the operator {} to None".format(self))
@@ -188,65 +254,65 @@ class NgsMatrixMultiplication(NgsOperator):
 class SecondOrderEllipticCoefficientPDE(NgsOperator):
     r"""Provides a general setup for the forward problems mapping PDE coefficients to their solutions.
     That is we assume that as variational formulation one can use 
-
+    
     .. math::
         \forall v:    b_0(u,v) + b_a(u,v) = F(v)
-
+    
     with :math:`b_0` a bilinear form independent of the coefficient :math:`a` and :math:`F` some linear form.  
     Furthermore :math:`b_a` the bilinear form that depends on :math:`a` has to be linear in :math:`a` so that 
     one can define a bilinear form :math:`c_u(a,v)=b_a(u,v)`. More over we may assume some Dirichlet 
     boundary conditions on :math:`u`.That is 
-
+    
     .. math::
         F: a \mapsto u 
-
+    
     The Frechét derivative :math:`F'[a]h` in direction :math:`h` is then given as the variational 
     solution :math:`u'` to 
-
+    
     .. math::
         \forall v: b_0(u',v) + b_a(u',v) = -c_u(h,v)
-
+    
     with :math:`u=F(a)`. That is
-
+    
     .. math::
         F'[a]: h \mapsto u' 
-
+    
     It's adjoint :math:`F'[a]^\ast g` is given as the linear form :math:`-c_u(\cdot,w)` for :math:`u=F(a)` and 
     :math:`w` solving the problem 
-
+    
     .. math::
         \forall v:  b_0(v,w) + b_a(v,w) = <g,v>.
-
+    
     That is
-
+    
     .. math::
         F'[a]^\ast: g \mapsto -c_u(\cdot,w)
-
-
+    
+    
     Notes
     -----
     A subclass implemented by a user has to at least implement the subroutine `_bf` which is the 
     implementation of the bilinear form depending on the coefficient :math:`a`. Optional can the 
     independent bilinear form :math:`b_0` be implemented as formal integrator in `_bf_0` and the 
     linear form can be implemented in `_lf`. 
-
-
+    
+    
     Parameters
     ----------
-    domain : NgsVectorSpace
+    domain: NgsVectorSpace
         The NgsVectorSpace on which the coefficients defined are.
-    sol_domain : NgsVectorSpace
+    sol_domain: NgsVectorSpace
         The NgsVectorSpace on which the PDE solutions defined are.
-    bdr_val : NgsBaseVector, optional
-        Boundary value of the PDE solution of the forward evaluation, by default None
-    a_bdr_val : NgsBaseVector, optional
-        Boundary value of the coefficients, by default None
+    bdr_val: NgsBaseVector | types.NoneType | None [default: None]
+        Boundary value of the PDE solution of the forward evaluation, by
+    a_bdr_val: NgsBaseVector | types.NoneType | None [default: None]
+        Boundary value of the coefficients, by
     """
     def __init__(self, 
             domain : NgsVectorSpace, 
             sol_domain : NgsVectorSpace, 
-            bdr_val : NgsBaseVector | types.NoneType = None, 
-            a_bdr_val : NgsBaseVector | types.NoneType = None) -> None:
+            bdr_val : NgsBaseVector | types.NoneType | None = None, 
+            a_bdr_val : NgsBaseVector | types.NoneType | None = None) -> None:
         super().__init__(domain, sol_domain, linear = False)
         self.gf_a=ngs.GridFunction(self.domain.fes)
         self.gf_h=ngs.GridFunction(self.domain.fes)
@@ -323,19 +389,19 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
         r"""Implementation of :math:`b_a` as `ngsolve.comp.SumOfIntegrals` that is something similar to
         `a*ngs.grad(u)*ngs.grad(v)*ngs.dx` where `u` ist used as trial functions and `v` as test 
         functions. This method has to be implemented by 
-
+        
         Parameters
         ----------
-        a : ngsolve.CoefficientFunction or ngsolve.GridFunction
+        a: ngs.fem.CoefficientFunction
             the coefficient in the PDE
-        u : ngsolve.comp.ProxyFunction
+        u: ngs.fem.CoefficientFunction
             Trial functions for PDE
-        v : ngsolve.comp.ProxyFunction
+        v: ngs.fem.CoefficientFunction
             Test functions for PDE
-
+        
         Returns
         -------
-        ngsolve.comp.SumOfIntegrals
+        ngs.comp.BilinearForm
             the formal Integration formula of the bilinear form depending on the coefficient
         """
         raise NotImplementedError
@@ -343,17 +409,17 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
     def _bf_0(self, u : ngs.fem.CoefficientFunction, v : ngs.fem.CoefficientFunction) -> ngs.comp.BilinearForm | types.NoneType:
         r"""Implementation of :math:`b_0` as `ngsolve.comp.SumOfIntegrals` is an optional method to be 
         overwritten with subclasses.  
-
+        
         Parameters
         ----------
-        u : ngsolve.comp.ProxyFunction
+        u: ngs.fem.CoefficientFunction
             Trial functions for PDE
-        v : ngsolve.comp.ProxyFunction
+        v: ngs.fem.CoefficientFunction
             Test functions for PDE
-
+        
         Returns
         -------
-        ngsolve.comp.SumOfIntegrals
+        ngs.comp.BilinearForm | types.NoneType
             the formal Integration formula of the bilinear form independent of the coefficient
         """
         return None
@@ -362,10 +428,10 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
         r"""The Linear form of the PDE :math:`F` implemented as a fixed Linear form. Note that the 
         Linear form has to be defined on the `codomain` as this is the domain of the solution of 
         the PDE. By default this is the empty Linear form. 
-
+        
         Returns
         -------
-        ngsolve.Linearform
+        ngs.comp.LinearForm
             Linear form of the PDE :math:`F` as `ngsolve.LinearForm`
         """
         return ngs.LinearForm(self.codomain.fes).Assemble()
@@ -384,19 +450,23 @@ class SolveSystem(NgsOperator):
     u = 0  \text{ in } \partial\Omega
     \begin{align*}
     given f. 
-
+    
     Parameters
     ----------
-    domain : NgsVectorSpace
+    domain: NgsVectorSpace
         the underlying NgsVectorSpace.
-    bf : ngs.BilinearForm
+    bf: ngs.BilinearForm
         The bilinear form describing :math:`L`
+    use_prec: bool [default: True]
+        Use prec.
+    **inverse_kwargs: Any
+        Inverse kwargs.
     """
     def __init__(self, 
             domain : NgsVectorSpace, 
             bf : ngs.BilinearForm,
             use_prec : bool = True,
-            **inverse_kwargs) -> None:
+            **inverse_kwargs: Any) -> None:
         if not isinstance(bf, ngs.BilinearForm):
             raise TypeError(Errors.not_instance(bf,ngs.BilinearForm,"To define a SolveSystem operator the bilinear form needs to be a proper ngs.BilinearForm!"))
         super().__init__(domain=domain, codomain=domain, linear=True)
@@ -440,6 +510,13 @@ class SolveSystem(NgsOperator):
         
         
 class LinearForm(NgsOperator):
+    r"""LinearForm interface.
+    
+    Parameters
+    ----------
+    domain: NgsVectorSpace
+        Domain vector space.
+    """
     def __init__(self, 
             domain : NgsVectorSpace) -> None:
         super().__init__(domain=domain, codomain=domain, linear=True)
@@ -466,6 +543,15 @@ class LinearForm(NgsOperator):
     
 class LinearFormGrad(NgsOperator):
     
+    r"""LinearFormGrad interface.
+    
+    Parameters
+    ----------
+    domain: NgsVectorSpace
+        Domain vector space.
+    gfu_eval: ngs.GridFunction
+        Gfu eval.
+    """
     def __init__(self, 
         domain : NgsVectorSpace, 
         gfu_eval : ngs.GridFunction) -> None:
@@ -501,6 +587,15 @@ class LinearFormGrad(NgsOperator):
 
 class BilinearForm(NgsOperator):
     
+    r"""BilinearForm interface.
+    
+    Parameters
+    ----------
+    domain: NgsVectorSpace
+        Domain vector space.
+    bf: ngs.BilinearForm
+        Bf.
+    """
     def __init__(self, 
         domain : NgsVectorSpace, 
         bf : ngs.BilinearForm) -> None:
@@ -542,67 +637,70 @@ class BilinearForm(NgsOperator):
 
 class NgsGradOP(NgsOperator):
     r"""Gradient operator (bilinear-form based)
-
+    
     This operator implements a *weak* gradient that is constructed to be exactly
     adjoint (in the sense of :mod:`regpy`) to its divergence operator.  It is **not**
     computed using :func:`ngs.grad` directly.
-
+    
+    Parameters
+    ----------
+    domain: VectorSpaceBase
+        Domain vector space.
+    
     Parameter
     ---------
     domain : NgsVectorSpace
-
+    
     Notes
     -----
-
+    
     - This operator does **not** compute the pointwise gradient.
     - Deviations near the boundary are expected.
     - Intended for variational formulations (e.g. regularization, weak Laplacians,
       adjoint-based optimization), not for visualization.
-
-
+    
+    
     Mathematical definition
     -----------------------
-
+    
     Let :math:`U_h` be the scalar finite element space and :math:`W_h` the vector
     finite element space. The operator :math:`\mathrm{Grad}_h : U_h \to W_h` is
     defined by
-
+    
     .. math::
-
+    
         \langle \mathrm{Grad}_h u, w \rangle_{L^2}
         =
         \int_\Omega \nabla u \cdot w \, dx
         \qquad \forall w \in W_h.
-
+    
     Thus, :math:`\mathrm{Grad}_h u` is the :math:`L^2`-projection of the pointwise
     gradient :math:`\nabla u` into the space :math:`W_h \subset H(\mathrm{div})`.
-
+    
     Implementation
     --------------
-
+    
     The bilinear form
-
+    
     .. math::
-
+    
         b(u, w) = \int_\Omega \nabla u \cdot w \, dx
-
+    
     is assembled as a matrix :math:`B`. The operator is applied as
     :math:`\mathrm{Grad}_h u = B u`, and its adjoint is given by :math:`B^T`,
     which guarantees exact adjointness with respect to the Euclidean inner product
     used by :mod:`regpy`.
-
+    
     Boundary conditions
     -------------------
-
+    
     Boundary conditions are encoded in the choice of finite element spaces
     (e.g. Dirichlet conditions on :math:`u` or vanishing normal trace on
     :math:`w`). Under these assumptions, boundary terms vanish automatically and
     no explicit boundary integrals are added.
-
-
     """
 
-    def __init__(self,domain):
+    def __init__(self,domain: VectorSpaceBase) -> None:
         if isinstance(domain.fes,(ngs.H1,ngs.L2)):
             vec_fes = ngs.HDiv(domain.fes.mesh, order=domain.fes.globalorder, dirichlet=domain.bdr)
         else:
@@ -621,29 +719,31 @@ class NgsGradOP(NgsOperator):
         self._consts = {*self._consts, "bf"}
 
 
-    def _ieval(self, x, out):
+    def _ieval(self, x: ReadOnlyVector, out: Vector) -> Vector:
         source = self._source_vec(x, out)
         return self._write_vec(out, self.bf.mat * source)
 
-    def _iadjoint(self, y, out):
+    def _iadjoint(self, y: ReadOnlyVector, out: Vector) -> Vector:
         source = self._source_vec(y, out)
         return self._write_vec(out, self.bf.mat.T * source)
 
 class ProjectToBoundary(NgsOperator):
-    """Projects an element to the boundary of codomain.bdr. Given the domain is the codomain 
+    r"""Projects an element to the boundary of codomain.bdr. Given the domain is the codomain 
     this simplifies to taking ngs.Projector for the given vectors.
     Parameters
     ----------
-    domain : NgsVectorSpace
+    domain: NgsVectorSpace
         Domain from which to project.
-    codomain : NgsVectorSpace, optional
+    codomain: NgsVectorSpace | types.NoneType | None [default: None]
         Codomain onto which to project. Defaults: domain
+    bdr: types.NoneType | ngs.comp.Region | str | BitArray | None [default: None]
+        Bdr.
     """
 
     def __init__(self, 
             domain: NgsVectorSpace, 
-            codomain: NgsVectorSpace | types.NoneType = None,
-            bdr : types.NoneType | ngs.comp.Region | str | BitArray = None) -> None:
+            codomain: NgsVectorSpace | types.NoneType | None = None,
+            bdr : types.NoneType | ngs.comp.Region | str | BitArray | None = None) -> None:
         codomain = codomain or domain
         self.same_domain = codomain == domain
         super().__init__(domain, codomain, linear=True)

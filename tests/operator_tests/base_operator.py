@@ -5,6 +5,7 @@ import pytest
 import numpy as np
 from scipy.sparse.linalg import LinearOperator
 
+from regpy.hilbert import GramHilbertSpace, L2
 from regpy.vecsps import NumPyVectorSpace, TupleVector
 import regpy.operators.base as op_base
 from regpy.operators.graph_operator import OperatorGraph
@@ -99,6 +100,471 @@ def op_evaluation_and_ot(op,x=None,res=None,rel_tol=1e-6, tol=1e-10,**kwargs):
     if x is not None or res is not None:
         diff = op.codomain.norm(op(x)-res)
         assert diff == pytest.approx(0.,rel=rel_tol,abs = tol), f"Testing the application of {type(op)} at {x} against given result {res} is different from computed result {op(x)} norm difference {diff}"
+
+
+class _SelfAdjointMatrix(op_base.Operator):
+    """A self-adjoint linear operator without an ``_adjoint`` method."""
+
+    def __init__(self, matrix):
+        matrix = np.asarray(matrix, dtype=float)
+        self.matrix = matrix
+        space = NumPyVectorSpace(matrix.shape[0])
+        super().__init__(
+            space,
+            space,
+            linear=True,
+            self_adjoint=True,
+        )
+
+    def _eval(self, x):
+        return self.matrix @ x
+
+
+class _ExponentialQuadraticGradient(op_base.Operator):
+    r"""Gradient of :math:`f(x,y)=\exp(x+2y)+x^2` on :math:`\mathbb R^2`."""
+
+    def __init__(self):
+        space = NumPyVectorSpace(2)
+        # A nonlinear operator is not itself self-adjoint.  The flag declares
+        # that each derivative (the Hessian of f) is self-adjoint.
+        super().__init__(
+            space,
+            space,
+            self_adjoint=True,
+        )
+
+    def _eval(self, x, differentiate=False):
+        exponential = np.exp(x[0] + 2 * x[1])
+        if differentiate:
+            self._linearization_exponential = exponential
+        return np.array([
+            exponential + 2 * x[0],
+            2 * exponential,
+        ])
+
+    def _derivative(self, h):
+        exponential = self._linearization_exponential
+        return np.array([
+            (exponential + 2) * h[0] + 2 * exponential * h[1],
+            2 * exponential * h[0] + 4 * exponential * h[1],
+        ])
+
+
+class _MatrixWithAdjoint(op_base.Operator):
+    """Small matrix operator whose self-adjointness is not inferred."""
+
+    def __init__(self, matrix):
+        self.matrix = np.asarray(matrix, dtype=float)
+        domain = NumPyVectorSpace(self.matrix.shape[1])
+        codomain = NumPyVectorSpace(self.matrix.shape[0])
+        super().__init__(domain, codomain, linear=True)
+
+    def _eval(self, x):
+        return self.matrix @ x
+
+    def _adjoint(self, y):
+        return self.matrix.T @ y
+
+
+class TestSelfAdjoint:
+
+    def test_constructor_contract(self):
+        space = NumPyVectorSpace(2)
+        other_space = NumPyVectorSpace(3)
+
+        with pytest.raises(TypeError):
+            op_base.Operator(
+                space, space, linear=True, self_adjoint=1
+            )
+        with pytest.raises(ValueError):
+            op_base.Operator(
+                space, other_space, linear=True, self_adjoint=True
+            )
+
+    def test_linear_operator_without_adjoint_implementation(self):
+        matrix = np.array([[2., 1.], [1., 3.]])
+        op = _SelfAdjointMatrix(matrix)
+        x = np.array([1.5, -2.])
+
+        assert op.self_adjoint is True
+        assert op.adjoint is op
+        np.testing.assert_allclose(op.adjoint(x), matrix @ x)
+
+        out = op.domain.empty()
+        returned = op.adjoint(x, out=out)
+        assert returned is out
+        np.testing.assert_allclose(out, matrix @ x)
+
+        assert ot.test_self_adjoint(op)
+        ot.test_operator(op, sample_N=2)
+        assert op.norm(method="lanczos") == pytest.approx(
+            np.linalg.norm(matrix, ord=2), rel=1e-3
+        )
+
+    def test_nonlinear_gradient_has_self_adjoint_derivative(self):
+        op = _ExponentialQuadraticGradient()
+        x = np.array([0.2, -0.1])
+        h = np.array([1.5, -0.5])
+        exponential = np.exp(x[0] + 2 * x[1])
+        expected_value = np.array([
+            exponential + 2 * x[0],
+            2 * exponential,
+        ])
+        hessian = np.array([
+            [exponential + 2, 2 * exponential],
+            [2 * exponential, 4 * exponential],
+        ])
+
+        assert op.self_adjoint is False
+        with pytest.raises(RuntimeError):
+            _ = op.adjoint
+
+        value, derivative = op.linearize(x)
+        np.testing.assert_allclose(value, expected_value)
+        assert derivative.self_adjoint is True
+        assert derivative.adjoint is derivative
+        np.testing.assert_allclose(derivative(h), hessian @ h)
+        np.testing.assert_allclose(derivative.adjoint(h), hessian @ h)
+        assert ot.test_self_adjoint(derivative)
+
+        # This invokes the generic derivative, adjoint, adjoint-evaluation,
+        # out-buffer, and aliasing checks as well.
+        ot.test_operator(
+            op,
+            sample_N=1,
+            x_s=x,
+            steps=[1e-1, 1e-2, 1e-3, 1e-4],
+        )
+
+    def test_declare_as_self_adjoint(self):
+        matrix = np.array([[2., 1.], [1., 3.]])
+        op = _MatrixWithAdjoint(matrix)
+        old_adjoint = op.adjoint
+
+        assert old_adjoint is not op
+        op.declare_as_self_adjoint()
+
+        assert op.self_adjoint is True
+        assert op.adjoint is op
+        assert op.adjoint is not old_adjoint
+        np.testing.assert_allclose(op(np.array([1., -2.])), [-0., -5.])
+
+        nonsymmetric = _MatrixWithAdjoint([[1., 2.], [0., 1.]])
+        with pytest.raises(ValueError):
+            nonsymmetric.declare_as_self_adjoint()
+        assert nonsymmetric.self_adjoint is False
+
+        with pytest.raises(TypeError):
+            op.declare_as_self_adjoint(check=1)
+        with pytest.raises(ValueError):
+            _MatrixWithAdjoint(np.ones((3, 2))).declare_as_self_adjoint(
+                check=False
+            )
+        with pytest.raises(ValueError):
+            _ExponentialQuadraticGradient().declare_as_self_adjoint()
+
+    def test_flags_of_standard_operators(self):
+        real_space = NumPyVectorSpace(2)
+        complex_space = NumPyVectorSpace(2, dtype=complex)
+
+        identity = op_base.Identity(real_space)
+        zero = op_base.Zero(real_space)
+        rectangular_zero = op_base.Zero(
+            real_space, NumPyVectorSpace(3)
+        )
+        real_multiplier = op_base.PtwMultiplication(
+            complex_space, np.array([1., 2.])
+        )
+        complex_multiplier = op_base.PtwMultiplication(
+            complex_space, np.array([1., 2j])
+        )
+        real_combination = op_base.LinearCombination(
+            (2., identity), (-3., op_base.PtwMultiplication(real_space, 4.))
+        )
+        complex_combination = op_base.LinearCombination(
+            (1j, op_base.Identity(complex_space))
+        )
+        self_adjoint_sum = op_base.DirectSum(identity, zero)
+        non_self_adjoint_sum = op_base.DirectSum(
+            op_base.Identity(complex_space), complex_multiplier
+        )
+
+        assert identity.self_adjoint is True
+        assert zero.self_adjoint is True
+        assert rectangular_zero.self_adjoint is False
+        assert real_multiplier.self_adjoint is True
+        assert complex_multiplier.self_adjoint is False
+        assert real_combination.self_adjoint is True
+        assert complex_combination.self_adjoint is False
+        assert self_adjoint_sum.self_adjoint is True
+        assert non_self_adjoint_sum.self_adjoint is False
+
+
+class TestOperatorNorm:
+
+    @pytest.mark.parametrize("method", ("power", "lanczos", "eigs"))
+    def test_general_and_self_adjoint_interpretations(self, method):
+        matrix = np.diag([2., -1., 0.5, 0.25])
+        op = _SelfAdjointMatrix(matrix)
+        gram = op_base.PtwMultiplication(op.domain, 4.)
+        h_domain = GramHilbertSpace(gram)
+        l2 = L2(op.domain)
+
+        # As a map H -> H, the scalar Gram factors cancel.
+        assert op.norm(h_domain, h_domain, method=method) == pytest.approx(
+            2., rel=2e-2
+        )
+        # As a map H -> H*, norm_sa computes ||G^-1 A||.
+        assert op.norm_sa(h_domain, method=method) == pytest.approx(
+            0.5, rel=2e-2
+        )
+        # The codomain-free forward norm delegates to the self-adjoint norm
+        # of A* A and then takes its square root.
+        forward_norm = op.norm(h_domain, l2, method=method)
+        codomain_free_norm = op.norm(
+            h_domain, method=method, codomain_free=True
+        )
+        assert codomain_free_norm == pytest.approx(
+            forward_norm, rel=2e-2
+        )
+
+    @pytest.mark.parametrize("reltol", (1e-3, 0.05))
+    def test_codomain_free_delegates_to_norm_sa(self, monkeypatch, reltol):
+        op = _SelfAdjointMatrix(np.diag([2., 1.]))
+        h_domain = L2(op.domain)
+        normal_operator = op.adjoint_eval
+        call = {}
+
+        def fake_norm_sa(h_domain=None, method=None, reltol=None):
+            call["h_domain"] = h_domain
+            call["method"] = method
+            call["reltol"] = reltol
+            return 25.
+
+        monkeypatch.setattr(normal_operator, "norm_sa", fake_norm_sa)
+        assert op.norm(
+            h_domain, method="power", codomain_free=True, reltol=reltol
+        ) == pytest.approx(5.)
+        assert call == {
+            "h_domain": h_domain, "method": "power", "reltol": reltol,
+        }
+
+    def test_validation(self):
+        self_adjoint = _SelfAdjointMatrix(np.diag([2., 1.]))
+        non_self_adjoint = _MatrixWithAdjoint([[1., 2.], [0., 1.]])
+        h_domain = L2(self_adjoint.domain)
+
+        with pytest.raises(ValueError):
+            non_self_adjoint.norm_sa(L2(non_self_adjoint.domain))
+        with pytest.raises(NotImplementedError):
+            _ExponentialQuadraticGradient().norm(h_domain, h_domain)
+        with pytest.raises(ValueError):
+            self_adjoint.norm_sa(L2(NumPyVectorSpace(3)))
+        with pytest.raises(NotImplementedError):
+            self_adjoint.norm(h_domain, h_domain, method="unknown")
+        with pytest.raises(NotImplementedError):
+            self_adjoint.norm_sa(h_domain, method="unknown")
+
+
+    @pytest.mark.parametrize("mode", ("standard", "codomain_free", "self_adjoint"))
+    @pytest.mark.parametrize("scale", (1e-10, 1., 1e10))
+    def test_lanczos_weighted_norm_accuracy(self, monkeypatch, mode, scale):
+        op = _SelfAdjointMatrix(scale * np.diag([-3., -1., 0., 2.]))
+        h_domain = GramHilbertSpace(op_base.PtwMultiplication(op.domain, 4.))
+        # A fixed start with nonzero components in every eigendirection makes
+        # this an algorithm test independent of the global random stream.
+        monkeypatch.setattr(op.domain, "randn", lambda: op.domain.ones())
+        op.enable_eval_count()
+        if mode == "self_adjoint":
+            value = op.norm_sa(h_domain, method="lanczos", reltol=1e-12, max_op_eval=4)
+            expected, budget = 0.75 * scale, 4
+        else:
+            value = op.norm(
+                h_domain, L2(op.codomain), method="lanczos",
+                codomain_free=mode == "codomain_free",
+                reltol=1e-12, max_op_eval=8,
+            )
+            expected, budget = 1.5 * scale, 8
+        assert value == pytest.approx(expected, rel=1e-10, abs=0.)
+        assert 0 < op.total_eval_count() <= budget
+
+    @pytest.mark.parametrize("mode", ("standard", "codomain_free", "self_adjoint"))
+    @pytest.mark.parametrize("budget", (2, 3, 5))
+    def test_lanczos_hard_evaluation_cap(self, monkeypatch, mode, budget):
+        op = _SelfAdjointMatrix(np.diag(np.arange(1., 21.)))
+        monkeypatch.setattr(op.domain, "randn", lambda: op.domain.ones())
+        op.enable_eval_count()
+        if mode == "self_adjoint":
+            value = op.norm_sa(method="lanczos", reltol=1e-14, max_op_eval=budget)
+            expected_calls = budget
+        else:
+            value = op.norm(
+                method="lanczos", codomain_free=mode == "codomain_free",
+                reltol=1e-14, max_op_eval=budget,
+            )
+            expected_calls = 2 * (budget // 2)
+        # Return a finite Ritz estimate at the cap, even without convergence.
+        assert np.isfinite(value) and 0 < value <= 20. * (1 + 1e-12)
+        assert op.total_eval_count() == expected_calls
+        assert op.total_eval_count() <= budget
+
+    @pytest.mark.parametrize("zero", (False, True))
+    @pytest.mark.parametrize("codomain_free", (False, True))
+    def test_lanczos_zero_and_projection(self, monkeypatch, zero, codomain_free):
+        diagonal = np.zeros(8) if zero else np.array([1., 0.] * 4)
+        op = _SelfAdjointMatrix(np.diag(diagonal))
+        monkeypatch.setattr(op.domain, "randn", lambda: op.domain.ones())
+        op.enable_eval_count()
+        value = op.norm(
+            method="lanczos", codomain_free=codomain_free,
+            reltol=1e-12, max_op_eval=8,
+        )
+        assert value == pytest.approx(0. if zero else 1., abs=1e-12)
+        assert op.total_eval_count() <= 8
+
+    @pytest.mark.parametrize("budget, exception", [
+        (0, ValueError), (-1, ValueError), (True, TypeError), (2.5, TypeError),
+    ])
+    def test_lanczos_invalid_evaluation_cap(self, budget, exception):
+        op = _SelfAdjointMatrix(np.diag([1., 2., 3., 4.]))
+        with pytest.raises(exception):
+            op.norm(method="lanczos", max_op_eval=budget)
+        with pytest.raises(exception):
+            op.norm_sa(method="lanczos", max_op_eval=budget)
+
+    def test_lanczos_normal_operator_needs_two_evaluations(self):
+        op = _SelfAdjointMatrix(np.diag([1., 2., 3., 4.]))
+        for codomain_free in (False, True):
+            with pytest.raises(ValueError, match="at least 2"):
+                op.norm(method="lanczos", codomain_free=codomain_free, max_op_eval=1)
+
+
+
+class TestEvaluationCounts:
+    KEYS = {"eval", "deriv", "adjoint", "adjoint_eval", "adjoint_deriv", "adjoint_data"}
+
+    def test_opt_in_reset_disable_and_snapshot(self):
+        op = _MatrixWithAdjoint([[1., 2.], [0., 3.]])
+        x = np.array([1., -1.])
+        original_eval = op._eval.__func__
+        op(x)
+        assert not op.eval_count_enabled
+        assert "_eval_counts" not in vars(op)
+        assert op._eval.__func__ is original_eval
+        assert set(op.eval_counts) == self.KEYS
+        assert all(type(value) is int and value == 0 for value in op.eval_counts.values())
+        assert "_eval_counts" not in vars(op)  # Reading must not enable counting.
+
+        op.enable_eval_count()
+        op(x)
+        op.enable_eval_count(reset=False)  # Must not install a second wrapper.
+        op(x)
+        assert op.eval_counts["eval"] == 2
+        snapshot = op.eval_counts
+        snapshot["eval"] = 100
+        assert op.eval_counts["eval"] == 2
+        op.reset_eval_counts()
+        assert op.eval_count_enabled
+        assert op.total_eval_count() == 0
+        op(x)
+        op.disable_eval_count()
+        assert not op.eval_count_enabled
+        assert "_eval_counts" not in vars(op)
+        assert op._eval.__func__ is original_eval
+        op(x)
+        assert op.total_eval_count() == 0
+        op.enable_eval_count()
+        op(x)
+        assert op.eval_counts["eval"] == 1
+
+    @pytest.mark.parametrize("in_place", [False, True])
+    def test_linear_operations_and_weighted_total(self, in_place):
+        op = _MatrixWithAdjoint([[1., 2.], [0., 3.]])
+        x = np.array([1., -1.])
+        op.enable_eval_count()
+
+        def evaluate(operator, vector):
+            if in_place:
+                return operator(vector, out=operator.codomain.empty())
+            return operator(vector)
+
+        np.testing.assert_allclose(evaluate(op, x), op.matrix @ x)
+        np.testing.assert_allclose(evaluate(op.adjoint, x), op.matrix.T @ x)
+        np.testing.assert_allclose(
+            evaluate(op.adjoint_eval, x), op.matrix.T @ op.matrix @ x,
+        )
+        out = op.domain.empty() if in_place else None
+        np.testing.assert_allclose(op.adjoint_data(x, out=out), op.matrix.T @ x)
+        # Generic/in-place fallbacks must not count nested calls twice.
+        assert op.eval_counts == {
+            "eval": 1, "deriv": 0, "adjoint": 1,
+            "adjoint_eval": 1, "adjoint_deriv": 0, "adjoint_data": 1,
+        }
+        assert op.total_eval_count() == 5
+
+    def test_derivative_wrappers_count_on_original_operator(self):
+        op = _ExponentialQuadraticGradient()
+        op.enable_eval_count()
+        _, derivative = op.linearize(np.array([0.2, -0.1]))
+        h = np.array([1., -0.5])
+        derivative(h)
+        derivative.adjoint_eval(h)
+        assert op.eval_counts == {
+            "eval": 1, "deriv": 1, "adjoint": 0,
+            "adjoint_eval": 0, "adjoint_deriv": 1, "adjoint_data": 0,
+        }
+        assert op.total_eval_count() == 4
+        assert not derivative.eval_count_enabled
+
+    def test_composition_counting_does_not_enable_components(self):
+        left = _MatrixWithAdjoint([[2., 1.], [0., 1.]])
+        right = _MatrixWithAdjoint([[1., 0.], [3., 2.]])
+        op = left * right
+        op.enable_eval_count()
+        x = np.array([1., -1.])
+        np.testing.assert_allclose(op(x), left.matrix @ right.matrix @ x)
+        assert op.eval_counts["eval"] == 1
+        assert op.total_eval_count() == 1
+        for component in (left, right):
+            assert not component.eval_count_enabled
+            assert "_eval_counts" not in vars(component)
+            assert component.total_eval_count() == 0
+        # Component-level profiling remains possible when explicitly enabled.
+        right.enable_eval_count()
+        op(x)
+        assert op.eval_counts["eval"] == 2
+        assert right.eval_counts["eval"] == 1
+        assert not left.eval_count_enabled
+
+class TestCodomainFreeGramFactor:
+
+    def test_factor_and_supported_gram_operators(self):
+        op = _MatrixWithAdjoint([[1., 2.], [3., 4.]])
+        x = np.array([0.5, -1.])
+        unscaled = op.adjoint_eval(x)
+
+        op.gram_factor = 2.5
+        np.testing.assert_allclose(op.adjoint_eval(x), 2.5 * unscaled)
+
+        op.set_gram_factor(op_base.PtwMultiplication(op.codomain, 3.))
+        assert op.gram_factor == pytest.approx(3.)
+        np.testing.assert_allclose(op.adjoint_eval(x), 3. * unscaled)
+
+        op.set_gram_factor(op.codomain.identity)
+        assert op.gram_factor == pytest.approx(1.)
+
+    def test_validation(self):
+        op = _MatrixWithAdjoint([[1., 0.], [0., 1.]])
+        with pytest.raises(TypeError):
+            op.gram_factor = True
+        with pytest.raises(TypeError):
+            op.gram_factor = 1j
+        with pytest.raises(ValueError):
+            op.gram_factor = -1.
+        with pytest.raises(ValueError):
+            op.set_gram_factor(
+                op_base.PtwMultiplication(op.codomain, [1., 2.])
+            )
 
 @pytest.mark.parametrize("vs",[NumPyVectorSpace((4,3)),NumPyVectorSpace((2,2),np.complex128)])
 class TestIdentity():
@@ -355,7 +821,7 @@ class TestZero():
 def test_MatrixOfOperators():
     shape = (2,2)
     dom=NumPyVectorSpace(shape)
-    op1=op_base.RealPart(dom)
+    op1=op_base.Identity(dom)
     op2=op_base.PtwMultiplication(dom,2)
     op3=op_base.PtwMultiplication(dom,3)
     op4=op_base.PtwMultiplication(dom,4)
@@ -462,3 +928,148 @@ class TestOperatorGraph():
         x=op.domain.ones()
         x[0]*=2
         op_evaluation_and_ot(op,x=x,res=16*op.codomain.ones())
+
+
+@pytest.mark.parametrize("dtype", [float, complex])
+def test_coordinate_projection_masked_l2(dtype):
+    """The projection codomain must support the default L2 dispatch."""
+    from regpy.vecsps.maskable import MaskedVectorSpace
+    domain = NumPyVectorSpace((2, 3), dtype=dtype)
+    mask = np.array([[True, False, True], [False, True, False]])
+    projection = op_base.CoordinateProjection(domain, mask)
+    assert isinstance(projection.codomain, MaskedVectorSpace)
+    h = L2(projection.codomain)
+    x = np.array([1., 2., 3.], dtype=dtype)
+    if dtype is complex:
+        x += 1j * np.array([.5, -1., 2.])
+    np.testing.assert_allclose(h.gram(x), x)
+    np.testing.assert_allclose(h.gram_inv(x), x)
+    assert h.norm(x)**2 == pytest.approx(np.vdot(x, x).real)
+    assert projection.norm(method="power") == pytest.approx(1., rel=1e-3)
+
+
+@pytest.mark.parametrize("dtype", [float, complex])
+def test_coordinate_projection_direct_sum_l2(dtype):
+    """L2 dispatch also reaches masked components inside operator sums."""
+    domain = NumPyVectorSpace(3, dtype=dtype)
+    projection = op_base.CoordinateProjection(
+        domain, np.array([True, False, True])
+    )
+    combined = op_base.DirectSum(domain.identity, projection)
+    h = L2(combined.codomain)
+    x = combined.codomain.ones()
+    actual = h.gram(x)
+    for component, expected in zip(actual, x, strict=True):
+        np.testing.assert_allclose(component, expected)
+    assert combined.norm(method="power") == pytest.approx(1., rel=1e-3)
+
+
+@pytest.mark.parametrize("operator,part", [
+    (op_base.RealPart, "real"), (op_base.ImaginaryPart, "imag"),
+])
+def test_parts_on_direct_sum(operator, part):
+    from regpy.vecsps import DirectSum
+    a = NumPyVectorSpace(2, dtype=complex)
+    b = NumPyVectorSpace(3, dtype=complex)
+    space = DirectSum(a, b)
+    op = operator(space)
+    assert isinstance(op, op_base.DirectSum)
+    x = space.join(np.array([1+2j, 3-4j]), np.array([5j, 6+7j, -8j]))
+    result = op(x)
+    for block, source in zip(result, x):
+        np.testing.assert_allclose(block, getattr(source, part))
+    y = op.codomain.ones()
+    assert np.real(op.codomain.vdot(result, y)) == pytest.approx(
+        np.real(space.vdot(x, op.adjoint(y))))
+    # TupleVector does not need real/imag/conj methods.
+    for name in ("real", "imag", "conj"):
+        assert not hasattr(x, name)
+
+
+@pytest.mark.parametrize("operator", [op_base.RealPart, op_base.ImaginaryPart])
+def test_parts_reject_real_storage(operator):
+    with pytest.raises(TypeError):
+        operator(NumPyVectorSpace(3))
+
+
+def test_operator_scalar_field_coercion():
+    c = NumPyVectorSpace(2, dtype=complex, as_real_space=False)
+    r = NumPyVectorSpace(2)
+    with pytest.warns(RuntimeWarning, match="different scalar fields"):
+        op = op_base.Zero(c, r)
+    assert op.domain.as_real_space and op.codomain.as_real_space
+    assert c.dimension == 4
+
+
+def test_complex_linear_scipy_adapter():
+    space = NumPyVectorSpace(3, dtype=complex, as_real_space=False)
+    op = op_base.PtwMultiplication(space, np.array([1+2j, 3-4j, 5j]))
+    scipy_op = op_base.SciPyLinearOperator(op)
+    x = np.array([2+1j, -1+3j, 4j])
+    assert scipy_op.shape == (3, 3)
+    assert np.issubdtype(scipy_op.dtype, np.complexfloating)
+    np.testing.assert_allclose(scipy_op @ x, op(x))
+    np.testing.assert_allclose(scipy_op.rmatvec(x), op.adjoint(x))
+
+
+@pytest.mark.parametrize("operator,expected", [
+    (op_base.RealPart, np.array([1., 3.])),
+    (op_base.ImaginaryPart, np.array([2., -4.])),
+])
+def test_parts_coefficient_fallback(operator, expected):
+    class NoPartsArray(np.ndarray):
+        @property
+        def real(self):
+            raise AttributeError("No vector real attribute")
+        @property
+        def imag(self):
+            raise AttributeError("No vector imag attribute")
+
+    space = NumPyVectorSpace(2, dtype=complex)
+    x = np.array([1+2j, 3-4j]).view(NoPartsArray)
+    op = operator(space)
+    np.testing.assert_allclose(op(x), expected)
+    y = np.array([2., -1.])
+    assert np.real(space.vdot(x, op.adjoint(y))) == pytest.approx(
+        op.codomain.vdot(expected, y))
+
+
+def test_parts_require_real_space_capability():
+    class WithoutRealSpace(NumPyVectorSpace):
+        real_space = None
+    space = WithoutRealSpace(2, dtype=complex)
+    for cls in (op_base.RealPart, op_base.ImaginaryPart):
+        with pytest.raises(TypeError, match="real_space"):
+            cls(space)
+
+
+@pytest.mark.parametrize("as_real", [True, False])
+def test_matrix_complex_coordinates_and_inverse(as_real):
+    from regpy.operators import MatrixMultiplication, CholeskyInverse
+    space = NumPyVectorSpace(2, dtype=complex, as_real_space=as_real)
+    matrix = np.array([[3., 1j], [-1j, 2.]])
+    op = MatrixMultiplication(matrix, domain=space, codomain=space)
+    x = np.array([1+2j, 3-1j])
+    np.testing.assert_allclose(op(x), matrix @ x)
+    np.testing.assert_allclose(op.adjoint(x), matrix.conj().T @ x)
+    inverse = CholeskyInverse(op)
+    np.testing.assert_allclose(inverse(op(x)), x)
+
+
+@pytest.mark.parametrize("operator", [op_base.RealPart, op_base.ImaginaryPart,
+                                      op_base.SplitRealImag])
+@pytest.mark.parametrize("direct_sum", [False, True])
+def test_real_imag_deepcopy(operator, direct_sum):
+    from regpy.vecsps.base import DirectSum
+    domain = NumPyVectorSpace(3, dtype=complex)
+    if direct_sum:
+        domain = DirectSum(domain, NumPyVectorSpace(2, dtype=complex))
+    op = operator(domain)
+    copied = deepcopy(op)
+    x = domain.ones() * (1 + 2j)
+    assert copied is not op
+    np.testing.assert_allclose(copied.codomain.flatten(copied(x)),
+                               op.codomain.flatten(op(x)))
+    y = op.codomain.ones()
+    np.testing.assert_allclose(copied.domain.flatten(copied.adjoint(y)),
+                               op.domain.flatten(op.adjoint(y)))

@@ -2,6 +2,7 @@ from warnings import warn
 import traceback
 
 from vecsps_tests.base_vecsps import *
+from vecsps_tests.maskable_vecsps import *
 from vecsps_tests.numpy_vecsps import *
 from vecsps_tests.curve_vecsps import *
 

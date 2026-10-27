@@ -1,3 +1,11 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from regpy.vecsps.base import ReadOnlyVector, Vector, VectorSpaceBase
+    from regpy.operators.base import Operator
+    from regpy._typing import Mask
 import numpy as np
 from scipy.linalg import ishermitian
 
@@ -10,26 +18,27 @@ __all__ = ["QuadraticPositiveSemidef"]
 
 class QuadraticPositiveSemidef(Functional):
     r"""Functional 
-
+    
     .. math::
         F(x) = 1/2 ||x||_{HS}^2    &\quad\text{if } x\geq 0 \text{ and (optional) } tr(x)=c \\
         F(x) = \infty       &\quad\text{else}
-
+    
     Here x is a quadratic matrix and HS is the Hilbert-Schmidt norm. Conjugate functional
     and prox are only correct for hermitian inputs.
-
+    
     Parameters
-    ---------
-    domain: regpy.vecsps.UniformGridFcts
+    ----------
+    domain: VectorSpaceBase
         two dimensional domain on which functional is defined, volume_elements have to be one
-    trace_val: float or None, optional
-        desired value of trace or None for no trace constraint. Defaults to None.
-    tol: float, optional
-        tolerance for comparisons determining positive semidefiniteness and correctness of trace 
-
+    trace_val: float | None [default: None]
+        desired value of trace or None for no trace constraint.
+    tol: float [default: 1e-15]
+        tolerance for comparisons determining positive semidefiniteness and correctness of trace
+    **kwargs: Any
+        Additional keyword arguments forwarded to the underlying implementation.
     """
 
-    def  __init__(self, domain,trace_val=None,tol=1e-15, **kwargs):
+    def  __init__(self, domain: VectorSpaceBase,trace_val: float | None=None,tol: float=1e-15, **kwargs: Any) -> None:
         if not isinstance(domain,UniformGridFcts): raise TypeError(Errors.not_instance(domain,UniformGridFcts,"QuadraticLowerBound domain needs to be a UniformGridFcts isntance."))
         if domain.ndim!=2 or domain.shape[0]!=domain.shape[1] or domain.volume_elem!=1.:
             raise ValueError(Errors.value_error("The domain for QuadraticPositiveSemidef must be a two-dimensional domain with identical spread in the two domensions and uniform one measure! This is to represent vectors as a matrix."))
@@ -48,7 +57,20 @@ class QuadraticPositiveSemidef(Functional):
                          conj_methods = {'eval'},
                          **kwargs)
 
-    def is_in_essential_domain(self, rho):
+    def is_in_essential_domain(self, rho: ReadOnlyVector) -> bool:
+        r"""Is in essential domain.
+        
+        Parameters
+        ----------
+        rho: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         if(not ishermitian(rho,atol=self.tol)):
             return False
         if(self.has_trace_constraint):
@@ -58,18 +80,23 @@ class QuadraticPositiveSemidef(Functional):
         return evs[0]>-self.tol
     
     @staticmethod
-    def closest_point_simplex(p, a):
-        r'''
-        Algorithm from Held, Wolfe and Crowder (1974) to project onto simplex :math:`\{q:q_{i}\qeq 0,\sum q_{i}=a\}`.
+    def closest_point_simplex(p: np.ndarray, a: float) -> np.ndarray:
+        r"""Algorithm from Held, Wolfe and Crowder (1974) to project onto simplex :math:`\{q:q_{i}\qeq 0,\sum q_{i}=a\}`.
         It uses that p is already sorted in increasing order.
-
+        
         Parameters
-        ---------
-        p: numpy.ndarray
+        ----------
+        p: np.ndarray
             Input point sorted in increasing order
         a: float
             positive value that is the sum of the elements in the result
-        '''
+        
+        
+        Returns
+        -------
+        np.ndarray
+            Computed array.
+        """
         p_flipped=np.flip(p)
         comp_vals=(np.cumsum(p_flipped)-a)/np.arange(1,p.shape[0]+1)
         k=np.where(comp_vals<p_flipped)[0][-1]
@@ -77,13 +104,13 @@ class QuadraticPositiveSemidef(Functional):
         return np.maximum(p-t,0)
         
 
-    def _eval(self, x):
+    def _eval(self, x: ReadOnlyVector) -> float:
         if(self.is_in_essential_domain(x)):
             return np.sum(np.abs(x)**2)/2
         else:
             return np.inf
 
-    def _proximal(self, x, tau, out=None, mask=None, **proximal_par):
+    def _proximal(self, x: ReadOnlyVector, tau: float, out: Vector | None=None, mask: Mask | None=None, **proximal_par: Any) -> Vector:
         evs, U = np.linalg.eigh(x)
         evs /= 1 + tau
         if self.has_trace_constraint:
@@ -97,7 +124,7 @@ class QuadraticPositiveSemidef(Functional):
         np.copyto(out, result, where=where)
         return out
         
-    def _subgradient(self, x, out=None, **subgradient_par):
+    def _subgradient(self, x: ReadOnlyVector, out: Vector | None=None, **subgradient_par: Any) -> Vector:
         if self.is_in_essential_domain(x):
             if out is None:
                 return np.copy(x)
@@ -105,13 +132,13 @@ class QuadraticPositiveSemidef(Functional):
             return out
         raise NotInEssentialDomainError
         
-    def _hessian(self, x):
+    def _hessian(self, x: ReadOnlyVector) -> Operator:
         if(self.is_in_essential_domain(x)):
             return self.domain.identity
         else:
             return NotInEssentialDomainError
         
-    def _conj(self, xstar):
+    def _conj(self, xstar: ReadOnlyVector) -> float:
         evs=np.linalg.eigvalsh(xstar)
         if(self.has_trace_constraint):
             cps=QuadraticPositiveSemidef.closest_point_simplex(evs,self.trace_val)

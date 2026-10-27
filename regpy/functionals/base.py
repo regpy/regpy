@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from regpy.vecsps.base import TupleVector
+
 from collections import defaultdict
 from types import NotImplementedType
 from typing import Any, Callable, Iterator
@@ -11,9 +15,9 @@ import numpy as np
 from numpy import isscalar
 
 from regpy import operators, util, vecsps, hilbert
-from regpy.operators import Operator
+from regpy.operators import Operator, Zero, ObsDataT
 from regpy.vecsps import VectorSpaceBase,NumPyVectorSpace
-from regpy.vecsps.base import Scalar, Vector
+from regpy.vecsps.base import Scalar, Vector, ReadOnlyVector
 from regpy.hilbert import HilbertSpace
 from regpy.util import Errors
 
@@ -86,9 +90,9 @@ class AbstractFunctionalBase:
 class AbstractFunctional(AbstractFunctionalBase):
     r"""An abstract functional that can be called on a vector space to get the corresponding
     concrete implementation.
-
+    
     AbstractFunctionals provides two kinds of functionality:
-
+    
      * A decorator method `register(vecsp_type)` that can be used to declare some class or function
        as the concrete implementation of this abstract functional for vector spaces of type `vecsp_type`
        or subclasses thereof, e.g.:
@@ -105,13 +109,13 @@ class AbstractFunctional(AbstractFunctionalBase):
         @TV.register(vecsps.UniformGridFcts)
         class TVUniformGridFcts(HilbertSpace):
             ...
-
+    
     If called without a vector space as positional argument, it returns a new abstract functional
     with all passed keyword arguments remembered as defaults.
-
+    
     Parameters
     ----------
-    name : str
+    name: str
         A name for this abstract functional. Currently, this is only used in error messages, when no
         implementation was found for some vector space.
     """
@@ -127,20 +131,20 @@ class AbstractFunctional(AbstractFunctionalBase):
         impl: Callable[..., Functional | NotImplementedType] | None = None,
     ) -> Callable[[Callable[..., Functional]], Callable[..., Functional]] | None:
         r"""Register an implementation for a vector-space class.
-
+        
         When ``impl`` is omitted, return a decorator that performs the
         registration.
-
+        
         Parameters
         ----------
-        vecsp_type : `regpy.vecsps.VectorSpaceBase`
-            Vector Space on which the functional should be registered. 
-        impl : regpy.functionals.Functional, optional
-            Concrete implementation to register. Defaults to ``None``.
-
+        vecsp_type: type[VectorSpaceBase] | type[HilbertSpace]
+            Vector Space on which the functional should be registered.
+        impl: Callable[..., Functional | NotImplementedType] | None [default: None]
+            Concrete implementation to register.
+        
         Returns
         -------
-        None or callable
+        Callable[[Callable[..., Functional]], Callable[..., Functional]] | None
             ``None`` for direct registration; otherwise, a registration
             decorator.
         """
@@ -189,10 +193,10 @@ class AbstractFunctional(AbstractFunctionalBase):
 
 class AbstractLinearCombination(AbstractFunctional):
     r"""Linear combination of abstract functionals. 
-
+    
     Parameters
     ----------
-    *args : (scalar, regpy.functionals.AbstractFunctional) or regpy.functionals.AbstractFunctional
+    *args: AbstractFunctional | tuple[float, AbstractFunctional]
         List of coefficients and functionals to be taken as linear combinations.
     """
     def __init__(
@@ -247,12 +251,12 @@ class AbstractLinearCombination(AbstractFunctional):
 
 class AbstractVerticalShift(AbstractFunctional):
     r"""Abstract analogue to `VerticalShift` class. Shifting a functional by some offset. Should not be used directly but rather by adding some scalar to the functional. 
-
+    
     Parameters
     ----------
-    func : regpy.functionals.AbstractFunctional
+    func: AbstractFunctional
         Functional to be offset.
-    offset : scalar
+    offset: float
         Offset added to the evaluation of the functional.
     """
     def __init__(self, func: AbstractFunctional, offset: float) -> None:
@@ -283,13 +287,13 @@ class AbstractVerticalShift(AbstractFunctional):
 class AbstractComposed(AbstractFunctional):
     r"""Abstract analogue to `Composed`. Composition of an operator with a functional :math:`F\circ O`. This should not be called
     directly but rather used by multiplying the `AbstractFunctional` object with an `regpy.operators.Operator`.
-
+    
     Parameters
     ----------
-    func : `regpy.functionals.AbstractFunctional`
-        Functional to be composed with. 
-    op : `regpy.operators.Operator`
-        Operator to be composed with. 
+    func: AbstractFunctional
+        Functional to be composed with.
+    op: Operator
+        Operator to be composed with.
     """
     def __init__(self, func: AbstractFunctional, op: Operator) -> None:
         if not isinstance(func, AbstractFunctional):
@@ -319,67 +323,83 @@ class AbstractComposed(AbstractFunctional):
 
 
 class Functional:
-    r"""
-    Base class for implementation of functionals. Subclasses should at least implement the 
+    r"""Base class for implementation of functionals. Subclasses should at least implement the 
         `_eval` :  evaluating the functional
     and 
         `_subgradient` or `_linearize` : returning a subgradient at `x`.
     
     The evaluation of a specific functional on some element of the `domain` can be done by
     simply calling the functional on that element. 
-        
+    
     Functionals can be added by taking `LinearCombination` of them. The `domain` has to be the
     same for each functional. 
-
+    
     They can also be multiplied by scalars or vector of their respective `domain`or multiplied by 
     `regpy.operators.Operator`. This leads to a functional that is composed with the operator
     :math:`F\circ O` where :math:`F` is the functional and :math:`O` some operator. Multiplying by a scalar
     results in a composition with the `PtwMultiplication` operator.
-
+    
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpaceBase
+    domain: VectorSpaceBase
         The underlying vector space for the function space on which it is defined.
-    h_domain : regpy.hilbert.HilbertSpace (default: None)
+    h_domain: HilbertSpace | None [default: None]
         The underlying Hilbert space. The proximal mapping, the parameter of strong convexity, 
         and the Lipschitz constant are defined with respect to this Hilbert space.
         In the default case `L2(domain)` is used.
-    is_convex: bool [default: True]
-        If true, the functional should be convex.   
     is_linear: bool [default: False]
         If true, the functional should be linear.
     is_quadratic: bool [default: False]
-        If true, the functional should be quadratic. 
-    conj_is_quadratic: bool or None [default: None]
+        If true, the functional should be quadratic.
+    conj_is_quadratic: bool | None [default: None]
         The corresponding boolean attribute indicates if the conjugate functional is quadratic.
-        If None, the same value as is_quadratic will be used.  
+        If None, the same value as is_quadratic will be used.
     is_separable: bool [default: False]
         If true, the functional should be the sum of functionals acting on only one component of the input vector.
-        In this case, the parameters  
-    dom_u, dom_l, conj_dom_u, conj_dom_l: self.domain [default:None]
+        In this case, the parameters
+    is_convex: bool [default: True]
+        If true, the functional should be convex.
+    convexity_param: float [default: 0.0]
+        parameter of strong convexity of the functional. 
+        0 if the functional is not strongly convex.
+    Lipschitz: float [default: inf]
+        Lipschitz continuity constant of the gradient.  
+        math.inf the gradient is not Lipschitz continuous.
+    dom_l: Vector | Scalar | None [default: None]
         should not be None, and they should specify the essential domain of the functional by 
         :math:`\{x in domain: dom_l<=x<=dom_u}`, 
         and the essential domain of the conjugate functional (which is then also separable) by 
         :math:`\{xstar in domain: conj_dom_l<=xstar <= conj_dom_u\}`.
-        In case of open domains, the boundaries should be shifted in the order of machine precision. 
-    convexity_param: float [default: 0]
-        parameter of strong convexity of the functional. 
-        0 if the functional is not strongly convex.
-    Lipschitz: float [default: math.inf]
-        Lipschitz continuity constant of the gradient.  
-        math.inf the gradient is not Lipschitz continuous.
-    methods: set [default: set()]
+        In case of open domains, the boundaries should be shifted in the order of machine precision.
+    dom_u: Vector | Scalar | None [default: None]
+        should not be None, and they should specify the essential domain of the functional by 
+        :math:`\{x in domain: dom_l<=x<=dom_u}`, 
+        and the essential domain of the conjugate functional (which is then also separable) by 
+        :math:`\{xstar in domain: conj_dom_l<=xstar <= conj_dom_u\}`.
+        In case of open domains, the boundaries should be shifted in the order of machine precision.
+    conj_dom_l: Vector | Scalar | None [default: None]
+        should not be None, and they should specify the essential domain of the functional by 
+        :math:`\{x in domain: dom_l<=x<=dom_u}`, 
+        and the essential domain of the conjugate functional (which is then also separable) by 
+        :math:`\{xstar in domain: conj_dom_l<=xstar <= conj_dom_u\}`.
+        In case of open domains, the boundaries should be shifted in the order of machine precision.
+    conj_dom_u: Vector | Scalar | None [default: None]
+        should not be None, and they should specify the essential domain of the functional by 
+        :math:`\{x in domain: dom_l<=x<=dom_u}`, 
+        and the essential domain of the conjugate functional (which is then also separable) by 
+        :math:`\{xstar in domain: conj_dom_l<=xstar <= conj_dom_u\}`.
+        In case of open domains, the boundaries should be shifted in the order of machine precision.
+    methods: set[str] [default: set()]
         names of the methods implemented by a given Functional instance.
         Subset of {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'}
-    conj_methods set [default: set()]
-        names of the methods implemented by the conjugate of a given Functional instance.
-        Subset of {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'}  
+    conj_methods: set[str] [default: set()]
+        Names of the implemented functional operations.
     is_data_func: bool [default: False]
         If true, the functional acts as a "data functional". In this case it must have a `data` property with a corresponding setter.
         Often data is a vector in domain, and the functional attains its infimum at this point.  
         But this is not always the case -- think of the realization of a point process defining
         a Kullback-Leibler functional, for example. 
-        This property is also used to incorporate an initial guess in penalty functionals. 
+        This property is also used to incorporate an initial guess in penalty functionals.
     """
 
     log = util.ClassLogger()
@@ -462,7 +482,19 @@ class Functional:
 
 
     def _validate_out(self, out: Vector | None) -> Vector | None:
-        """Validate an optional output vector and return it unchanged."""
+        r"""Validate an optional output vector and return it unchanged.
+        
+        Parameters
+        ----------
+        out: Vector | None
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        Vector | None
+            Result described above.
+        """
         if out is not None and out not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(
                 out, self.domain, vec_name="out", space_name="domain",
@@ -471,9 +503,23 @@ class Functional:
         return out
 
     def _copy_vector(
-        self, x: Vector, out: Vector | None = None
+        self, x: ReadOnlyVector, out: Vector | None = None
     ) -> Vector:
-        """Return ``out`` containing ``x``, allocating only if necessary."""
+        r"""Return ``out`` containing ``x``, allocating only if necessary.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         if out is None:
             out = self.domain.empty()
         if out is not x and self._shares_memory(out, x):
@@ -484,8 +530,22 @@ class Functional:
         return out
 
     @staticmethod
-    def _shares_memory(x: Vector, y: Vector) -> bool:
-        """Whether writing to one vector can modify the other."""
+    def _shares_memory(x: ReadOnlyVector, y: ReadOnlyVector) -> bool:
+        r"""Whether writing to one vector can modify the other.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         if x is y:
             return True
         if isinstance(x, np.ndarray) and isinstance(y, np.ndarray):
@@ -496,7 +556,7 @@ class Functional:
             return any(Functional._shares_memory(x, y_i) for y_i in y)
         return False
 
-    def __call__(self, x: Vector) -> float:
+    def __call__(self, x: ReadOnlyVector) -> float:
         if x not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(x,self.domain,space_name="domain", add_info=f"Not able to evaluate {self} on the given vector."))
         try:
@@ -507,26 +567,30 @@ class Functional:
             raise RuntimeError(util.Errors.not_instance(x,float, add_info=f"The evaluation of the functional {self} did not return a float or int."+"\n\t"+f"x = {x}"))
         return y
 
-    def linearize(self, x: Vector) -> tuple[float, Vector]:
-        r"""
-        Bounds the functional from below by a linear functional at `x` given by the value at that point and a subgradient v such that
-
+    def linearize(self, x: ReadOnlyVector) -> tuple[float, Vector]:
+        r"""Bounds the functional from below by a linear functional at `x` given by the value at that point and a subgradient v such that
+        
         .. math::
             F(x+ h) \geq  F(x) + vdot(v,h) for all h
-
+        
         Requires the implementation of either `_subgradient` or `_linearize`.
-
+        
         Parameters
         ----------
-        x : in self.domain
+        x: ReadOnlyVector
             Element at which will be linearized
-
+        
         Return
         ------
         y 
             Value of :math:`F(x)`.
         grad : in self.domain
             Subgradient of :math:`F` at :math:`x`.        
+        
+        Returns
+        -------
+        tuple[float, Vector]
+            Result described above.
         """
         if x not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(x,self.domain,space_name="domain", add_info=f"Not able to linearize {self} on the given vector."))
@@ -542,12 +606,27 @@ class Functional:
         return y, grad
 
     def subgradient(
-        self, x: Vector, out: Vector | None = None, **subgradient_par: Any
+        self, x: ReadOnlyVector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         r"""Return a subgradient of the functional at ``x``.
-
+        
         If ``out`` is supplied, the result is written into that vector and the
         same object is returned. ``out`` may coincide with ``x``.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        **subgradient_par: Any
+            Subgradient par.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
         """
         if x not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(
@@ -567,45 +646,208 @@ class Functional:
                 add_info=f"The computation of the gradient of functional {self} did not return an element in the domain."
             ))
         return grad
+
+    def reference_vector(self, out: Vector | None = None) -> Vector:
+        r"""Return a feasible reference vector for the functional.
+        
+        The reference vector is intended, in particular, as an initial guess
+        for iterative methods. Ideally, it is a global minimizer of the
+        functional. As a minimal requirement, it is guaranteed to be feasible, meaning
+        that the functional has a finite value at the returned vector.
+        
+        The default implementation first evaluates
+        
+        .. code-block:: python
+        
+            self.conj.subgradient(self.domain.zeros(read_only=True))
+        
+        If this conjugate subgradient is available, the result is a global
+        minimizer. If it is unavailable, or if zero is outside the essential
+        domain of the conjugate, the proximal map is evaluated at zero with
+        parameter ``tau=1``. Notice that zero being outside the effective
+        domain of the conjugate is equivalent to the primal functional being
+        unbounded below. An implemented proximal map always returns a feasible
+        point. Only if the proximal map is unavailable does the default
+        implementation try the zero vector itself. If none of these strategies
+        produces a feasible vector, :class:`NotInEssentialDomainError` is
+        raised.
+        
+        Derived classes may override :meth:`_reference_vector` if the default
+        implementation is not applicable or not appropriate. 
+        
+        Parameters
+        ----------
+        out: Vector | None [default: None]
+            If supplied, the result is written into this vector and the same
+            object is returned.
+        
+        Returns
+        -------
+        Vector
+            A vector in :attr:`domain` at which the functional is finite.
+        
+        Raises
+        ------
+        ValueError
+            If ``out`` does not belong to :attr:`domain`.
+        RuntimeError
+            If an overridden :meth:`_reference_vector` returns an object
+            outside :attr:`domain`.
+        NotInEssentialDomainError
+            If no feasible reference vector can be constructed, or if an
+            overridden :meth:`_reference_vector` returns an infeasible vector.
+        """
+        self._validate_out(out)
+        reference = self._reference_vector(out=out)
+        if out is not None:
+            reference = self._copy_vector(reference, out=out)
+        if reference not in self.domain:
+            raise RuntimeError(util.Errors.not_in_vecsp(
+                reference, self.domain, vec_name="reference", space_name="domain",
+                add_info=(
+                    f"The reference vector of functional {self} does not "
+                    "belong to its domain."
+                ),
+            ))
+        try:
+            value = self(reference)
+        except NotInEssentialDomainError as error:
+            raise NotInEssentialDomainError(
+                f"The reference vector returned by {self} is not feasible."
+            ) from error
+        if not np.isfinite(value):
+            raise NotInEssentialDomainError(
+                f"The reference vector returned by {self} is not feasible: "
+                f"the functional value is {value}."
+            )
+        return reference
+
+    def conj_reference_vector(self, out: Vector | None = None) -> Vector:
+        r"""Return a feasible reference vector for the conjugate functional.
+        
+        This method is the conjugate counterpart of :meth:`reference_vector`.
+        Ideally, it returns a global minimizer of the conjugate functional; at
+        minimum, the conjugate functional is finite at the returned vector.
+        
+        The default implementation first evaluates
+        
+        .. code-block:: python
+        
+            self.subgradient(self.domain.zeros(read_only=True))
+        
+        If this is unavailable or zero is outside the primal essential domain,
+        it evaluates the conjugate proximal map at zero with parameter
+        ``tau=1``. Only if that proximal map is unavailable does it return zero,
+        provided zero is feasible for the conjugate functional. Derived classes
+        may override :meth:`_conj_reference_vector`.
+        
+        Parameters
+        ----------
+        out: Vector | None [default: None]
+            If supplied, the result is written into this vector and the same
+            object is returned.
+        
+        Returns
+        -------
+        Vector
+            A vector in :attr:`domain` at which the conjugate functional is
+            finite.
+        
+        Raises
+        ------
+        ValueError
+            If ``out`` does not belong to :attr:`domain`.
+        RuntimeError
+            If an overridden :meth:`_conj_reference_vector` returns an object
+            outside :attr:`domain`.
+        NotInEssentialDomainError
+            If no feasible conjugate reference vector can be constructed, or
+            if an overridden :meth:`_conj_reference_vector` returns an
+            infeasible vector.
+        """
+        self._validate_out(out)
+        reference = self._conj_reference_vector(out=out)
+        if out is not None:
+            reference = self._copy_vector(reference, out=out)
+        if reference not in self.domain:
+            raise RuntimeError(util.Errors.not_in_vecsp(
+                reference, self.domain, vec_name="conjugate reference",
+                space_name="domain",
+                add_info=(
+                    f"The conjugate reference vector of functional {self} "
+                    "does not belong to its domain."
+                ),
+            ))
+        try:
+            value = self.conj(reference)
+        except NotInEssentialDomainError as error:
+            raise NotInEssentialDomainError(
+                f"The conjugate reference vector returned by {self} is not "
+                "feasible."
+            ) from error
+        if not np.isfinite(value):
+            raise NotInEssentialDomainError(
+                f"The conjugate reference vector returned by {self} is not "
+                f"feasible: the conjugate functional value is {value}."
+            )
+        return reference
     
-    def dist_subdiff(self, vstar: Vector, x: Vector) -> float:
+    def dist_subdiff(
+        self, vstar: ReadOnlyVector, x: ReadOnlyVector, best_approx: Vector | None = None
+    ) -> float:
         r"""Returns the distance of a vector :math:`v^*` to the subdifferential :math:`\partial F(x)` at x with respect 
         to the dual norm.
         Needs to be re-implemented for functionals which are not Gateaux differentiable.
-
+        
         Parameters
         ----------
-        vstar: in `self.domain`
-            Vector of which the distance is to be determined. 
-        x: in `self.domain`
+        vstar: ReadOnlyVector
+            Vector of which the distance is to be determined.
+        x: ReadOnlyVector
             Point at which the subdifferential is evaluated
+        best_approx: Vector | None [default: None]
+            Pre-allocated output vector. If provided, write the best
+            approximation to vstar in the subdifferential at x into it.
+            The default implementation uses ``subgradient(x)``; nonsmooth
+            functionals need to override this method to project onto the
+            whole subdifferential. The output may alias either input.
+        
+        Returns
+        -------
+        float
+            Distance in the dual Hilbert norm. Providing best_approx does
+            not change the return type or the distance.
         """
-        residual = self.domain.empty()
-        self.subgradient(x, out=residual)
-        residual *= -1
-        residual += vstar
-        return self.h_domain.dual_space().norm(residual)
+        self._validate_out(best_approx)
+        proj_vstar = self.domain.empty()
+        self.subgradient(x, out=proj_vstar)
+        distance = self.h_domain.dual_space().norm(vstar - proj_vstar)
+        if best_approx is not None:
+            self._copy_vector(proj_vstar, out=best_approx)
+        return distance
 
     def hessian(
-        self, x: Vector, recursion_safeguard: bool = False
+        self, x: ReadOnlyVector, recursion_safeguard: bool = False
     ) -> operators.Operator:
         r"""The hessian of the functional at `x` as an `regpy.operators.Operator` mapping form the 
         functionals `domain` to it self. It is defined by 
-
+        
         .. math::
             F(x+h) = F(x) + (\nabla F)(x)^T h + \frac{1}{2} h^T Hess F(x) h + \mathcal{o}(\|h\|^2)
-
+        
         Require either the implementation of _hessian or of _hessian_conj and _subgradient
-
+        
         Parameters
         ----------
-        `x` : `self.domain`
-            Point in `domain` at which to compute the hessian. 
-
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        recursion_safeguard: bool [default: False]
+            Recursion safeguard.
+        
         Returns
         -------
         `h` : `regpy.operators.Operator`
-            Hessian operator at the point `x`. 
+            Hessian operator at the point `x`.
         """
         if x not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(x,self.domain,space_name="domain", add_info=f"Not able to compute hessian of {self} on the given vector."))
@@ -619,15 +861,302 @@ class Functional:
         if isinstance(h, operators.Operator) and h.linear and h.domain == h.codomain == self.domain:
             return h
         else:
-            raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"Computing the Hessian of {self} return a possibly nonlinear operator with non matching domain and codomain that is not identical to the domain of the functional."))
+            raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"The computed Hessian of {self} is either nonlinear or its domain or codomain are not identical to the domain of the functional."))
+
+    def _bregman_reference(self, y: ReadOnlyVector, ystar: ReadOnlyVector | None) -> tuple[ReadOnlyVector, Any, float]:
+        r"""Validate and copy a Bregman base point and its dual subgradient.
+        
+        Parameters
+        ----------
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        tuple[ReadOnlyVector, Any, float]
+            Result described above.
+        """
+        if y not in self.domain:
+            raise ValueError('y must belong to the functional domain.')
+        y = self._copy_vector(y)
+        value = self(y)
+        if not np.isfinite(value):
+            raise NotInEssentialDomainError('The Bregman base point must have finite functional value.')
+        if ystar is None:
+            ystar = self.subgradient(y)
+        else:
+            if ystar not in self.domain:
+                raise ValueError('ystar must belong to the functional domain (dual coordinates).')
+            distance = self.dist_subdiff(ystar, y)
+            tolerance = 64 * np.finfo(float).eps * max(
+                1., self.h_domain.dual_space().norm(ystar))
+            if not np.isfinite(distance) or distance > tolerance:
+                raise ValueError(Errors.value_error('ystar must belong to the subdifferential at y.',
+                                                    (self.dist_subdiff,tolerance)))
+        return y, self._copy_vector(ystar), float(np.real(value))
+
+    def bregman_func(self, y: ReadOnlyVector, ystar: ReadOnlyVector | None = None) -> Functional:
+        r"""Construct the Bregman functional based at y.
+        
+        Returns the functional
+        
+        .. math::
+            x \mapsto F(x)-F(y)-\langle y^*,x-y\rangle.
+        
+        y must have finite functional value. ystar is a dual covector in
+        the subdifferential at y; if omitted, subgradient(y) is used. The
+        pairing is the real part of domain.vdot, not a Hilbert inner product.
+        The generic result is a LinearCombination with an affine correction.
+        Base-point and subgradient vectors are copied. The original F is
+        retained as a component and should not subsequently be modified.
+        
+        The same interface is available on F.conj.
+        
+        Parameters
+        ----------
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
+        y, ystar, value = self._bregman_reference(y, ystar)
+        linear = LinearFunctional(-ystar, domain=self.domain,
+                                  h_domain=self.h_domain,
+                                  gradient_in_dual_space=True)
+        offset = float(np.real(self.domain.vdot(ystar, y))) - value
+        return LinearCombination(self, linear, offset=offset)
+
+
+    def conj_bregman_func(self, y: ReadOnlyVector, ystar: ReadOnlyVector | None = None) -> Functional:
+        r"""Construct the conjugate's Bregman functional (overridable hook).
+        
+        Here y is a point in dual coordinates and ystar is a primal element
+        of the conjugate's subdifferential at y.
+        
+        Parameters
+        ----------
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
+        return Functional.bregman_func(self.conj, y, ystar)
+
+
+    def bregman(self,x:ReadOnlyVector, y:ReadOnlyVector | None, ystar:ReadOnlyVector | None=None) -> float:
+        r"""Computes the Bregman divergence of the functional `F`for two points `x` and `y` 
+        with respect to a subgradient :math:`y^* \in \partial F(y)` given by 
+        
+        .. math::
+            \Delta^{y^*}(x,y) := F(x) - F(y) - \langle y^*,x-y\rangle       
+        
+        The second argument `y` can be None if `ystar` is provided. In this case the Bregman 
+        divergence is evaluated by the equivalent formula
+        
+         .. math::
+            \Delta^{y^*}(x,y) := F(x) + F^*(y^*) - \langle y^*,x\rangle  
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        y: ReadOnlyVector | None
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+
+        if x not in self.domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                x, self.domain, space_name="domain",
+                add_info=f"First argument of bregman cannot be handled by {self}."
+            ))
+        if y is None:
+            if ystar is None:
+                raise ValueError("bregman requires y or ystar.")
+            if ystar not in self.domain:
+                raise ValueError(util.Errors.not_in_vecsp(
+                    ystar, self.domain, space_name="domain"
+                ))
+            return float(np.real(self(x) + self.conj(ystar)
+                                 - self.domain.vdot(ystar, x)))
+        if y not in self.domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                y, self.domain, space_name="domain",
+                add_info=f"Second argument of bregman cannot be handled by {self}."
+            ))
+        if ystar is None:
+            ystar = self.subgradient(y)  
+        else: 
+            if ystar not in self.domain:
+                raise ValueError(util.Errors.not_in_vecsp(
+                    ystar, self.domain, space_name="domain",
+                    add_info=f"Given subgradient of bregman cannot be handled by {self}."
+                ))
+            dist = self.dist_subdiff(ystar,y)
+            if dist>0:
+                raise ValueError(util.Errors.value_error('Given subgradient not in subdifferential',(dist,ystar,y)))
+
+        return self(x) - self(y) - self.domain.vdot(ystar,x-y)
+
+    def conj_bregman(self, xstar: ReadOnlyVector, ystar: ReadOnlyVector | None,
+                     y: ReadOnlyVector | None = None) -> float:
+        r"""A separate implementation for the conjugate is included to allow replacement
+        by derived classes.
+        
+        Parameters
+        ----------
+        xstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None
+            Input vector; its coefficients are only read.
+        y: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        return Functional.bregman(self.conj, xstar, ystar, y)
+
+    def symm_bregman(self,x:ReadOnlyVector, y:ReadOnlyVector,
+                     xstar:ReadOnlyVector | None = None, ystar:ReadOnlyVector | None = None) -> float:
+        r"""Computes the symmetric Bregman divergence of the functional `F` for two points 
+        `x` and `y` with respect to subgradients :math:`xstar \in \partial F(x)` 
+        and :math:`ystar \in \partial F(y)` given by 
+        
+        .. math::
+            \Delta_{symm}^{x^*,y^*}(x,y)  F(x) - F(x0) 
+                         = \Delta^{y^*}(x,y) + \Delta^{x^*}(y,x)
+                         = \langle x^*-y^*,x-y\rangle.       
+        
+        The latter formula is used for evaluation. 
+                         
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        xstar: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        if x not in self.domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                x, self.domain, space_name="domain",
+                add_info=f"First argument of symm_bregman cannot be handled by {self}."
+            ))
+        if y not in self.domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                y, self.domain, space_name="domain",
+                add_info=f"Second argument of symm_bregman cannot be handled by {self}."
+            ))
+        if xstar is None:
+            xstar = self.subgradient(x)  
+        else: 
+            if xstar not in self.domain:
+                raise ValueError(util.Errors.not_in_vecsp(
+                    xstar, self.domain, space_name="domain",
+                    add_info=f"Given subgradient of bregman cannot be handled by {self}."
+                ))
+            dist = self.dist_subdiff(xstar,x)
+            if dist>0:
+                raise ValueError(util.Errors.value_error('Given subgradient not in subdifferential',(dist,xstar,x)))
+        if ystar is None:
+            ystar = self.subgradient(y)  
+        else: 
+            if ystar not in self.domain:
+                raise ValueError(util.Errors.not_in_vecsp(
+                    ystar, self.domain, space_name="domain",
+                    add_info=f"Given subgradient of bregman cannot be handled by {self}."
+                ))
+            dist = self.dist_subdiff(ystar,y)
+            if dist>0:
+                raise ValueError(util.Errors.value_error('Given subgradient not in subdifferential',(dist,ystar,y)))
+
+        return self.domain.vdot(xstar-ystar,x-y)
+
+    def gradient_as_operator(self) -> operators.Operator:
+        r"""Return the functional's gradient as a nonlinear operator.
+        
+        The returned operator maps ``self.domain`` to itself. Its evaluation
+        at :math:`x` is :meth:`subgradient`, and the derivative at :math:`x`
+        applies the Hessian returned by :meth:`hessian`. Since Hessians are
+        symmetric, derivatives of the returned operator are marked as self-adjoint.
+        
+        Returns
+        -------
+        operators.Operator
+            An operator representing :math:`x \mapsto \partial F(x)`.
+        
+        Raises
+        ------
+        NotImplementedError
+            If either ``subgradient`` or ``hessian`` is not listed in
+            :attr:`methods`.
+        """
+        required = {'subgradient', 'hessian'}
+        missing = required - self.methods
+        if missing:
+            raise NotImplementedError(util.Errors.generic_message(
+                "gradient_as_operator requires the functional methods "
+                f"subgradient and hessian. Missing: {', '.join(sorted(missing))}."
+            ))
+        return _GradientAsOperator(self)
 
     def conj_subgradient(
-        self, xstar: Vector, out: Vector | None = None, **subgradient_par: Any
+        self, xstar: ReadOnlyVector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         r"""Return a subgradient of the conjugate functional.
-
+        
         If ``out`` is supplied, the result is written into that vector and the
         same object is returned. ``out`` may coincide with ``xstar``.
+        
+        Parameters
+        ----------
+        xstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        **subgradient_par: Any
+            Subgradient par.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
         """
         if xstar not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(
@@ -651,27 +1180,53 @@ class Functional:
             ))
         return grad
 
-    def _conj_dist_subdiff(self, v: Vector, xstar: Vector) -> float:
+    def _conj_dist_subdiff(
+        self, v: ReadOnlyVector, xstar: ReadOnlyVector, best_approx: Vector | None = None
+    ) -> float:
         r"""Returns the distance of a vector :math:`v` to the subdifferential :math:`\partial F^*(x^*)` at :math:`x^*`.
         Needs to be re-implemented for functionals whose conjugate is not Gateaux differentiable.
-
+        
         Parameters
         ----------
-        v: in `self.domain`
-            Vector of which the distance is to be determined. 
-        x_star: in `self.domain`
+        v: ReadOnlyVector
+            Vector of which the distance is to be determined.
+        xstar: ReadOnlyVector
             Point at which the subdifferential is evaluated
+        best_approx: Vector | None [default: None]
+            Pre-allocated output for the closest point to v in the
+            conjugate subdifferential. The default is
+            ``conj_subgradient(xstar)``. May alias either input.
+        
+        Returns
+        -------
+        float
+            Distance in the primal Hilbert norm.
         """
-        residual = self.domain.empty()
-        self.conj_subgradient(xstar, out=residual)
-        residual *= -1
-        residual += v
-        return self.domain.norm(residual)
+        self._validate_out(best_approx)
+        proj_v = self.domain.empty()
+        self.conj_subgradient(xstar, out=proj_v)
+        distance = self.h_domain.norm(v - proj_v)
+        if best_approx is not None:
+            self._copy_vector(proj_v, out=best_approx)
+        return distance
 
     def conj_hessian(
-        self, xstar: Vector, recursion_safeguard: bool = False
+        self, xstar: ReadOnlyVector, recursion_safeguard: bool = False
     ) -> operators.Operator:
         r"""The hessian of the functional. Should not be called directly, but via self.conj.hessian.
+                
+        Parameters
+        ----------
+        xstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        recursion_safeguard: bool [default: False]
+            Recursion safeguard.
+        
+        
+        Returns
+        -------
+        operators.Operator
+            Result described above.
         """
         if xstar not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(xstar,self.domain,space_name="domain", add_info=f"Not able to compute hessian of conjugate of {self} on the given vector."))
@@ -687,9 +1242,19 @@ class Functional:
         else:
             raise RuntimeError(util.Errors.not_instance(h,operators.Operator,add_info=f"Computing the Hessian of conjugate of {self} return a possibly nonlinear operator with non matching domain and codomain that is not identical to the domain of the functional."))
 
-    def conj_linearize(self, xstar: Vector) -> tuple[float, Vector]:
-        r"""
-        Linearizes the conjugate functional :math:`F^*`. Should not be called directly, but via self.conj.linearize
+    def conj_linearize(self, xstar: ReadOnlyVector) -> tuple[float, Vector]:
+        r"""Linearizes the conjugate functional :math:`F^*`. Should not be called directly, but via self.conj.linearize
+        
+        Parameters
+        ----------
+        xstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        tuple[float, Vector]
+            Result described above.
         """
         if xstar not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(xstar,self.domain,space_name="domain", add_info=f"Not able to compute linearize of conjugate of {self} on the given vector."))
@@ -706,29 +1271,33 @@ class Functional:
 
     def proximal(
         self,
-        x: Vector,
+        x: ReadOnlyVector,
         tau: float,
         recursion_safeguard: bool = False,
         out: Vector | None = None,
         **proximal_par: Any,
     ) -> Vector:
         r"""Proximal operator 
-
+        
         .. math::
             \mathrm{prox}_{\tau F}(x)=\arg \min _{v\in {\mathcal {X}}}(F(v)+{\frac{1}{2\tau}}\Vert v-x\Vert_{\mathcal {X}}^{2}).
-
+        
         Requires either an implementation of `_proximal` or of `_subgradient` and `_conj_proximal`.
-
+        
         Parameters
         ----------
-        x : Vector
+        x: ReadOnlyVector
             Vector in the respective domain. Point at which to compute proximal.
-        tau : scalar
-            Regularization parameter for the proximal. 
-        out : Vector or None
+        tau: float
+            Regularization parameter for the proximal.
+        recursion_safeguard: bool [default: False]
+            Recursion safeguard.
+        out: Vector | None [default: None]
             If supplied, the result is written into that vector and the same object 
             is returned. ``out`` may coincide with ``x``
-
+        **proximal_par: Any
+            Proximal par.
+        
         Returns
         -------
         proximal : `self.domain`
@@ -772,16 +1341,35 @@ class Functional:
 
     def conj_proximal(
         self,
-        xstar: Vector,
+        xstar: ReadOnlyVector,
         tau: float,
         recursion_safeguard: bool = False,
         out: Vector | None = None,
         **proximal_par: Any,
     ) -> Vector:
         r"""Evaluate the proximal mapping of the conjugate functional.
-
+        
         If ``out`` is supplied, the result is written into that vector and the
         same object is returned. ``out`` may coincide with ``xstar``.
+        
+        Parameters
+        ----------
+        xstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        tau: float
+            Proximal or iteration step size.
+        recursion_safeguard: bool [default: False]
+            Recursion safeguard.
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        **proximal_par: Any
+            Proximal par.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
         """
         if xstar not in self.domain:
             raise ValueError(util.Errors.not_in_vecsp(
@@ -818,69 +1406,204 @@ class Functional:
             ))
         return proximal
     
-    def as_data_func(self, data: Vector) -> Functional:
-        return HorizontalShiftDilation(self, data = data)
+    def as_data_func(self, 
+                     data: ObsDataT | None = None
+                     ) -> Functional:
+        r"""Returns a modified version of the given functional as a data functional. 
+        If self is already a data functional, the method returns self with an updated data vector. 
+        
+        Otherwise, self is made a data functional by shifting it by the given data vector. 
+        None results in the zero vector. 
+        Derived classes (e.g., KullbackLeibler) replace this default implementation.
+        
+        Parameters
+        ----------
+        data: ObsDataT | None [default: None]
+            The data. None results in the zero vector.
+        
+        Returns
+        --------------
+        Functional
+        """
+        if self.is_data_func:
+            if data is not None:
+                self.data = data
+            return self
+        else:     
+            return HorizontalShiftDilation(self, data = data)
 
     def shift(
-        self, v: Vector | None = None, data_shift: Vector | None = None
+        self, v: ReadOnlyVector | None = None, data_shift: ReadOnlyVector | None = None
     ) -> Functional:
-        r"""Returns the functional :math:`x\mapsto F(x-v-data)` """
+        r"""Returns the functional :math:`x\mapsto F(x-v-data)` 
+        
+        Parameters
+        ----------
+        v: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        data_shift: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
         return HorizontalShiftDilation(self,shift=v,data=data_shift)
     
     def dilation(self, a: float) -> Functional:
-        r"""Returns the functional :math:`x\mapsto F(ax)` """
+        r"""Returns the functional :math:`x\mapsto F(ax)` 
+        
+        Parameters
+        ----------
+        a: float
+            A.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
         return HorizontalShiftDilation(self,dilation=a)
 
     @property
     def Lipschitz(self)->float:
-        """ The Lipschitz constant of the derivative of the functional.
+        r"""The Lipschitz constant of the derivative of the functional.
+                
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
         """
         return self._Lipschitz
 
     @property
     def convexity_param(self)->float:
-        """ The convexity parameter of the functional.
+        r"""The convexity parameter of the functional.
+                
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
         """
         return self._convexity_param
 
     @property
+    def is_strictly_convex(self) -> bool:
+        r"""Whether strict convexity on the essential domain is certified.
+        
+        The default uses positive strong-convexity parameter. Subclasses may
+        certify strict convexity even when no positive uniform bound exists.
+        False means that strict convexity is not certified by this property.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return bool(self.convexity_param > 0)
+
+    @property
+    def conj_is_strictly_convex(self) -> bool:
+        r"""Whether the conjugate is strictly convex on its essential domain.
+        
+        By default this is certified by a finite Lipschitz constant of the
+        primal gradient. Subclasses may provide a sharper criterion.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return bool(np.isfinite(self.Lipschitz))
+
+    @property
     def is_convex(self)->bool:
-        """ Flag if the functional is convex.
+        r"""Flag if the functional is convex.
+                
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
         """
         return self._is_convex
 
     @property
     def is_linear(self)->bool:
-        """ Flag if the functional is linear.
+        r"""Flag if the functional is linear.
+                
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
         """
         return self._is_linear
 
     @property
     def is_quadratic(self)->bool:
-        """ Flag if the functional is quadratic.
+        r"""Flag if the functional is quadratic.
+                
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
         """
         return self._is_quadratic
 
     @property
     def conj_is_quadratic(self)->bool:
-        """ Flag if the conjugate functional is quadratic.
+        r"""Flag if the conjugate functional is quadratic.
+                
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
         """
         return self._conj_is_quadratic
 
     @property
     def is_norm_squared_type(self)->bool:
-        """ Flag if the functional behaves like a SquaredNorm functional for which the hessian is a positive multiple of the Gram matrix. """
+        r"""Flag if the functional behaves like a SquaredNorm functional for which the hessian is a positive multiple of the Gram matrix. 
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return False
 
     @property
     def is_separable(self)->bool:
-        """ Flag if the functional is separable, i.e. :math:`F(x)=sum_i f_i(x_i)`
+        r"""Flag if the functional is separable, i.e. :math:`F(x)=sum_i f_i(x_i)`
+                
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
         """
         return self._is_separable
 
     @property
     def dom_l(self) -> Vector | Scalar | None:
-        """For a separable functional, this is the pointwise lower boundary of the essential domain.
+        r"""For a separable functional, this is the pointwise lower boundary of the essential domain.
+                
+        
+        Returns
+        -------
+        Vector | Scalar | None
+            Result described above.
         """
         if not self.is_separable:
             raise RuntimeError(util.Errors.runtime_error('Functional not separable, therefore dom_l is not defined.'))
@@ -891,7 +1614,13 @@ class Functional:
 
     @property
     def dom_u(self) -> Vector | Scalar | None:
-        """For a separable functional, this is the pointwise upper boundary of the essential domain.
+        r"""For a separable functional, this is the pointwise upper boundary of the essential domain.
+                
+        
+        Returns
+        -------
+        Vector | Scalar | None
+            Result described above.
         """        
         if not self.is_separable:
             raise RuntimeError(util.Errors.runtime_error('Functional not separable, therefore dom_u is not defined.'))        
@@ -902,7 +1631,13 @@ class Functional:
 
     @property
     def conj_dom_l(self) -> Vector | Scalar | None:
-        """For a separable functional, this is the pointwise lower boundary of the essential domain of the conjugate functional.
+        r"""For a separable functional, this is the pointwise lower boundary of the essential domain of the conjugate functional.
+                
+        
+        Returns
+        -------
+        Vector | Scalar | None
+            Result described above.
         """        
         if not self.is_separable:
             raise RuntimeError(util.Errors.runtime_error('Functional not separable, therefore conj_dom_l is not defined.'))                
@@ -913,7 +1648,13 @@ class Functional:
 
     @property
     def conj_dom_u(self) -> Vector | Scalar | None:
-        """For a separable functional, this is the pointwise upper boundary of the essential domain of the conjugate functional.
+        r"""For a separable functional, this is the pointwise upper boundary of the essential domain of the conjugate functional.
+                
+        
+        Returns
+        -------
+        Vector | Scalar | None
+            Result described above.
         """            
         if not self.is_separable:
             raise RuntimeError(util.Errors.runtime_error('Functional not separable, therefore conj_dom_u is not defined.'))                
@@ -922,42 +1663,117 @@ class Functional:
         else:
             return self._conj_dom_u
 
-    def _eval(self, x: Vector) -> float:
+    def _eval(self, x: ReadOnlyVector) -> float:
         raise NotImplementedError
 
-    def _linearize(self, x: Vector) -> tuple[float, Vector]:
+    def _linearize(self, x: ReadOnlyVector) -> tuple[float, Vector]:
         raise NotImplementedError
 
     def _subgradient(
-        self, x: Vector, out: Vector | None = None, **subgradient_par: Any
+        self, x: ReadOnlyVector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         raise NotImplementedError
 
-    def _hessian(self, x: Vector) -> operators.Operator:
+    def _reference_vector(self, out: Vector | None = None) -> Vector:
+        r"""Default implementation used by :meth:`reference_vector`.
+        
+        Parameters
+        ----------
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
+        zero = self.domain.zeros(read_only=True)
+        try:
+            return self.conj.subgradient(zero, out=out)
+        except (NotImplementedError, NotInEssentialDomainError):
+            pass
+
+        try:
+            return self.proximal(zero, 1.0, out=out)
+        except NotImplementedError:
+            pass
+
+        try:
+            if np.isfinite(self(zero)):
+                return self._copy_vector(zero, out=out)
+        except NotInEssentialDomainError:
+            pass
+
+        raise NotImplementedError(
+            f"Could not construct a feasible reference vector for {self}: "
+            "the conjugate subgradient at zero is unavailable or undefined, "
+            "the proximal map is unavailable, and zero is not feasible."
+        )
+
+    def _conj_reference_vector(self, out: Vector | None = None) -> Vector:
+        r"""Default implementation used by :meth:`conj_reference_vector`.
+        
+        Parameters
+        ----------
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
+        zero = self.domain.zeros(read_only=True)
+        try:
+            return self.subgradient(zero, out=out)
+        except (NotImplementedError, NotInEssentialDomainError):
+            pass
+
+        try:
+            return self.conj_proximal(zero, 1.0, out=out)
+        except NotImplementedError:
+            pass
+
+        try:
+            if np.isfinite(self.conj(zero)):
+                return self._copy_vector(zero, out=out)
+        except NotInEssentialDomainError:
+            pass
+
+        raise NotInEssentialDomainError(
+            f"Could not construct a feasible conjugate reference vector for "
+            f"{self}: the primal subgradient at zero is unavailable or "
+            "undefined, the conjugate proximal map is unavailable, and zero "
+            "is not feasible for the conjugate functional."
+        )
+
+    def _hessian(self, x: ReadOnlyVector) -> operators.Operator:
         raise NotImplementedError
     
-    def _conj(self, xstar: Vector) -> float:
+    def _conj(self, xstar: ReadOnlyVector) -> float:
         raise NotImplementedError
 
-    def _conj_linearize(self, xstar: Vector) -> tuple[float, Vector]:
+    def _conj_linearize(self, xstar: ReadOnlyVector) -> tuple[float, Vector]:
         raise NotImplementedError
     
     def _conj_subgradient(
-        self, xstar: Vector, out: Vector | None = None, **subgradient_par: Any
+        self, xstar: ReadOnlyVector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         raise NotImplementedError
 
-    def _conj_hessian(self, xstar: Vector) -> operators.Operator:
+    def _conj_hessian(self, xstar: ReadOnlyVector) -> operators.Operator:
         raise NotImplementedError
 
     def _proximal(
-        self, x: Vector, tau: float, out: Vector | None = None, **proximal_par: Any
+        self, x: ReadOnlyVector, tau: float, out: Vector | None = None, **proximal_par: Any
     ) -> Vector:
         raise NotImplementedError
 
     def _conj_proximal(
         self,
-        xstar: Vector,
+        xstar: ReadOnlyVector,
         tau: float,
         out: Vector | None = None,
         **proximal_par: Any,
@@ -1009,6 +1825,12 @@ class Functional:
     @property
     def methods(self) -> set[str]:
         r"""Set of strings of the names of the methods are available for a given Functional instance. 
+                
+        
+        Returns
+        -------
+        set[str]
+            Result described above.
         """
         return self._methods
 
@@ -1016,19 +1838,84 @@ class Functional:
     def conj(self) -> Functional:
         r"""For linear operators, this is the adjoint as a linear `regpy.operators.Operator`
         instance. Will only be computed on demand and saved for subsequent invocations.
-
+        
         Returns
         -------
-        Adjoint
+        Functional
             The adjoint as an `regpy.operators.Operator` instance.
         """
         return Conj(self)
+
+
+class _GradientAsOperator(operators.Operator):
+    r"""Operator wrapper for :meth:`Functional.gradient_as_operator`.
+    
+    Parameters
+    ----------
+    func: Functional
+        Functional to evaluate or transform.
+    """
+
+    def __init__(self, func: Functional) -> None:
+        self.func = func
+        self._hessian: operators.Operator | None = None
+        super().__init__(
+            func.domain,
+            func.domain,
+            linear=False,
+            self_adjoint=True,
+        )
+
+    def _eval(
+        self, x: ReadOnlyVector, differentiate: bool = False, **kwargs: Any
+    ) -> Vector:
+        if differentiate:
+            self._hessian = self.func.hessian(x)
+        return self.func.subgradient(x, **kwargs)
+
+    def _ieval(
+        self,
+        x: ReadOnlyVector,
+        out: Vector,
+        differentiate: bool = False,
+        **kwargs: Any,
+    ) -> Vector:
+        if differentiate:
+            # Compute the Hessian before writing to out, since out may be x.
+            self._hessian = self.func.hessian(x)
+        return self.func.subgradient(x, out=out, **kwargs)
+
+    def _derivative(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
+        if self._hessian is None:
+            raise RuntimeError(util.Errors.runtime_error(
+                "The gradient operator must be linearized before its "
+                "derivative can be evaluated."
+            ))
+        return self._hessian(x, **kwargs)
+
+    def _iderivative(
+        self, x: ReadOnlyVector, out: Vector, **kwargs: Any
+    ) -> Vector:
+        if self._hessian is None:
+            raise RuntimeError(util.Errors.runtime_error(
+                "The gradient operator must be linearized before its "
+                "derivative can be evaluated."
+            ))
+        return self._hessian(x, out=out, **kwargs)
+
+    def __repr__(self) -> str:
+        return util.make_repr(self, self.func)
 
 
 class Conj(Functional):
     r"""An proxy class wrapping a functional. Calling it will evaluate the functional's
     conj method. This class should not be instantiated directly, but rather through the
     `Functional.conj` property of a functional.
+    
+    Parameters
+    ----------
+    func: Functional
+        Functional to evaluate or transform.
     """
 
     def __init__(self, func: Functional) -> None:
@@ -1041,39 +1928,66 @@ class Conj(Functional):
                          is_convex = True
                          )         
 
-    def _eval(self, x: Vector) -> float:
+    def _eval(self, x: ReadOnlyVector) -> float:
         return self.func._conj(x)
     # def __call__(self, x):
     #     return self.func._conj(x)
 
-    def _conj(self, x: Vector) -> float:
+    def _conj(self, x: ReadOnlyVector) -> float:
         return self.func._eval(x)
     
     def _subgradient(
-        self, x: Vector, out: Vector | None = None, **subgradient_par: Any
+        self, x: ReadOnlyVector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         return self.func.conj_subgradient(x, out=out, **subgradient_par)
 
-    def dist_subdiff(self, v: Vector, x: Vector) -> float:
-        return self.func._conj_dist_subdiff(v,x,)
+    def _reference_vector(self, out: Vector | None = None) -> Vector:
+        return self.func.conj_reference_vector(out=out)
+
+    def dist_subdiff(
+        self, v: ReadOnlyVector, x: ReadOnlyVector, best_approx: ReadOnlyVector | None = None
+    ) -> float:
+        r"""Dist subdiff.
+        
+        Parameters
+        ----------
+        v: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        best_approx: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        return self.func._conj_dist_subdiff(v, x, best_approx=best_approx)
 
     def _conj_subgradient(
-        self, x: Vector, out: Vector | None = None, **subgradient_par: Any
+        self, x: ReadOnlyVector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         return self.func.subgradient(x, out=out, **subgradient_par)
 
-    def _conj_dist_subdiff(self, v: Vector, x: Vector) -> float:
-        return self.func.dist_subdiff(v,x)
+    def _conj_reference_vector(self, out: Vector | None = None) -> Vector:
+        return self.func.reference_vector(out=out)
+
+    def _conj_dist_subdiff(
+        self, v: ReadOnlyVector, x: ReadOnlyVector, best_approx: ReadOnlyVector | None = None
+    ) -> float:
+        return self.func.dist_subdiff(v, x, best_approx=best_approx)
     
-    def _hessian(self, x: Vector) -> operators.Operator:
+    def _hessian(self, x: ReadOnlyVector) -> operators.Operator:
         return self.func.conj_hessian(x)
     
-    def _conj_hessian(self, x: Vector) -> operators.Operator:
+    def _conj_hessian(self, x: ReadOnlyVector) -> operators.Operator:
         return self.func.hessian(x)
     
     def _proximal(
         self,
-        x: Vector,
+        x: ReadOnlyVector,
         tau: float,
         out: Vector | None = None,
         **proximal_par: Any,
@@ -1082,55 +1996,207 @@ class Conj(Functional):
     
     def _conj_proximal(
         self,
-        x: Vector,
+        x: ReadOnlyVector,
         tau: float,
         out: Vector | None = None,
         **proximal_par: Any,
     ) -> Vector:
         return self.func.proximal(x, tau, out=out, **proximal_par)
 
+    def bregman_func(self, y: ReadOnlyVector, ystar: ReadOnlyVector | None = None) -> Functional:
+        r"""Delegate construction to the primal's conjugate-specific hook.
+        
+        Parameters
+        ----------
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
+        return self.func.conj_bregman_func(y, ystar)
+
+
+    def bregman(self, x: ReadOnlyVector, y: ReadOnlyVector | None,
+                ystar: ReadOnlyVector | None = None) -> float:
+        r"""Bregman.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        y: ReadOnlyVector | None
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        return self.func.conj_bregman(x, y, ystar)
+
     @property
     def conj(self)-> Functional:
+        r"""Conj.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
         return self.func
     
     @property
     def methods(self) -> set[str]:
+        r"""Methods.
+        
+        
+        Returns
+        -------
+        set[str]
+            Result described above.
+        """
         return self.func._conj_methods
 
     @property
     def Lipschitz(self)->float:
+        r"""Lipschitz.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return 1/self.func.convexity_param if self.func.convexity_param>0 else inf
 
     @property
     def convexity_param(self)->float:
+        r"""Convexity param.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return 1/self.func.Lipschitz if self.func.Lipschitz>0 else inf
 
     @property
+    def is_strictly_convex(self) -> bool:
+        r"""Whether the functional is strictly convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return bool(self.func.conj_is_strictly_convex)
+
+    @property
+    def conj_is_strictly_convex(self) -> bool:
+        r"""Conj is strictly convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return bool(self.func.is_strictly_convex)
+
+    @property
     def is_quadratic(self) -> bool:
+        r"""Is quadratic.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.func.conj_is_quadratic
 
     @property
-    def is_norm_squared_type(self):
+    def is_norm_squared_type(self) -> bool:
+        r"""Whether the functional is norm squared type.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return super().is_norm_squared_type
     
     @property
     def conj_is_quadratic(self) -> bool:
+        r"""Conj is quadratic.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.func.is_quadratic
     
     @property
     def dom_l(self) -> Vector | Scalar | None:
+        r"""Dom l.
+        
+        
+        Returns
+        -------
+        Vector | Scalar | None
+            Result described above.
+        """
         return self.func.conj_dom_l
 
     @property
     def dom_u(self) -> Vector | Scalar | None:
+        r"""Dom u.
+        
+        
+        Returns
+        -------
+        Vector | Scalar | None
+            Result described above.
+        """
         return self.func.conj_dom_u
 
     @property
     def conj_dom_l(self) -> Vector | Scalar | None:
+        r"""Conj dom l.
+        
+        
+        Returns
+        -------
+        Vector | Scalar | None
+            Result described above.
+        """
         return self.func.dom_l
 
     @property
     def conj_dom_u(self) -> Vector | Scalar | None:
+        r"""Conj dom u.
+        
+        
+        Returns
+        -------
+        Vector | Scalar | None
+            Result described above.
+        """
         return self.func.dom_u
 
     def __repr__(self) -> str:
@@ -1140,28 +2206,28 @@ class Conj(Functional):
 class LinearFunctional(Functional):
     r"""Linear functionals
     Linear functional given by
-
+    
     .. math::
         F(x) = \langel a, x\rangle
     
     The operators `__add__` , `__iadd__` , `__mul__` , `__imul__` with `LinearFunctional`\s and 
     scalars as other arguments, rsp, are overwritten to yield the expected `LinearFunctional`\s. 
-
+    
     Parameters
     ----------
-    gradient: domain
+    gradient: ReadOnlyVector
         The gradient of the linear functional. :math:`a=gradient` if gradient_in_dual_space == True
-    domain: regpy.vecsps.VectorSpaceBase, optional
+    domain: vecsps.VectorSpaceBase | None [default: None]
         The `regpy.vecsps.VectorSpaceBase` on which the functional is defined
-    h_domain: regpy.hilbert.HilbertSpace (default: `L2(domain)`)
+    h_domain: hilbert.HilbertSpace | None [default: None]
         Hilbert space for proximity operator
-    gradient_in_dual_space: bool (default: False)
+    gradient_in_dual_space: bool [default: False]
         If false, the argument gradient is considered as an element of the primal space, 
         and :math:`a = h_domain.gram(gradient)`.
     """
     def __init__(
         self,
-        gradient: Vector,
+        gradient: ReadOnlyVector,
         domain: vecsps.VectorSpaceBase | None = None,
         h_domain: hilbert.HilbertSpace | None = None,
         gradient_in_dual_space: bool = False,
@@ -1190,17 +2256,25 @@ class LinearFunctional(Functional):
                          conj_methods= {'eval','subgradient','proximal','dist_subdiff'}
                          ) 
 
-    def _eval(self, x: Vector) -> float:
+    def _eval(self, x: ReadOnlyVector) -> float:
         return self.domain.vdot(self._gradient,x).real
 
     @property
     def gradient(self) -> Vector:
+        r"""Gradient.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         gradient = self.domain.empty()
         self.domain.copyto(gradient, self._gradient)
         return gradient
 
     def _subgradient(
-        self, x: Vector, out: Vector | None = None, **subgradient_par: Any
+        self, x: ReadOnlyVector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         if out is None:
             gradient = self.domain.empty()
@@ -1208,14 +2282,14 @@ class LinearFunctional(Functional):
             return gradient
         return self._copy_vector(self._gradient, out=out)
 
-    def _hessian(self, x: Vector) -> operators.Operator:
+    def _hessian(self, x: ReadOnlyVector) -> operators.Operator:
         return operators.Zero(self.domain)
 
-    def _conj(self, x_star: Vector) -> float:
+    def _conj(self, x_star: ReadOnlyVector) -> float:
         return 0 if self.domain.norm(x_star- self._gradient)==0 else inf
 
     def _conj_subgradient(
-        self, xstar: Vector, out: Vector | None = None, **subgradient_par: Any
+        self, xstar: ReadOnlyVector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         if self.domain.norm(xstar - self._gradient) == 0:
             if out is None:
@@ -1224,15 +2298,20 @@ class LinearFunctional(Functional):
             return out
         raise NotInEssentialDomainError('LinearFunctional.conj')
 
-    def _conj_dist_subdiff(self, v: Vector, xstar: Vector) -> float:
+    def _conj_dist_subdiff(
+        self, v: ReadOnlyVector, xstar: ReadOnlyVector, best_approx: Vector | None = None
+    ) -> float:
+        self._validate_out(best_approx)
         if self.domain.norm(xstar - self._gradient) == 0:
+            if best_approx is not None:
+                self._copy_vector(v, out=best_approx)
             return 0.
         else:
             raise NotInEssentialDomainError('LinearFunctional.conj')          
 
     def _proximal(
         self,
-        x: Vector,
+        x: ReadOnlyVector,
         tau: float,
         out: Vector | None = None,
         **proximal_par: Any,
@@ -1248,7 +2327,7 @@ class LinearFunctional(Functional):
 
     def _conj_proximal(
         self,
-        xstar: Vector,
+        xstar: ReadOnlyVector,
         tau: float,
         out: Vector | None = None,
         **proximal_par: Any,
@@ -1260,6 +2339,19 @@ class LinearFunctional(Functional):
         return self._copy_vector(self._gradient, out=out)
 
     def dilation(self, a: float) -> LinearFunctional:
+        r"""Dilation.
+        
+        Parameters
+        ----------
+        a: float
+            A.
+        
+        
+        Returns
+        -------
+        LinearFunctional
+            Result described above.
+        """
         gradient = self.gradient
         gradient *= a
         return LinearFunctional(
@@ -1268,14 +2360,33 @@ class LinearFunctional(Functional):
         )
     
     def shift(
-        self, v: Vector | None = None, data_shift: Vector | None = None
+        self, v: ReadOnlyVector | None = None, data_shift: ReadOnlyVector | None = None
     ) -> Functional:
+        r"""Shift.
+        
+        Parameters
+        ----------
+        v: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        data_shift: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
         if(data_shift is None):
             return self - self.domain.vdot(self._gradient,v).real
         #Linear functional cannot be data functional at the moment
         return HorizontalShiftDilation(self-self.domain.vdot(self._gradient,v).real,data=data_shift)
 
     def __add__(self, other: object) -> Functional | NotImplementedType:
+        # Import at call time to avoid a base/integral module import cycle.
+        from .integral_functionals import Quadratic
+        if isinstance(other, Quadratic):
+            return other + self
         if isinstance(other,LinearFunctional):
             gradient = self.gradient
             gradient += other._gradient
@@ -1321,42 +2432,51 @@ class LinearFunctional(Functional):
             return NotImplemented
 
 class NullFunctional(LinearFunctional):
-    """ Functional which is identically zero
+    r"""Functional which is identically zero
     
-    Parameters:
+    Parameters
     domain: VectorSpaceBase
+    
+    Parameters
+    ----------
+    domain: VectorSpaceBase
+        Domain vector space.
     """
     def __init__(self, domain: VectorSpaceBase) -> None:
         zeros = np.broadcast_to([0.],domain.shape) if isinstance(domain,NumPyVectorSpace) else domain.zeros()
         super().__init__(zeros,domain=domain)
 
+    def _proximal(self, x: ReadOnlyVector, tau: float, out: Vector | None = None, **proximal_par: Any) -> Vector:
+        out = self.domain.empty() if out is None else out
+        if out is not x:
+            self.domain.copyto(out,x)
+        return out
+
 class SquaredNorm(Functional):
     r"""Functionals of the form 
-
+    
     .. math::
         \mathcal{F}(x) = \frac{a}{2}\|x\|_X^2 +\langle b,x\rangle_X + c
-
+    
     Here the linear term represents an inner product in the Hilbert space, not a pairing with the dual space.
-
+    
     The operators `__add__` , `__iadd__` , `__mul__` , `__imul__` with `SquaredNorm`\s, `LinearFunctional`\s and scalars 
     as other arguments are overwritten to yield the expected `SquaredNorm`\s. 
-
+    
     Parameters
     ----------
-    domain : regpy.vecsps.VectorSpaceBase
-        The underlying vector space for the function space on which it is defined.
-    h_space : regpy.hilbert.HilbertSpace (default: None)
+    h_space: HilbertSpace
         The underlying Hilbert space.
-    a: float [default:1]
-       coefficient of quadratic term
-    b: Vector | None [default:None]
+    a: float [default: 1.0]
+        coefficient of quadratic term
+    b: ReadOnlyVector | None [default: None]
         Coefficient of linear term -- in this case, it must be In h_space.domain. In the default case be is set to 0.
-    c: float [default: 0]
+    c: float [default: 0.0]
         constant term
-    shift: Vector [default:None]
+    shift: ReadOnlyVector | None [default: None]
         If not None, then it must be in h_space.domain, and we must have b is None and c==0. 
         In this case the functional is initialized as :math:`\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2`.
-    data: h_space.domain [default:None]
+    data: ReadOnlyVector | None [default: None]
         If not None, then we must have b is None and c==0. 
         In this case the functional is initialized as :math:`\mathcal{F}(x) = \frac{a}{2}\|x-shift-data\|^2`.
     """
@@ -1365,10 +2485,10 @@ class SquaredNorm(Functional):
         self,
         h_space: HilbertSpace,
         a: float = 1.0,
-        b: Vector | None = None,
+        b: ReadOnlyVector | None = None,
         c: float = 0.0,
-        shift: Vector | None = None,
-        data: Vector | None = None,
+        shift: ReadOnlyVector | None = None,
+        data: ReadOnlyVector | None = None,
     ) -> None:
         from regpy.operators import PtwMultiplication, Identity
         from regpy.operators.base import LinearCombination as LinComb 
@@ -1382,8 +2502,8 @@ class SquaredNorm(Functional):
                         is_linear = (a==0 and shift is None and c==0),
                         is_quadratic = True,
                         is_separable = separable,
-                        dom_l = -np.inf if separable else None,
-                        dom_u = np.inf if separable else None,
+                        dom_l = -np.inf,
+                        dom_u = np.inf,
                         methods = {'eval','subgradient','hessian','proximal','dist_subdiff'},
                         conj_methods= {'eval','subgradient','hessian','proximal','dist_subdiff'}
                         )
@@ -1412,11 +2532,41 @@ class SquaredNorm(Functional):
         self.data = data
 
     @property
+    def dom_l(self) -> Vector | Scalar:
+        """Pointwise lower bound of the full effective domain."""
+        if isinstance(self.domain, NumPyVectorSpace):
+            return np.broadcast_to(-np.inf, self.domain.shape)
+        return -np.inf * self.domain.ones()
+
+    @property
+    def dom_u(self) -> Vector | Scalar:
+        """Pointwise upper bound of the full effective domain."""
+        if isinstance(self.domain, NumPyVectorSpace):
+            return np.broadcast_to(np.inf, self.domain.shape)
+        return np.inf * self.domain.ones()
+
+    @property
     def gram(self)->Operator:
+        r"""Return the Gram operator representing the Hilbert inner product.
+        
+        
+        Returns
+        -------
+        Operator
+            Constructed operator.
+        """
         return self.h_domain.gram
 
     @property
     def gram_inv(self) -> Operator | None:
+        r"""Gram inv.
+        
+        
+        Returns
+        -------
+        Operator | None
+            Result described above.
+        """
         try:
             gram_inv = self.h_domain.gram_inv
         except NotImplementedError:
@@ -1426,10 +2576,26 @@ class SquaredNorm(Functional):
 
     @util.memoized_property
     def a(self)->float:
+        r"""A.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return self._a
 
     @util.memoized_property
     def b(self) -> Vector:
+        r"""B.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         if self.is_data_func:
             return self._b-self._a*self.data
         else:
@@ -1437,17 +2603,40 @@ class SquaredNorm(Functional):
 
     @util.memoized_property
     def c(self)->float:
+        r"""C.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         if self.is_data_func:
             return self._c - self.h_domain.inner(self._b,self.data).real + (self._a/2)* self.h_domain.norm(self.data)**2
         else:
             return self._c
 
     @property
-    def data(self) -> Vector | None:
-        return self._data
+    def data(self) -> ReadOnlyVector:
+        r"""Data.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector
+            Read-only vector view.
+        """
+        return self.domain.read_only(self._data)
     
     @data.setter
-    def data(self, new_data: Vector | None) -> None:
+    def data(self, new_data: ObsDataT | None) -> None:
+        r"""Data.
+        
+        Parameters
+        ----------
+        new_data: ObsDataT | None
+            New data.
+        """
         if new_data is None:
             self.is_data_func = False
             del self.a; del self.b; del self.c
@@ -1460,6 +2649,8 @@ class SquaredNorm(Functional):
         
     @data.deleter
     def data(self) -> None:
+        r"""Data.
+        """
         if self.is_data_func:
             del self._data
             del self.a; del self.b; del self.c
@@ -1467,26 +2658,74 @@ class SquaredNorm(Functional):
 
     @property
     def Lipschitz(self) -> float:
+        r"""Lipschitz.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return np.abs(self.a)
     
     @property
     def convexity_param(self) -> float:
+        r"""Convexity param.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return max([self.a,0])
 
     @property
     def is_convex(self) -> bool:
+        r"""Whether the functional is convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return (self.a>=0)
 
     @property
     def conj_is_quadratic(self) -> bool:
+        r"""Conj is quadratic.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return (self.a>0) 
 
     @property
     def is_norm_squared_type(self) -> bool: 
+        r"""Whether the functional is norm squared type.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.a>0 
 
     @property
     def conj_dom_l(self) -> Vector | Scalar | None:
+        r"""Conj dom l.
+        
+        
+        Returns
+        -------
+        Vector | Scalar | None
+            Result described above.
+        """
         self._conj_dom_l=None
         if self.is_separable:
             self._conj_dom_l = -np.inf if self.a>0 else self.h_space.gram(self.b)
@@ -1494,20 +2733,87 @@ class SquaredNorm(Functional):
 
     @property
     def conj_dom_u(self) -> Vector | Scalar | None:
+        r"""Conj dom u.
+        
+        
+        Returns
+        -------
+        Vector | Scalar | None
+            Result described above.
+        """
         self._conj_dom_u=None
         if self.is_separable:
             self._conj_dom_u = np.inf if self.a>0 else self.h_space.gram(self.b)
         return super().conj_dom_u            
 
-    def as_data_func(self, data: Vector) -> SquaredNorm:
+    def as_data_func(self, data: ObsDataT) -> SquaredNorm:
+        r"""As data func.
+        
+        Parameters
+        ----------
+        data: ObsDataT
+            Observed data.
+        
+        
+        Returns
+        -------
+        SquaredNorm
+            Result described above.
+        """
         self.data=data
         return self
 
-    def _eval(self, x: Vector) -> float:
+    def bregman_func(self, y: ReadOnlyVector, ystar: ReadOnlyVector | None = None) -> Functional:
+        r"""Return a SquaredNorm representing a/2 * ||x-y||_H**2.
+        
+        For convex SquaredNorms, affine coefficients and stored data cancel.
+        
+        Parameters
+        ----------
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
+        if not self.is_convex:
+            return super().bregman_func(y, ystar)
+        y, _, _ = self._bregman_reference(y, ystar)
+        return SquaredNorm(self.h_domain, a=self.a, shift=y)
+
+
+    def conj_bregman_func(self, y: ReadOnlyVector, ystar: ReadOnlyVector | None = None) -> Functional:
+        r"""Use the dual Hilbert norm for the conjugate of a positive quadratic.
+        
+        Parameters
+        ----------
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
+        if not self.is_convex or self.a <= 0:
+            return super().conj_bregman_func(y, ystar)
+        y, _, _ = self.conj._bregman_reference(y, ystar)
+        return SquaredNorm(self.h_domain.dual_space(), a=1. / self.a, shift=y)
+
+
+    def _eval(self, x: ReadOnlyVector) -> float:
         return (self.a/2.) * self.h_domain.inner(x,x).real  + self.h_domain.inner(self.b,x).real + self.c
     
     def _subgradient(
-        self, x: Vector, out: Vector | None = None, **subgradient_par: Any
+        self, x: ReadOnlyVector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         b = self.b
         if out is not None and self._shares_memory(out, b):
@@ -1520,12 +2826,12 @@ class SquaredNorm(Functional):
             argument += b
         return self.gram(argument, out=argument)
     
-    def _hessian(self, x: Vector) -> operators.Operator:
+    def _hessian(self, x: ReadOnlyVector) -> operators.Operator:
         return self.a * self.gram
     
     def _proximal(
         self,
-        z: Vector,
+        z: ReadOnlyVector,
         tau: float,
         out: Vector | None = None,
         **proximal_par: Any,
@@ -1544,7 +2850,7 @@ class SquaredNorm(Functional):
         result *= 1. / (tau * self.a + 1)
         return result
     
-    def _conj(self, xstar: Vector) -> float:
+    def _conj(self, xstar: ReadOnlyVector) -> float:
         bstar = self.domain.empty()
         self.gram(self.b, out=bstar)
         residual = self._copy_vector(xstar)
@@ -1563,7 +2869,7 @@ class SquaredNorm(Functional):
             return -inf
 
     def _conj_subgradient(
-        self, xstar: Vector, out: Vector | None = None, **subgradient_par: Any
+        self, xstar: ReadOnlyVector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         argument = self.domain.empty()
         self.gram(self.b, out=argument)
@@ -1584,18 +2890,23 @@ class SquaredNorm(Functional):
             return out
         raise NotInEssentialDomainError
 
-    def _conj_dist_subdiff(self, v: Vector, xstar: Vector) -> float:
+    def _conj_dist_subdiff(
+        self, v: ReadOnlyVector, xstar: ReadOnlyVector, best_approx: Vector | None = None
+    ) -> float:
+        self._validate_out(best_approx)
         if self.a==0:
-            if xstar==self.gram(self.b):
-                return True 
+            if self.domain.norm(xstar - self.gram(self.b)) == 0:
+                if best_approx is not None:
+                    self._copy_vector(v, out=best_approx)
+                return 0.
             else:
-                return NotInEssentialDomainError
+                raise NotInEssentialDomainError('SquaredNorm.conj')
         elif self.a <0:
-            return RuntimeError("Can't evaluate conjugate and its subdifferential if a<0.")
+            raise RuntimeError("Can't evaluate conjugate and its subdifferential if a<0.")
         else: 
-            return super()._conj_dist_subdiff(v,xstar)
+            return super()._conj_dist_subdiff(v, xstar, best_approx=best_approx)
 
-    def _conj_hessian(self, xstar: Vector) -> operators.Operator:
+    def _conj_hessian(self, xstar: ReadOnlyVector) -> operators.Operator:
         if self.a>0:
             if self.gram_inv is None:
                 raise RuntimeError("The inverse of the gram operator is not implemented. Thus not allowing an application of the conjugate hessian functional.")
@@ -1605,7 +2916,7 @@ class SquaredNorm(Functional):
     
     def _conj_proximal(
         self,
-        zstar: Vector,
+        zstar: ReadOnlyVector,
         tau: float,
         out: Vector | None = None,
         **proximal_par: Any,
@@ -1623,6 +2934,19 @@ class SquaredNorm(Functional):
         return result
 
     def dilation(self, dil: float) -> SquaredNorm:
+        r"""Dilation.
+        
+        Parameters
+        ----------
+        dil: float
+            Dil.
+        
+        
+        Returns
+        -------
+        SquaredNorm
+            Result described above.
+        """
         return SquaredNorm(self.h_domain,
                                a = dil**2 *self.a,
                                b = dil*self.b,
@@ -1630,22 +2954,48 @@ class SquaredNorm(Functional):
                                )
 
     def shift(
-        self, v: Vector | None = None, data_shift: Vector | None = None
+        self, v: ReadOnlyVector | None = None, data_shift: ReadOnlyVector | None = None
     ) -> SquaredNorm:
-        if(data_shift is not None):
-            if(data_shift not in self.domain):
-                raise ValueError(util.Errors.not_in_vecsp(data_shift,self.domain,vec_name="shift data vector",space_name="domain of functional"))
-            if(self.is_data_func):
-                data_shift+=self.data
-        #Parameters have to be used without dependence on data so that data and parameters are both updated correctly
-        if(v is None):
-            return SquaredNorm(self.h_domain,a = self._a,b = self._b,c = self._c,data=data_shift)
-        return SquaredNorm(self.h_domain,
-                               a = self._a,
-                               b = self._b-self._a*v,
-                               c = self._c - self.h_domain.inner(self._b,v).real + (self._a/2)* self.h_domain.norm(v)**2,
-                               data=data_shift
-                               )
+        r"""Return x -> self(x - v - data_shift), preserving existing data.
+        
+        Neither the supplied shifts nor the original functional are modified.
+        The result remains a SquaredNorm with intrinsic coefficients and data
+        stored separately.
+        
+        Parameters
+        ----------
+        v: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        data_shift: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        SquaredNorm
+            Result described above.
+        """
+        if v is not None and v not in self.domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                v, self.domain, vec_name="shift vector", space_name="domain of functional"))
+        if data_shift is not None and data_shift not in self.domain:
+            raise ValueError(util.Errors.not_in_vecsp(
+                data_shift, self.domain, vec_name="shift data vector", space_name="domain of functional"))
+        data = self._copy_vector(self.data) if self.is_data_func else None
+        if data_shift is not None:
+            if data is None:
+                data = self._copy_vector(data_shift)
+            else:
+                data += data_shift
+        if v is None:
+            return SquaredNorm(self.h_domain, a=self._a,
+                               b=self._copy_vector(self._b), c=self._c, data=data)
+        return SquaredNorm(
+            self.h_domain, a=self._a, b=self._b - self._a * v,
+            c=self._c - self.h_domain.inner(self._b, v).real
+              + (self._a / 2) * self.h_domain.norm(v)**2,
+            data=data,
+        )
 
     def __add__(self, other: object) -> Functional | NotImplementedType:
         if isinstance(other, SquaredNorm) and other.h_domain==self.h_domain:
@@ -1716,518 +3066,528 @@ class SquaredNorm(Functional):
 
 
 class LinearCombination(Functional):
-    r"""Linear combination of functionals. 
-
+    r"""A flattened sum ``offset + linear_part + sum(c_i * funcs[i])``.
+    
     Parameters
     ----------
-    *args : (scalar, regpy.functionals.Functional) or regpy.functionals.Functional
-        List of coefficients and functionals to be taken as linear combinations.
+    offset: float [default: 0.0]
+        Finite additive constant, default zero.
+    *args: Functional | tuple[float, Functional]
+        Functionals with optional real coefficients. Nested combinations
+        (including VerticalShift) are flattened and their weighted offsets
+        accumulated. Repeated functionals are combined and zero terms removed.
+        At least one functional is required to determine the domain.
+    
+    Attributes
+    ----------
+    funcs, coeffs : list
+        Nonlinear components and their nonzero coefficients only.
+    linear_part : LinearFunctional
+        Sum of all linear components, stored as a dual covector. It is the
+        zero functional when no linear components are present.
+    offset : float
+        Accumulated additive constant.
+    
+    Notes
+    -----
+    For ``G(x) = a*F(x) + <b,x> + c`` with a > 0, the conjugate is
+    ``G*(p) = a*F*((p-b)/a) - c``. Conjugate operations and proximal maps
+    delegate to F when available. Purely affine sums are handled directly.
+    With several nonlinear terms, evaluation and derivatives are available
+    when implemented by all terms; no general proximal/conjugate formula exist. 
+    Negative nonlinear coefficients retain primal evaluation and
+    derivatives, but do not enable these convex conjugate/proximal formulas.
+    The Hilbert geometry is that of the first nonlinear term (or the first
+    argument for affine sums). A proximal map inherited from a nonlinear
+    term is therefore evaluated in that term's own metric.
     """
-    def __init__(
-        self, *args: Functional | tuple[float, Functional]
-    ) -> None:
-        coeff_for_func = defaultdict(lambda: 0)
+
+    def __init__(self, *args: Functional | tuple[float, Functional],
+                 offset: float = 0.0) -> None:
+        if not isinstance(offset, (int, float, np.integer, np.floating)) or not np.isfinite(offset):
+            raise ValueError('offset must be a finite real scalar.')
+        if not args:
+            raise ValueError('At least one functional is required to determine the domain.')
+        terms = defaultdict(float)
+        domain = None
+        first = None
+        total_offset = float(offset)
+
+        def collect(coeff: ReadOnlyVector, func: Functional) -> None:
+            r"""Collect.
+            
+            Parameters
+            ----------
+            coeff: ReadOnlyVector
+                Input vector; its coefficients are only read.
+            func: Functional
+                Functional to evaluate or transform.
+            """
+            nonlocal domain, first, total_offset
+            if not isinstance(func, Functional):
+                raise TypeError('Each component must be a Functional.')
+            if not isinstance(coeff, (int, float, np.integer, np.floating)) or not np.isfinite(coeff):
+                raise ValueError('Coefficients must be finite real scalars.')
+            if domain is None:
+                domain, first = func.domain, func
+            elif func.domain != domain:
+                raise ValueError('All functionals must have the same domain.')
+            if coeff == 0:
+                return
+            if isinstance(func, LinearCombination):
+                total_offset += coeff * func.offset
+                collect(coeff, func.linear_part)
+                for c, f in zip(func.coeffs, func.funcs):
+                    collect(coeff * c, f)
+            else:
+                terms[func] += coeff
+
         for arg in args:
             if isinstance(arg, tuple):
-                coeff, func = arg
+                if len(arg) != 2:
+                    raise ValueError('Weighted components must be (coefficient, functional) pairs.')
+                collect(*arg)
             else:
-                coeff, func = 1, arg
-            if not isinstance(func, Functional) or not isinstance(coeff,(int,float)):
-                raise ValueError(util.Errors.value_error(f"""
-        The LinearCombination only takes a list of arbitrary items provided either tuples 
-        (coeff,func) which are a real non-negative number and functional or a only a functional. However, you gave:
-            [{"; ".join(f"({arg})" for arg in args)}]"""))
-            if isinstance(func, type(self)):
-                for c, f in zip(func.coeffs, func.funcs):
-                    coeff_for_func[f] += coeff * c
+                collect(1., arg)
+        self.offset = float(total_offset)
+        self.funcs, self.coeffs = [], []
+        grad = domain.zeros()
+        for func, coeff in terms.items():
+            if coeff == 0:
+                continue
+            if func.is_linear:
+                grad += coeff * func.subgradient(domain.zeros())
             else:
-                coeff_for_func[func] += coeff
-        self.coeffs = []
-        """List of all coefficients
-        """
-        self.funcs = []
-        """List of all functionals. 
-        """
-        self.linear_table = []
-        for func, coeff in coeff_for_func.items():
-            self.coeffs.append(coeff)
-            self.funcs.append(func)
-            self.linear_table.append(func.is_linear or coeff==0)        
-
-        domains = [func.domain for func in self.funcs if func.domain]
-        domain = domains[0]
-        if  any(d != domain for d in domains): raise ValueError(util.Errors.generic_message(f"The domains of the functionals to be combined in a linear combination have to match. The functioanls domains are" +"\n\t" +f"domains = {domains}"))
-
-        if self.linear_table.count(False)<=1 and self.linear_table.count(True)>=1:
-            self.grad_sum = self.funcs[0].domain.zeros()
-            gradient = self.funcs[0].domain.empty()
-            for coeff,func,is_linear in zip(self.coeffs,self.funcs,self.linear_table):
-                if is_linear and coeff != 0:
-                    self.funcs[0].domain.copyto(gradient, func.gradient)
-                    gradient *= coeff
-                    self.grad_sum += gradient
-
-        is_separable = np.all([F.is_separable for F in self.funcs])
-
-        methods = set.intersection(*[func.methods for func in self.funcs])
-        conj_computable = (len(self.funcs) == 1) or (self.linear_table.count(False)==0) or (self.linear_table.count(False)==1)
-        if not conj_computable:
-            methods -= {'proximal'}
-        if  conj_computable: 
-            conj_methods = set.intersection(*[func.conj.methods for func in self.funcs])
-        else: 
+                self.funcs.append(func)
+                self.coeffs.append(float(coeff))
+        h_domain = self.funcs[0].h_domain if self.funcs else first.h_domain
+        self.linear_part = LinearFunctional(
+            grad, domain=domain, h_domain=h_domain, gradient_in_dual_space=True)
+        # Retained as a compatibility alias; it is a covector, not a Hilbert gradient.
+        self.grad_sum = grad
+        self.linear_table = [False] * len(self.funcs)
+        if self.funcs:
+            methods = set.intersection(*(set(f.methods) for f in self.funcs))
+            methods -= {'proximal', 'dist_subdiff'}
             conj_methods = set()
-        super().__init__(domain, is_linear = all(self.linear_table),
-                         is_separable=is_separable,
-                         methods = methods, conj_methods = conj_methods
-                         )
-
-    def _eval(self, x: Vector, **kwargs: Any) -> float:
-        y = 0
-        for coeff, func in zip(self.coeffs, self.funcs):
-            y += coeff * func(x,**kwargs)
-        return y
-
-    def _linearize(self, x: Vector, **kwargs: Any) -> tuple[float, Vector]:
-        y = 0
-        grad = self.domain.empty()
-        work = None
-        for i, (coeff, func) in enumerate(zip(self.coeffs, self.funcs)):
-            f, g = func.linearize(x,**kwargs)
-            y += coeff * f
-            target = grad
-            if i:
-                if work is None:
-                    work = self.domain.empty()
-                target = work
-            self.domain.copyto(target, g)
-            target *= coeff
-            if i:
-                grad += target
-        return y, grad
-
-    def _subgradient(
-        self, x: Vector, out: Vector | None = None, **subgradient_par: Any
-    ) -> Vector:
-        grad = self.domain.empty() if out is None else out
-        if self._shares_memory(grad, x):
-            source = self.domain.empty()
-            self.domain.copyto(source, x)
+            if len(self.funcs) == 1 and self.coeffs[0] > 0 and self.funcs[0].is_convex:
+                methods |= self.funcs[0].methods & {'proximal', 'dist_subdiff'}
+                conj_methods = set(self.funcs[0].conj.methods)
         else:
-            source = x
-        self.funcs[0].subgradient(
-            source, out=grad, **subgradient_par
+            methods = {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'}
+            conj_methods = {'eval', 'subgradient', 'proximal', 'dist_subdiff'}
+        super().__init__(
+            domain, h_domain=h_domain,
+            is_linear=not self.funcs and self.offset == 0,
+            is_separable=all(f.is_separable for f in self.funcs),
+            methods=methods, conj_methods=conj_methods,
         )
-        grad *= self.coeffs[0]
-        if len(self.funcs) > 1:
-            work = self.domain.empty()
-            for coeff, func in zip(self.coeffs[1:], self.funcs[1:]):
-                func.subgradient(
-                    source, out=work, **subgradient_par
-                )
-                work *= coeff
-                grad += work
-        return grad
 
-    def dist_subdiff(self, vstar: Vector, x: Vector, **kwargs: Any) -> float:
-        if len(self.funcs) == 1 or self.linear_table.count(False)==0:
-            return super().dist_subdiff(vstar, x,**kwargs)
-        elif self.linear_table.count(False)==1:
-            j = self.linear_table.index(False)
-            argument = self._copy_vector(vstar)
-            argument -= self.grad_sum
-            argument *= 1. / self.coeffs[j]
-            return self.funcs[j].dist_subdiff(argument,x,**kwargs)
-        else:
-            return NotImplementedError
+    def _eval(self, x: ReadOnlyVector, **kwargs: Any) -> float:
+        return (self.offset + self.linear_part(x)
+                + sum(c * f(x, **kwargs) for c, f in zip(self.coeffs, self.funcs)))
 
-    def _hessian(self, x: Vector, **kwargs: Any) -> operators.Operator:
-        if self.linear_table.count(False)==1: 
-            # separate implementation of this case to be able to use inverse of hessian
-            j = self.linear_table.index(False)
-            return self.coeffs[j] * self.funcs[j].hessian(x,**kwargs)
-        else:
-            return operators.LinearCombination(
-                *((coeff, func.hessian(x,**kwargs)) for coeff, func in zip(self.coeffs, self.funcs))
-            )
+    def _linearize(self, x: ReadOnlyVector, **kwargs: Any) -> tuple[float, Vector]:
+        value = self.offset + self.linear_part(x)
+        gradient = self._copy_vector(self.grad_sum)
+        for c, f in zip(self.coeffs, self.funcs):
+            val, grad = f.linearize(x, **kwargs)
+            value += c * val
+            gradient += c * grad
+        return value, gradient
 
-    def _proximal(
-        self,
-        x: Vector,
-        tau: float,
-        out: Vector | None = None,
-        **proximal_par: Any,
-    ) -> Vector:
+    def _subgradient(self, x: ReadOnlyVector, out: Vector | None = None,
+                     **subgradient_par: Any) -> Vector:
+        # Accumulate separately so out may alias x or a stored covector.
+        gradient = self._copy_vector(self.grad_sum)
+        for c, f in zip(self.coeffs, self.funcs):
+            gradient += c * f.subgradient(x, **subgradient_par)
+        return self._copy_vector(gradient, out=out)
+
+    def _hessian(self, x: ReadOnlyVector, **kwargs: Any) -> operators.Operator:
+        if not self.funcs:
+            return operators.Zero(self.domain)
         if len(self.funcs) == 1:
-            return self.funcs[0].proximal(
-                x, self.coeffs[0] * tau, out=out, **proximal_par
-            )
-        if self.linear_table.count(False) == 0:
-            grad_sum = self.grad_sum
-            if out is not None and self._shares_memory(out, grad_sum):
-                grad_sum = self._copy_vector(grad_sum)
-            if out is None or self._shares_memory(out, x):
-                result = self.domain.empty()
-            else:
-                result = out
-            self.h_domain.gram_inv(grad_sum, out=result)
-            result *= -tau
-            result += x
-            if out is not None and result is not out:
-                self.domain.copyto(out, result)
-                result = out
-            return result
-        if self.linear_table.count(False) == 1:
-            j = self.linear_table.index(False)
-            grad_sum = self.grad_sum
-            if out is not None and self._shares_memory(out, grad_sum):
-                grad_sum = self._copy_vector(grad_sum)
-            if out is None or self._shares_memory(out, x):
-                argument = self.domain.empty()
-            else:
-                argument = out
-            self.h_domain.gram_inv(grad_sum, out=argument)
-            argument *= -tau
-            argument += x
-            return self.funcs[j].proximal(
-                argument, self.coeffs[j] * tau,
-                out=argument if out is None else out, **proximal_par
-            )
-        raise NotImplementedError
-    
-    def _conj(self, xstar: Vector, **kwargs: Any) -> float:
-        if not self.is_convex:
-            raise RuntimeError('conj of non-convex LinearCombination not implemented.')
-        if len(self.funcs) == 1:
-            argument = self._copy_vector(xstar)
-            argument *= 1. / self.coeffs[0]
-            return self.coeffs[0]*self.funcs[0]._conj(argument,**kwargs)
-        elif self.linear_table.count(False)==0:
-            return 0 if xstar == self.grad_sum else inf
-        elif self.linear_table.count(False)==1:
-            j = self.linear_table.index(False)
-            argument = self._copy_vector(xstar)
-            argument -= self.grad_sum
-            argument *= 1. / self.coeffs[j]
-            return self.coeffs[j]*self.funcs[j]._conj(argument,**kwargs)
-        else:
-            return NotImplementedError
+            return self.coeffs[0] * self.funcs[0].hessian(x, **kwargs)
+        from regpy.operators.base import LinearCombination as OperatorLinearCombination
+        return OperatorLinearCombination(
+            *((c, f.hessian(x, **kwargs)) for c, f in zip(self.coeffs, self.funcs)))
 
-    def _conj_subgradient(
-        self, xstar: Vector, out: Vector | None = None, **subgradient_par: Any
-    ) -> Vector:
-        if not self.is_convex:
-            raise RuntimeError('conj.subgradient of non-convex linear combination not implemented.')
-        if len(self.funcs) == 1:
-            argument = self._copy_vector(xstar, out=out)
-            argument *= 1. / self.coeffs[0]
-            return self.funcs[0].conj_subgradient(
-                argument, out=argument, **subgradient_par
-            )
-        if self.linear_table.count(False) == 0:
-            if self.domain.norm(xstar - self.grad_sum) == 0:
-                if out is None:
-                    return self.domain.zeros()
-                self.domain.fill(out, 0)
-                return out
-            raise NotInEssentialDomainError('Linear combination of linear functionals')
-        if self.linear_table.count(False) == 1:
-            j = self.linear_table.index(False)
-            grad_sum = self.grad_sum
-            if out is not None and self._shares_memory(out, grad_sum):
-                grad_sum = self._copy_vector(grad_sum)
-            argument = self._copy_vector(xstar, out=out)
-            argument -= grad_sum
-            argument *= 1. / self.coeffs[j]
-            return self.funcs[j].conj_subgradient(
-                argument, out=argument, **subgradient_par
-            )
-        raise NotImplementedError
+    def _single_convex_term(self) -> None | tuple[Any, Any]:
+        if not self.funcs:
+            return None
+        if len(self.funcs) != 1 or self.coeffs[0] <= 0 or not self.funcs[0].is_convex:
+            raise NotImplementedError('Requires at most one nonlinear term with positive coefficient and convex functional.')
+        return self.coeffs[0], self.funcs[0]
+
+    def _conj_argument(self, xstar: ReadOnlyVector, coeff: ReadOnlyVector) -> Vector:
+        argument = self._copy_vector(xstar)
+        argument -= self.grad_sum
+        argument /= coeff
+        return argument
+
+    def _proximal(self, x: ReadOnlyVector, tau: float, out: Vector | None = None,
+                  **proximal_par: Any) -> Vector:
+        term = self._single_convex_term()
+        argument = self._copy_vector(x)
+        argument -= tau * self.h_domain.gram_inv(self.grad_sum)
+        if term is None:
+            return self._copy_vector(argument, out=out)
+        coeff, func = term
+        return func.proximal(argument, coeff * tau, out=out, **proximal_par)
+
+    def _conj(self, xstar: ReadOnlyVector, **kwargs: Any) -> float:
+        term = self._single_convex_term()
+        if term is None:
+            return -self.offset if self.domain.norm(xstar - self.grad_sum) == 0 else inf
+        coeff, func = term
+        return coeff * func.conj(self._conj_argument(xstar, coeff), **kwargs) - self.offset
+
+    def _conj_subgradient(self, xstar: ReadOnlyVector, out: Vector | None = None,
+                          **subgradient_par: Any) -> Vector:
+        term = self._single_convex_term()
+        if term is None:
+            return self.linear_part.conj_subgradient(xstar, out=out, **subgradient_par)
+        coeff, func = term
+        return func.conj_subgradient(self._conj_argument(xstar, coeff),
+                                    out=out, **subgradient_par)
+
+    def _conj_hessian(self, xstar: ReadOnlyVector, **kwargs: Any) -> operators.Operator:
+        term = self._single_convex_term()
+        if term is None:
+            raise NotTwiceDifferentiableError('The conjugate of an affine functional is a singleton indicator.')
+        coeff, func = term
+        return (1. / coeff) * func.conj.hessian(self._conj_argument(xstar, coeff), **kwargs)
+
+    def _conj_proximal(self, xstar: ReadOnlyVector, tau: float,
+                       out: Vector | None = None, **proximal_par: Any) -> Vector:
+        term = self._single_convex_term()
+        if term is None:
+            return self._copy_vector(self.grad_sum, out=out)
+        coeff, func = term
+        argument = self._conj_argument(xstar, coeff)
+        result = func.conj_proximal(argument, tau / coeff, **proximal_par)
+        # Copy before scaling; underlying functionals may return shared storage.
+        result = self._copy_vector(result)
+        result *= coeff
+        result += self.grad_sum
+        return self._copy_vector(result, out=out)
+
+    def dist_subdiff(
+        self, vstar: ReadOnlyVector, x: ReadOnlyVector, best_approx: Vector | None = None,
+        **kwargs: Any,
+    ) -> float:
+        r"""Distance to a*subdiff F(x)+b; optionally write a*projection+b.
+        
+        Parameters
+        ----------
+        vstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        best_approx: Vector | None [default: None]
+            Writable vector used by this operation.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        self._validate_out(best_approx)
+        if not self.funcs:
+            distance = self.h_domain.dual_space().norm(vstar - self.grad_sum)
+            if best_approx is not None:
+                self._copy_vector(self.grad_sum, out=best_approx)
+            return distance
+        term = self._single_convex_term()
+        coeff, func = term
+        shift = self.grad_sum
+        if best_approx is not None and self._shares_memory(best_approx, shift):
+            shift = self._copy_vector(shift)
+        distance = coeff * func.dist_subdiff(
+            self._conj_argument(vstar, coeff), x,
+            best_approx=best_approx, **kwargs)
+        if best_approx is not None:
+            best_approx *= coeff
+            best_approx += shift
+        return distance
 
     def _conj_dist_subdiff(
-        self, v: Vector, xstar: Vector, **kwargs: Any
+        self, v: ReadOnlyVector, xstar: ReadOnlyVector, best_approx: ReadOnlyVector | None = None,
+        **kwargs: Any,
     ) -> float:
-        if len(self.funcs) == 1:
-            argument = self._copy_vector(xstar)
-            argument *= 1. / self.coeffs[0]
-            return self.funcs[0]._conj_dist_subdiff(v,argument,**kwargs)
-        elif self.linear_table.count(False)==0:
-            residual = self._copy_vector(xstar)
-            residual -= self.grad_sum
-            return self.domain.norm(residual)
-        elif self.linear_table.count(False)==1:
-            j = self.linear_table.index(False)
-            argument = self._copy_vector(xstar)
-            argument -= self.grad_sum
-            argument *= 1. / self.coeffs[j]
-            return self.funcs[j]._conj_dist_subdiff(v,argument,**kwargs)
-        else:
-            return NotImplementedError
-
-    def _conj_hessian(self, xstar: Vector, **kwargs: Any) -> operators.Operator:
-        if not self.is_convex:
-            raise RuntimeError('conj.hessian of non-convex linear combination not implemented.') 
-        if len(self.funcs) == 1:
-            argument = self._copy_vector(xstar)
-            argument *= 1. / self.coeffs[0]
-            return (1./self.coeffs[0])*self.funcs[0]._conj_hessian(argument,**kwargs)
-        elif self.linear_table.count(False)==0:
-            raise NotTwiceDifferentiableError('Conjugate of linear combination of linear functionals')
-        elif self.linear_table.count(False)==1:
-            j = self.linear_table.index(False)
-            argument = self._copy_vector(xstar)
-            argument -= self.grad_sum
-            argument *= 1. / self.coeffs[j]
-            return (1./self.coeffs[j])*self.funcs[j]._conj_hessian(argument,**kwargs)
-        else:
-            return NotImplementedError
-
-    def _conj_proximal(
-        self,
-        xstar: Vector,
-        tau: float,
-        out: Vector | None = None,
-        **proximal_par: Any,
-    ) -> Vector:
-        if not self.is_convex:
-            raise RuntimeError('conj.proximal of non-convex linear combination not implemented.')
-        if len(self.funcs) == 1:
-            coeff = self.coeffs[0]
-            argument = self._copy_vector(xstar, out=out)
-            argument *= 1. / coeff
-            result = self.funcs[0].conj_proximal(
-                argument, tau / coeff, out=argument, **proximal_par
-            )
-            result *= coeff
-            return result
-        if self.linear_table.count(False) == 0:
-            return self._copy_vector(self.grad_sum, out=out)
-        if self.linear_table.count(False) == 1:
-            j = self.linear_table.index(False)
-            coeff = self.coeffs[j]
-            grad_sum = self.grad_sum
-            if out is not None and self._shares_memory(out, grad_sum):
-                grad_sum = self._copy_vector(grad_sum)
-            argument = self._copy_vector(xstar, out=out)
-            argument -= grad_sum
-            argument *= 1. / coeff
-            result = self.funcs[j].conj_proximal(
-                argument, tau / coeff, out=argument, **proximal_par
-            )
-            result *= coeff
-            result += grad_sum
-            return result
-        raise NotImplementedError
+        r"""Distance and optional projection onto subdiff F*((xstar-b)/a).
+        
+        Parameters
+        ----------
+        v: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        xstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        best_approx: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        self._validate_out(best_approx)
+        term = self._single_convex_term()
+        if term is None:
+            return self.linear_part._conj_dist_subdiff(
+                v, xstar, best_approx=best_approx, **kwargs)
+        coeff, func = term
+        return func.conj.dist_subdiff(
+            v, self._conj_argument(xstar, coeff),
+            best_approx=best_approx, **kwargs)
 
     @property
     def Lipschitz(self) -> float:
-        Lip = sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
-        Lip -= sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
-        return Lip if all([func.is_convex for func in self.funcs]) else np.inf
-    
+        r"""Lipschitz.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        return sum(abs(c) * f.Lipschitz for c, f in zip(self.coeffs, self.funcs))
+
+    def _convexity_bound(self) -> float:
+        return sum(c * (f.convexity_param if c > 0 else f.Lipschitz)
+                   for c, f in zip(self.coeffs, self.funcs))
+
     @property
     def convexity_param(self) -> float:
-        conv = sum(coeff*fun.convexity_param for coeff,fun in zip(self.coeffs,self.funcs) if coeff>=0.)
-        conv += sum(coeff*fun.Lipschitz for coeff,fun in zip(self.coeffs,self.funcs) if coeff<0.)
-        return conv if (conv>=0 and all([func.is_convex for func in self.funcs])) else 0.
+        r"""Convexity param.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        return max(0., self._convexity_bound()) if self.is_convex else 0.
+
+    @property
+    def is_convex(self) -> bool:
+        r"""Whether the functional is convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return bool(all(f.is_convex for f in self.funcs) and self._convexity_bound() >= 0)
+
+    @property
+    def is_strictly_convex(self) -> bool:
+        r"""Whether the functional is strictly convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return bool(self.convexity_param > 0 or (
+            self.is_convex and all(c > 0 for c in self.coeffs)
+            and any(f.is_strictly_convex for f in self.funcs)))
+
+    @property
+    def conj_is_strictly_convex(self) -> bool:
+        r"""Conj is strictly convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        if len(self.funcs) == 1 and self.coeffs[0] > 0:
+            return bool(self.funcs[0].conj_is_strictly_convex)
+        return bool(np.isfinite(self.Lipschitz) and self.is_convex)
 
     @property
     def is_quadratic(self) -> bool:
-        return all([func.is_quadratic for func in self.funcs])
+        r"""Is quadratic.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return all(f.is_quadratic for f in self.funcs)
 
     @property
     def conj_is_quadratic(self) -> bool:
-        return self.is_quadratic and self.convexity_param>0
+        r"""Conj is quadratic.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return bool(len(self.funcs) == 1 and self.coeffs[0] > 0
+                    and self.funcs[0].conj_is_quadratic)
 
     @property
-    def is_norm_squared_type(self):
-        return all([func.is_linear or func.is_norm_squared_type for func in self.funcs]) and self.convexity_param>0
+    def is_norm_squared_type(self) -> bool:
+        r"""Whether the functional is norm squared type.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return bool(self.convexity_param > 0
+                    and all(f.is_norm_squared_type for f in self.funcs))
+
+    def _domain_bound(self, name: str, lower: bool) -> ReadOnlyVector | float | None:
+        if not self.is_separable:
+            return None
+        values = [getattr(f, name) for f in self.funcs]
+        if any(v is None for v in values):
+            return None
+        if not values:
+            return -inf if lower else inf
+        bound = values[0]
+        # Use vector-space operations for tuple and other non-NumPy vectors.
+        for value in values[1:]:
+            if np.isscalar(bound) and np.isscalar(value):
+                bound = max(bound, value) if lower else min(bound, value)
+            else:
+                b = bound * self.domain.ones() if np.isscalar(bound) else bound
+                v = value * self.domain.ones() if np.isscalar(value) else value
+                if not hasattr(self.domain, 'geq_mask'):
+                    return None
+                bound = self._copy_vector(b)
+                mask = self.domain.geq_mask(v, b) if lower else self.domain.geq_mask(b, v)
+                self.domain.copyto(bound, v, where=mask)
+        return bound
 
     @property
-    def is_convex(self) -> bool:
-        return all([func.is_convex for func in self.funcs]) and self.convexity_param>=0,            
+    def dom_l(self) -> ReadOnlyVector | float | None:
+        r"""Dom l.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector | float | None
+            Result described above.
+        """
+        return self._domain_bound('dom_l', True)
 
     @property
-    def dom_l(self) -> Vector | None:
-        return np.max([F.dom_l for F in self.funcs]) if self.is_separable else None
+    def dom_u(self) -> ReadOnlyVector | float | None:
+        r"""Dom u.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector | float | None
+            Result described above.
+        """
+        return self._domain_bound('dom_u', False)
+
+    def _conjugate_bound(self, name: str) -> ReadOnlyVector | float | None:
+        if not self.is_separable:
+            return None
+        if not self.funcs:
+            return self._copy_vector(self.grad_sum)
+        if len(self.funcs) != 1 or self.coeffs[0] <= 0:
+            return None
+        bound = getattr(self.funcs[0], name)
+        if bound is None:
+            return None
+        if np.isscalar(bound):
+            bound = bound * self.domain.ones()
+        return self.grad_sum + self.coeffs[0] * bound
+
+    @property
+    def conj_dom_l(self) -> ReadOnlyVector | float | None:
+        r"""Conj dom l.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector | float | None
+            Result described above.
+        """
+        return self._conjugate_bound('conj_dom_l')
+
+    @property
+    def conj_dom_u(self) -> ReadOnlyVector | float | None:
+        r"""Conj dom u.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector | float | None
+            Result described above.
+        """
+        return self._conjugate_bound('conj_dom_u')
+
+
+class VerticalShift(LinearCombination):
+    r"""Add a constant to a functional using LinearCombination's flat storage.
     
-    @property
-    def dom_u(self) -> Vector | None:
-        return np.min([F.dom_u for F in self.funcs]) if self.is_separable else None
-
-    @property
-    def conj_dom_l(self) -> Vector | None:
-        _conj_dom_l = None
-        if self.is_separable:
-            if self.linear_table.count(False)==0:
-                _conj_dom_l = self.domain.empty()
-                self.domain.copyto(_conj_dom_l, self.grad_sum)
-            elif len(self.funcs) == 1:
-                if self.coeffs[0]>=0:
-                    _conj_dom_l = self.funcs[0].conj_dom_l * self.coeffs[0]
-            elif self.linear_table.count(False)==1:
-                j = self.linear_table.index(False)
-                if self.coeffs[j] >=0:
-                    _conj_dom_l = self.domain.empty()
-                    self.domain.copyto(_conj_dom_l, self.grad_sum)
-                    _conj_dom_l += self.funcs[j].conj_dom_l*self.coeffs[j] 
-        return _conj_dom_l
+    Nested offsets are accumulated by the parent constructor. For a simple
+    functional this stores one nonlinear component (or one linear part), and
+    the supplied offset. Evaluation and linearization include the offset;
+    conjugate evaluation subtracts it. Derivatives and proximal maps do not
+    depend on the offset.
     
-    @property
-    def conj_dom_u(self) -> Vector | None:
-        _conj_dom_u = None
-        if self.is_separable:
-            if self.linear_table.count(False)==0:
-                _conj_dom_u = self.domain.empty()
-                self.domain.copyto(_conj_dom_u, self.grad_sum)
-            elif len(self.funcs) == 1:
-                if self.coeffs[0]>=0:
-                    _conj_dom_u = self.funcs[0].conj_dom_u * self.coeffs[0]
-            elif self.linear_table.count(False)==1:
-                j = self.linear_table.index(False)
-                if self.coeffs[j] >=0:
-                    _conj_dom_u = self.domain.empty()
-                    self.domain.copyto(_conj_dom_u, self.grad_sum)
-                    _conj_dom_u += self.funcs[j].conj_dom_u*self.coeffs[j]
-        return _conj_dom_u
-
-class VerticalShift(Functional):
-    r"""Shifting a functional by some offset. Should not be used directly but rather by adding some scalar to the functional.
-
     Parameters
     ----------
-    func : regpy.functionals.Functional
-        Functional to be offset.
-    offset : scalar
-        Reals offset added to the evaluation of the functional.
+    func: Functional
+        Functional to evaluate or transform.
+    offset: float
+        Offset.
     """
+
     def __init__(self, func: Functional, offset: float) -> None:
-        if not isinstance(func, Functional) or not isinstance(offset,(int,float)):
-            raise ValueError(util.Errors.value_error(f""" 
-            The VerticalShift only takes two arguments one AbstractFunctional 
-            and one offset that is a scalar. However, you gave:
-                func = {func},
-                offset = {offset}."""))
-        super().__init__(func.domain, 
-                         is_linear = False,
-                         is_separable = func.is_separable,
-                         methods = func._methods, conj_methods = func._conj_methods 
-                         )
-        self.func = func
-        """Functional to be offset.
-        """
-        self.offset = offset
-        """Offset added to the evaluation of the functional.
-        """
+        super().__init__(func, offset=offset)
 
-    def _eval(self, x: Vector, **kwargs: Any) -> float:
-        return self.func(x,**kwargs) + self.offset
-
-    def _linearize(self, x: Vector, **kwargs: Any) -> tuple[float, Vector]:
-        return self.func._linearize(x,**kwargs)
-
-    def _subgradient(
-        self, x: Vector, out: Vector | None = None, **subgradient_par: Any
-    ) -> Vector:
-        return self.func.subgradient(x, out=out, **subgradient_par)
-
-    def dist_subdiff(self, vstar: Vector, x: Vector, **kwargs: Any) -> float:
-        return self.func.dist_subdiff(vstar,x,**kwargs)    
-
-    def _hessian(self, x: Vector, **kwargs: Any) -> operators.Operator:
-        return self.func.hessian(x,**kwargs)
-    
-    def _proximal(
-        self,
-        x: Vector,
-        tau: float,
-        out: Vector | None = None,
-        **proximal_par: Any,
-    ) -> Vector:
-        return self.func.proximal(x, tau, out=out, **proximal_par)
-
-    def _conj(self, x: Vector, **kwargs: Any) -> float:
-        return self.func.conj(x,**kwargs) - self.offset
-    
-    def _conj_subgradient(
-        self, xstar: Vector, out: Vector | None = None, **subgradient_par: Any
-    ) -> Vector:
-        return self.func.conj_subgradient(xstar, out=out, **subgradient_par)
-
-    def _conj_dist_subdiff(
-        self, v: Vector, xstar: Vector, **kwargs: Any
-    ) -> float:
-        return self.func.conj.dist_subdiff(v,xstar,**kwargs)
-
-    def _conj_hessian(self, xstar: Vector, **kwargs: Any) -> operators.Operator:
-        return self.func.conj.hessian(xstar,**kwargs)
-
-    def _conj_proximal(
-        self,
-        x: Vector,
-        tau: float,
-        out: Vector | None = None,
-        **proximal_par: Any,
-    ) -> Vector:
-        return self.func.conj_proximal(x, tau, out=out, **proximal_par)
-
-    @property
-    def is_quadratic(self) -> bool:
-        return self.func.is_quadratic
-
-    @property
-    def is_norm_squared_type(self):
-        return super().is_norm_squared_type
-
-    @property 
-    def convexity_param(self) -> float:
-        return self.func.convexity_param
-    
-    @property
-    def Lipschitz(self) -> float:
-        return self.func.Lipschitz
-    
-    @property
-    def is_convex(self) -> bool:
-        return self.func.is_convex
-
-    @property
-    def dom_l(self) -> Vector | Scalar | None:
-        return self.func.dom_l
-    
-    @property
-    def dom_u(self) -> Vector | Scalar | None:
-        return self.func.dom_u
-    
-    @property
-    def conj_dom_l(self) -> Vector | Scalar | None:
-        return self.func.conj_dom_l
-    
-    @property
-    def conj_dom_u(self) -> Vector | Scalar | None:
-        return self.func.conj_dom_u
 
 class HorizontalShiftDilation(Functional):
     r"""Implements a horizontal shift and/or a horizontal translation of the graph of a functional :math:`F`, i.e. replaces 
-    :math:`F(x)` by :math:`F(dilation(x-shift))`
+    :math:`F(x)` by :math:`F(dilation(x-shift-data))`.
+    
+    Nested HorizontalShiftDilation instances are combined into one wrapper.
+    An inner transformation b*(x-t) and an outer transformation a*(x-s)
+    combine to (b*a)*(x-s-t/a). Wrapper-owned data translations follow the
+    same rule; data of the underlying functional remain in its coordinates.
+    Supplied shift and data vectors are copied and are not modified.
     
     Parameters
     ----------
     func: Functional
         The functional to be shifted and dilated.
-    dilation: float [default: 1]
+    dilation: float [default: 1.0]
         Dilation factor.
-    shift: Vector or scalar or None [default: None]
+    shift: Vector | Scalar | None [default: None]
         Shift vector in self.domain. The default case (None) yields the same results as shift=0, but no zero-additions are performed.
-    data:  Vector or None [default: None]
-        If not None, HorizontalShiftDilation is used as a data functional        
+    data: ReadOnlyVector | None [default: None]
+        If not None, HorizontalShiftDilation is used as a data functional
     """
     def __init__(
         self,
         func: Functional,
         dilation: float = 1.0,
         shift: Vector | Scalar | None = None,
-        data: Vector  | None = None,
+        data: ReadOnlyVector | None = None,
     ) -> None:
         if not isinstance(func, Functional) or not isinstance(dilation,(int,float)) or (shift is not None and not np.isscalar(shift) and shift not in func.domain):
             raise ValueError(util.Errors.value_error(f""" 
@@ -2247,23 +3607,29 @@ class HorizontalShiftDilation(Functional):
         elif shift is not None and shift not in func.domain:
             raise ValueError(util.Errors.not_in_vecsp(shift,func.domain,vec_name="shift vector",space_name="domain of functional"))
         if data is not None and data not in func.domain:
-            raise ValueError(util.Errors.not_in_vecsp(shift,func.domain,vec_name="data vector",space_name="domain of functional"))
-        if isinstance(func,HorizontalShiftDilation):
-            #prevents nested shifts
-            if(func._shift_val is not None):
-                if(shift is None):
-                    shift=(1/func.dilation)*func._shift_val
-                else:
-                    shift+=(1/func.dilation)*func._shift_val
-            if(func.is_data_func):
-                if(data is None):
-                    data=(1/func.dilation)*func.data
-                else:
-                    self.log.warning("The underlying functional for the HorizontalShiftDilation is already a HorizontalShiftDialtion functional with data. The provided data argument will used and the original ignored.")
-            dilation*=func.dilation
-            func=func.func
+            raise ValueError(util.Errors.not_in_vecsp(data,func.domain,vec_name="data vector",space_name="domain of functional"))
+        # F(b*(a*(x-s-d)-t-e)) = F((b*a)*(x-s-d-t/a-e/a)).
+        # Keep wrapper-owned data separate from intrinsic shifts.
+        if shift is not None:
+            shift = func._copy_vector(shift)
+        if data is not None:
+            data = func._copy_vector(data)
+        while isinstance(func, HorizontalShiftDilation):
+            if func._shift_val is not None:
+                translated = func._shift_val / dilation
+                shift = translated if shift is None else shift + translated
+            if func.is_data_func and not func._shifted_data_fid:
+                translated_data = func.data / dilation
+                data = translated_data if data is None else data + translated_data
+            dilation *= func.dilation_factor
+            func = func.func
+        # Data owned by the underlying functional stay in its own coordinates.
+        # Additional outer data are a translation, and must not be discarded.
+        if func.is_data_func and data is not None:
+            shift = data if shift is None else shift + data
+            data = None
         self.func = func
-        self.dilation = dilation
+        self._dilation_factor = dilation
         self._shift_val = shift
         if self.func.is_data_func:
             if data is not None:
@@ -2284,8 +3650,27 @@ class HorizontalShiftDilation(Functional):
                          is_data_func = self.is_data_func#(shift is not None)
                          )
         
+    @property
+    def dilation_factor(self) -> float:
+        """Scalar argument multiplier in ``x -> F(factor * (x - shift))``.
+
+        This intentionally has a different name from the inherited
+        ``Functional.dilation(a)`` constructor method. In particular,
+        ``f.dilation(a)`` must remain callable for already-shifted functionals
+        such as ``KL(offset=sigma)`` and for repeated rescaling.
+        """
+        return self._dilation_factor
+
     @util.memoized_property
     def shift_val(self) -> Vector | None:
+        r"""Shift val.
+        
+        
+        Returns
+        -------
+        Vector | None
+            Result described above.
+        """
         if self.is_data_func and not self._shifted_data_fid:
             if self._shift_val is None:
                 return self.data
@@ -2298,14 +3683,29 @@ class HorizontalShiftDilation(Functional):
                 return self._shift_val
         
     @property
-    def data(self) -> Vector:
+    def data(self) -> ReadOnlyVector:
+        r"""Data.
+        
+        
+        Returns
+        -------
+        ReadOnlyVector
+            Read-only vector view.
+        """
         if self._shifted_data_fid:
-            return self.func.data
+            return self.domain.read_only(self.func.data)
         else:
-            return self._data
+            return self.domain.read_only(self._data)
     
     @data.setter
-    def data(self, new_data: Vector | None) -> None:
+    def data(self, new_data: ReadOnlyVector | None) -> None:
+        r"""Data.
+        
+        Parameters
+        ----------
+        new_data: ReadOnlyVector | None
+            Input vector; its coefficients are only read.
+        """
         if new_data is None:
             if self._shifted_data_fid:
                 del self.func.data
@@ -2323,6 +3723,8 @@ class HorizontalShiftDilation(Functional):
         
     @data.deleter
     def data(self) -> None:
+        r"""Data.
+        """
         if self._shifted_data_fid:
             del self.func.data
             self._shifted_data_fid = False
@@ -2333,9 +3735,23 @@ class HorizontalShiftDilation(Functional):
             self.is_data_func = False
 
     def _shifted_argument(
-        self, x: Vector, out: Vector | None = None
+        self, x: ReadOnlyVector, out: Vector | None = None
     ) -> tuple[Vector, Vector | None]:
-        """Build ``dilation * (x - shift)`` in one work vector."""
+        r"""Build ``dilation * (x - shift)`` in one work vector.
+        
+        Parameters
+        ----------
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        tuple[Vector, Vector | None]
+            Result described above.
+        """
         shift = self.shift_val
         if (
             shift is not None and out is not None
@@ -2345,60 +3761,100 @@ class HorizontalShiftDilation(Functional):
         argument = self._copy_vector(x, out=out)
         if shift is not None:
             argument -= shift
-        argument *= self.dilation
+        argument *= self.dilation_factor
         return argument, shift
 
     def _dual_argument(
-        self, xstar: Vector, out: Vector | None = None
+        self, xstar: ReadOnlyVector, out: Vector | None = None
     ) -> Vector:
-        """Build ``xstar / dilation`` in one work vector."""
+        r"""Build ``xstar / dilation`` in one work vector.
+        
+        Parameters
+        ----------
+        xstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        out: Vector | None [default: None]
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        Vector
+            Writable result vector.
+        """
         argument = self._copy_vector(xstar, out=out)
-        argument *= 1. / self.dilation
+        argument *= 1. / self.dilation_factor
         return argument
 
-    def _eval(self, x: Vector, **kwargs: Any) -> float:
+    def _eval(self, x: ReadOnlyVector, **kwargs: Any) -> float:
         argument, _ = self._shifted_argument(x)
         return self.func(argument, **kwargs)
          
     def _subgradient(
-        self, x: Vector, out: Vector | None = None, **subgradient_par: Any
+        self, x: ReadOnlyVector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         argument, _ = self._shifted_argument(x, out=out)
         result = self.func.subgradient(
             argument, out=argument, **subgradient_par
         )
-        result *= self.dilation
+        result *= self.dilation_factor
         return result
 
-    def dist_subdiff(self, vstar: Vector, x: Vector, **kwargs: Any) -> float:
+    def dist_subdiff(
+        self, vstar: ReadOnlyVector, x: ReadOnlyVector, best_approx: Vector | None = None,
+        **kwargs: Any,
+    ) -> float:
+        r"""Transform the distance and optional projection back by dilation.
+        
+        Parameters
+        ----------
+        vstar: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        x: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        best_approx: Vector | None [default: None]
+            Writable vector used by this operation.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        self._validate_out(best_approx)
         dual_argument = self._dual_argument(vstar)
         argument, _ = self._shifted_argument(x)
-        return self.func.dist_subdiff(
-            dual_argument, argument, **kwargs
+        distance = self.func.dist_subdiff(
+            dual_argument, argument, best_approx=best_approx, **kwargs
         )
+        if best_approx is not None:
+            best_approx *= self.dilation_factor
+        return abs(self.dilation_factor) * distance
 
-    def _hessian(self, x: Vector, **kwargs: Any) -> operators.Operator:
+    def _hessian(self, x: ReadOnlyVector, **kwargs: Any) -> operators.Operator:
         argument, _ = self._shifted_argument(x)
-        return self.dilation**2 * self.func._hessian(argument, **kwargs)
+        return self.dilation_factor**2 * self.func._hessian(argument, **kwargs)
 
     def _proximal(
         self,
-        x: Vector,
+        x: ReadOnlyVector,
         tau: float,
         out: Vector | None = None,
         **proximal_par: Any,
     ) -> Vector:
         argument, shift = self._shifted_argument(x, out=out)
         result = self.func.proximal(
-            argument, tau * self.dilation ** 2,
+            argument, tau * self.dilation_factor ** 2,
             out=argument, **proximal_par
         )
-        result *= 1. / self.dilation
+        result *= 1. / self.dilation_factor
         if shift is not None:
             result += shift
         return result
     
-    def _conj(self, x_star: Vector, **kwargs: Any) -> float:
+    def _conj(self, x_star: ReadOnlyVector, **kwargs: Any) -> float:
         argument = self._dual_argument(x_star)
         if self.shift_val is None:
             return self.func._conj(argument, **kwargs)
@@ -2409,7 +3865,7 @@ class HorizontalShiftDilation(Functional):
 
     def _conj_subgradient(
         self,
-        x_star: Vector,
+        x_star: ReadOnlyVector,
         out: Vector | None = None,
         **subgradient_par: Any,
     ) -> Vector:
@@ -2423,32 +3879,61 @@ class HorizontalShiftDilation(Functional):
         result = self.func.conj_subgradient(
             argument, out=argument, **subgradient_par
         )
-        result *= 1. / self.dilation
+        result *= 1. / self.dilation_factor
         if shift is not None:
             result += shift
         return result
  
     def _conj_dist_subdiff(
-        self, v: Vector, x_star: Vector, **kwargs: Any
+        self, v: ReadOnlyVector, x_star: ReadOnlyVector, best_approx: Vector | None = None,
+        **kwargs: Any,
     ) -> float:
+        r"""Undo dilation and add the shift to the conjugate projection.
+        
+        Parameters
+        ----------
+        v: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        x_star: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        best_approx: Vector | None [default: None]
+            Writable vector used by this operation.
+        **kwargs: Any
+            Additional keyword arguments forwarded to the underlying implementation.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        self._validate_out(best_approx)
         dual_argument = self._dual_argument(x_star)
         primal_argument = self._copy_vector(v)
-        if self.shift_val is not None:
-            primal_argument -= self.shift_val
-        primal_argument *= self.dilation
-        return self.func._conj_dist_subdiff(
-            primal_argument, dual_argument, **kwargs
+        shift = self.shift_val
+        if shift is not None:
+            primal_argument -= shift
+            if best_approx is not None and self._shares_memory(best_approx, shift):
+                shift = self._copy_vector(shift)
+        primal_argument *= self.dilation_factor
+        distance = self.func._conj_dist_subdiff(
+            primal_argument, dual_argument, best_approx=best_approx, **kwargs
         )
+        if best_approx is not None:
+            best_approx *= 1. / self.dilation_factor
+            if shift is not None:
+                best_approx += shift
+        return distance / abs(self.dilation_factor)
 
     def _conj_hessian(
-        self, x_star: Vector, **kwargs: Any
+        self, x_star: ReadOnlyVector, **kwargs: Any
     ) -> operators.Operator:
         argument = self._dual_argument(x_star)
-        return self.dilation**(-2)*self.func._conj_hessian(argument,**kwargs)
+        return self.dilation_factor**(-2)*self.func._conj_hessian(argument,**kwargs)
 
     def _conj_proximal(
         self,
-        xstar: Vector,
+        xstar: ReadOnlyVector,
         tau: float,
         out: Vector | None = None,
         **proximal_par: Any,
@@ -2458,71 +3943,175 @@ class HorizontalShiftDilation(Functional):
         if shift is not None:
             gram_shift = self.domain.empty()
             self.h_domain.gram(shift, out=gram_shift)
-            gram_shift *= tau / self.dilation
+            gram_shift *= tau / self.dilation_factor
         argument = self._dual_argument(xstar, out=out)
         if gram_shift is not None:
             argument -= gram_shift
         result = self.func.conj_proximal(
-            argument, tau / self.dilation ** 2,
+            argument, tau / self.dilation_factor ** 2,
             out=argument, **proximal_par
         )
-        result *= self.dilation
+        result *= self.dilation_factor
         return result
     @property
     def Lipschitz(self) -> float:
-        return self.func.Lipschitz * self.dilation**2
+        r"""Lipschitz.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        return self.func.Lipschitz * self.dilation_factor**2
     
     @property
     def convexity_param(self) -> float:
-        return self.func.convexity_param  * self.dilation**2
+        r"""Convexity param.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        return self.func.convexity_param  * self.dilation_factor**2
     
     @property
+    def is_strictly_convex(self) -> bool:
+        r"""Whether the functional is strictly convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return bool(self.func.is_strictly_convex)
+
+    @property
+    def conj_is_strictly_convex(self) -> bool:
+        r"""Conj is strictly convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return bool(self.func.conj_is_strictly_convex)
+
+    @property
     def is_convex(self) -> bool:
+        r"""Whether the functional is convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.func.is_convex
 
     @property
     def is_linear(self) -> bool:
+        r"""Is linear.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.func.is_linear and self.shift_val is None
     
     @property
     def is_quadratic(self) -> bool:
+        r"""Is quadratic.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.func.is_quadratic
 
     @property
-    def is_norm_squared_type(self):
+    def is_norm_squared_type(self) -> bool:
+        r"""Whether the functional is norm squared type.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return super().is_norm_squared_type
     
     @property
     def dom_l(self) -> Vector | None:
+        r"""Dom l.
+        
+        
+        Returns
+        -------
+        Vector | None
+            Result described above.
+        """
         if self.func.is_separable:
-            if self.dilation>0:
-                return self.func.dom_l/self.dilation if self.shift_val is None else self.func.dom_l/self.dilation + self.shift_val
+            if self.dilation_factor>0:
+                return self.func.dom_l/self.dilation_factor if self.shift_val is None else self.func.dom_l/self.dilation_factor + self.shift_val
             else:
-                return self.func.dom_u/self.dilation if self.shift_val is None else self.func.dom_u/self.dilation + self.shift_val
+                return self.func.dom_u/self.dilation_factor if self.shift_val is None else self.func.dom_u/self.dilation_factor + self.shift_val
         else:
             return None
 
     @property
     def dom_u(self) -> Vector | None:
+        r"""Dom u.
+        
+        
+        Returns
+        -------
+        Vector | None
+            Result described above.
+        """
         if self.func.is_separable:
-            if self.dilation>0:
-                return self.func.dom_u/self.dilation if self.shift_val is None else self.func.dom_u/self.dilation + self.shift_val
+            if self.dilation_factor>0:
+                return self.func.dom_u/self.dilation_factor if self.shift_val is None else self.func.dom_u/self.dilation_factor + self.shift_val
             else:
-                return self.func.dom_l/self.dilation if self.shift_val is None else self.func.dom_l/self.dilation + self.shift_val
+                return self.func.dom_l/self.dilation_factor if self.shift_val is None else self.func.dom_l/self.dilation_factor + self.shift_val
         else:
             return None
 
     @property
     def conj_dom_l(self) -> Vector | None:
+        r"""Conj dom l.
+        
+        
+        Returns
+        -------
+        Vector | None
+            Result described above.
+        """
         if self.func.is_separable:
-            return  self.func.conj_dom_l*self.dilation if self.dilation>0. else self.func.conj_dom_u*self.dilation
+            return  self.func.conj_dom_l*self.dilation_factor if self.dilation_factor>0. else self.func.conj_dom_u*self.dilation_factor
         else:
             return None
 
     @property
     def conj_dom_u(self) -> Vector | None:
+        r"""Conj dom u.
+        
+        
+        Returns
+        -------
+        Vector | None
+            Result described above.
+        """
         if self.func.is_separable:
-            return  self.func.conj_dom_u*self.dilation if self.dilation>0. else self.func.conj_dom_l*self.dilation
+            return  self.func.conj_dom_u*self.dilation_factor if self.dilation_factor>0. else self.func.conj_dom_l*self.dilation_factor
         else:
             return None
   
@@ -2531,27 +4120,31 @@ class HorizontalShiftDilation(Functional):
 class Composed(Functional):
     r"""Composition of an operator with a functional :math:`F\circ O`. This should not be called
     directly but rather used by multiplying the `Functional` object with an `regpy.operators.Operator`.
-
+    
     Parameters
     ----------
-    func : `regpy.functionals.Functional`
-        Functional to be composed with. 
-    op : `regpy.operators.Operator`
-        Operator to be composed with. 
-    op_norm : float [default: inf]
+    func: Functional
+        Functional to be composed with.
+    op: operators.Operator
+        Operator to be composed with.
+    op_norm: float [default: inf]
         Norm of the operator. Used only to define self.Lipschitz
-    op_lower_bound : float
+    op_lower_bound: float [default: 0]
         Lower bound of operator: \|op(f)\|\geq op_lower_bound * \|f\|
         Used only to define self.convexity_param
-    hessian : Callable or None 
-        If not None (default), this allows to specify a user-defined hessian (e.g.,  with allowing an inversion or more efficient inversion)
-    compute_op_norm : boolean
+    hessian: Callable[[Vector], Operator] | None [default: None]
+        If not None, this allows to specify a user-defined hessian (e.g.,  with allowing an inversion or more efficient inversion)
+    compute_op_norm: bool [default: False]
         If true the op norm will be computed using the norm method of the operator. Will only be computed if op_norm 
         is default value inf.
-    norm_kwargs : dict
+    norm_kwargs: dict[str, Any] [default: {}]
         possible arguments passed to the operator norm computation.
-    h_domain: HilbertSpace or None
-        Underlying Hilbert space. Default: None. 
+    h_domain: HilbertSpace | None [default: None]
+        Underlying Hilbert space.
+    methods: set[str] | None [default: None]
+        Names of the implemented functional operations.
+    conj_methods: set[str] | None [default: None]
+        Names of the implemented functional operations.
     """
     def __init__(self, func:Functional,
                  op:operators.Operator, 
@@ -2593,19 +4186,19 @@ class Composed(Functional):
         """Operator composed that is composed with a functional. 
         """
 
-    def _eval(self, x: Vector) -> float:
+    def _eval(self, x: ReadOnlyVector) -> float:
         argument = self.func.domain.empty()
         self.op(x, out=argument)
         return self.func(argument)
 
-    def _linearize(self, x: Vector) -> tuple[float, Vector]:
+    def _linearize(self, x: ReadOnlyVector) -> tuple[float, Vector]:
         y = self.func.domain.empty()
         y, deriv = self.op.linearize(x, out=y)
         z, grad = self.func.linearize(y)
         return z, deriv.adjoint(grad)
 
     def _subgradient(
-        self, x: Vector, out: Vector | None = None, **subgradient_par: Any
+        self, x: ReadOnlyVector, out: Vector | None = None, **subgradient_par: Any
     ) -> Vector:
         y = self.func.domain.empty()
         y, deriv = self.op.linearize(x, out=y)
@@ -2614,7 +4207,7 @@ class Composed(Functional):
         )
         return deriv.adjoint(inner_grad, out=out)
 
-    def _hessian(self, x: Vector) -> operators.Operator:
+    def _hessian(self, x: ReadOnlyVector) -> operators.Operator:
         if self.user_defined_hessian is None:
             if self.op.linear:
                 argument = self.func.domain.empty()
@@ -2625,7 +4218,7 @@ class Composed(Functional):
         else:
             return self.user_defined_hessian(x)
 
-    def _conj(self, x_star: Vector) -> float:
+    def _conj(self, x_star: ReadOnlyVector) -> float:
         if self.op.linear:
             argument = self.func.domain.empty()
             self.op.inverse.adjoint(x_star, out=argument)
@@ -2633,7 +4226,7 @@ class Composed(Functional):
 
     def _conj_subgradient(
         self,
-        x_star: Vector,
+        x_star: ReadOnlyVector,
         out: Vector | None = None,
         **subgradient_par: Any,
     ) -> Vector:
@@ -2646,7 +4239,7 @@ class Composed(Functional):
         )
         return self.op.inverse(inner_grad, out=out)
 
-    def _conj_hessian(self, x_star: Vector) -> operators.Operator:
+    def _conj_hessian(self, x_star: ReadOnlyVector) -> operators.Operator:
         if self.op.linear:
             argument = self.func.domain.empty()
             self.op.inverse.adjoint(x_star, out=argument)
@@ -2657,7 +4250,7 @@ class Composed(Functional):
 
     def _proximal(
         self,
-        x: Vector,
+        x: ReadOnlyVector,
         tau: float,
         out: Vector | None = None,
         cg_params: dict[str, Any] | None = None,
@@ -2685,42 +4278,97 @@ class Composed(Functional):
         
     @property
     def is_linear(self) -> bool:
+        r"""Is linear.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.func.is_linear and self.op.linear
     
     @property
     def is_quadratic(self) -> bool:
+        r"""Is quadratic.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.func.is_quadratic and self.op.linear
     
     @property
     def conj_is_quadratic(self) -> bool:
+        r"""Conj is quadratic.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self. func.is_quadratic and self.op.linear  and  self.func.convexity_param * self.op_lower_bound**2>0
 
     @property 
     def convexity_param(self) -> float:
+        r"""Convexity param.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return self.func.convexity_param * self.op_lower_bound**2
     
     @property
     def Lipschitz(self) -> float:
+        r"""Lipschitz.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return self.func.Lipschitz * self. op_norm**2
     
     @property
     def is_convex(self) -> bool:
+        r"""Whether the functional is convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return self.func.is_convex and self.op.linear         
 
 class FunctionalOnDirectSum(Functional):
     r"""Helper to define Functionals with respective prox-operators on sum spaces (vecsps.DirectSum objects).
     The functionals are given as a list of the functionals on the summands of the sum space.
-
+    
     .. math::
         F(x_1,... x_n) = \sum_{j=1}^n F_j(x_j)
-
-
+    
+    
     Parameters
     ----------
-    funcs : [regpy.functionals.Functional, ...]
+    funcs: list[Functional] | tuple[Functional, ...]
         List of functionals each defined on one summand of the direct sum of vector spaces.
-    domain : regpy.vecsps.DirectSum
-        Domain on which the combined functional is defined. 
+    domain: vecsps.DirectSum | None [default: None]
+        Domain on which the combined functional is defined.
+    
+    Notes
+    -----
+    The Hilbert geometry is the direct sum of the component functionals'
+    ``h_domain`` spaces. In particular, components defined on dual Hilbert
+    spaces retain their dual geometry, as required by the componentwise
+    proximal operators and Moreau's identity.
     """
     def __init__(
         self,
@@ -2743,15 +4391,81 @@ class FunctionalOnDirectSum(Functional):
         is_separable = all([func.is_separable for func in funcs])
         methods = set.intersection(*[func.methods for func in funcs])
         conj_methods = set.intersection(*[func.conj.methods for func in funcs])
-        super().__init__(domain, 
+        super().__init__(domain,
+                        h_domain=hilbert.DirectSum(
+                            *[func.h_domain for func in funcs], vecsp=domain),
                         is_separable = is_separable,                        
                         methods=methods,conj_methods=conj_methods 
                         )
 
+    def bregman_func(self, y: ReadOnlyVector, ystar: ReadOnlyVector | None = None) -> Functional:
+        r"""Construct componentwise Bregman functionals on the same direct sum.
+        
+        Parameters
+        ----------
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
+        if not self.is_convex:
+            return super().bregman_func(y, ystar)
+        if y not in self.domain or (ystar is not None and ystar not in self.domain):
+            raise ValueError('Bregman vectors must belong to the direct-sum domain.')
+        return FunctionalOnDirectSum([
+            f.bregman_func(y[i], None if ystar is None else ystar[i])
+            for i, f in enumerate(self.funcs)
+        ], self.domain)
+
+
+    def conj_bregman_func(self, y: ReadOnlyVector, ystar: ReadOnlyVector | None = None) -> Functional:
+        r"""Keep the componentwise structure for the conjugate as well.
+        
+        Parameters
+        ----------
+        y: ReadOnlyVector
+            Input vector; its coefficients are only read.
+        ystar: ReadOnlyVector | None [default: None]
+            Input vector; its coefficients are only read.
+        
+        
+        Returns
+        -------
+        Functional
+            Constructed functional.
+        """
+        if y not in self.domain or (ystar is not None and ystar not in self.domain):
+            raise ValueError('Bregman vectors must belong to the direct-sum domain.')
+        return FunctionalOnDirectSum([
+            f.conj.bregman_func(y[i], None if ystar is None else ystar[i])
+            for i, f in enumerate(self.funcs)
+        ], self.domain)
+
+
     def _preserve_input_if_needed(
         self, x: vecsps.TupleVector, out: vecsps.TupleVector
     ) -> vecsps.TupleVector:
-        """Protect later components from writes through aliased outputs."""
+        r"""Protect later components from writes through aliased outputs.
+        
+        Parameters
+        ----------
+        x: vecsps.TupleVector
+            X.
+        out: vecsps.TupleVector
+            Writable output buffer. If None, allocate a new result.
+        
+        
+        Returns
+        -------
+        vecsps.TupleVector
+            Result described above.
+        """
         for i, out_i in enumerate(out[:-1]):
             if any(
                 self._shares_memory(out_i, x_j) for x_j in x[i + 1:]
@@ -2777,12 +4491,35 @@ class FunctionalOnDirectSum(Functional):
         return out
 
     def dist_subdiff(
-        self, vstar: vecsps.TupleVector, x: vecsps.TupleVector
+        self, vstar: vecsps.TupleVector, x: vecsps.TupleVector,
+        best_approx: vecsps.TupleVector | None = None,
     ) -> float:
+        r"""Combine component projections and distances in the dual sum norm.
+        
+        Parameters
+        ----------
+        vstar: vecsps.TupleVector
+            Vstar.
+        x: vecsps.TupleVector
+            X.
+        best_approx: vecsps.TupleVector | None [default: None]
+            Best approx.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        self._validate_out(best_approx)
+        if best_approx is not None:
+            vstar = self._preserve_input_if_needed(vstar, best_approx)
+            x = self._preserve_input_if_needed(x, best_approx)
         return sum(
-            f_i.dist_subdiff(vstar_i, x_i)
-            for f_i, vstar_i, x_i in zip(self.funcs, vstar, x)
-        )
+            f_i.dist_subdiff(vstar_i, x_i,
+                            best_approx=None if best_approx is None else best_approx[i]) ** 2
+            for i, (f_i, vstar_i, x_i) in enumerate(zip(self.funcs, vstar, x))
+        ) ** 0.5
 
     def _hessian(self, x: vecsps.TupleVector) -> operators.DirectSum:
         return operators.DirectSum(*tuple(f_i.hessian(x_i) for f_i,x_i in zip(self.funcs,x)))
@@ -2833,12 +4570,35 @@ class FunctionalOnDirectSum(Functional):
         return out
 
     def _conj_dist_subdiff(
-        self, v: vecsps.TupleVector, xstar: vecsps.TupleVector
+        self, v: vecsps.TupleVector, xstar: vecsps.TupleVector,
+        best_approx: vecsps.TupleVector | None = None,
     ) -> float:
+        r"""Combine conjugate projections and distances in the primal sum norm.
+        
+        Parameters
+        ----------
+        v: vecsps.TupleVector
+            V.
+        xstar: vecsps.TupleVector
+            Xstar.
+        best_approx: vecsps.TupleVector | None [default: None]
+            Best approx.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
+        self._validate_out(best_approx)
+        if best_approx is not None:
+            v = self._preserve_input_if_needed(v, best_approx)
+            xstar = self._preserve_input_if_needed(xstar, best_approx)
         return sum(
-            f_i.conj.dist_subdiff(v_i, xstar_i)
-            for f_i, v_i, xstar_i in zip(self.funcs, v, xstar)
-        )
+            f_i.conj.dist_subdiff(v_i, xstar_i,
+                                 best_approx=None if best_approx is None else best_approx[i]) ** 2
+            for i, (f_i, v_i, xstar_i) in enumerate(zip(self.funcs, v, xstar))
+        ) ** 0.5
 
     def _conj_hessian(self, xstar: vecsps.TupleVector) -> operators.DirectSum:
         return operators.DirectSum(*tuple(f_i.conj.hessian(xstar_i) for f_i,xstar_i in zip(self.funcs,xstar)))
@@ -2868,48 +4628,192 @@ class FunctionalOnDirectSum(Functional):
 
     @property
     def is_linear(self) -> bool:
+        r"""Is linear.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return all([func.is_linear for func in self.funcs])
     
     @property
     def is_quadratic(self) -> bool:
+        r"""Is quadratic.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return all([func.is_quadratic for func in self.funcs])
     
     @property
     def conj_is_quadratic(self) -> bool:
+        r"""Conj is quadratic.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return all([func.conj_is_quadratic for func in self.funcs])
 
     @property
-    def is_norm_squared_type(self):
+    def is_norm_squared_type(self) -> bool:
+        r"""Whether the functional is norm squared type.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         conv_params = [func.convexity_param for func in self.funcs]
         return all([func.is_norm_squared_type for func in self.funcs]) and np.allclose(conv_params,conv_params[0])
     
     @property
     def convexity_param(self) -> float:
+        r"""Convexity param.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return min([func.convexity_param for func in self.funcs])
     
     @property
     def Lipschitz(self) -> float:
+        r"""Lipschitz.
+        
+        
+        Returns
+        -------
+        float
+            Computed scalar value.
+        """
         return max([func.Lipschitz for func in self.funcs])
     
     @property
+    def is_strictly_convex(self) -> bool:
+        r"""Whether the functional is strictly convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return all(func.is_strictly_convex for func in self.funcs)
+
+    @property
+    def conj_is_strictly_convex(self) -> bool:
+        r"""Conj is strictly convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
+        return all(func.conj_is_strictly_convex for func in self.funcs)
+
+    @property
     def is_convex(self) -> bool:
+        r"""Whether the functional is convex.
+        
+        
+        Returns
+        -------
+        bool
+            Whether the stated condition is satisfied.
+        """
         return all([func.is_convex for func in self.funcs])
+
+    def _join_domain_bounds(self, name: str) -> vecsps.TupleVector | None:
+        r"""Assemble component bounds, broadcasting scalars in their spaces.
+        
+        Unknown bounds remain unknown. Scalar bounds (including infinities)
+        are expanded with fill rather than multiplication, which would
+        produce NaNs from zero coordinates.
+        
+        Parameters
+        ----------
+        name: str
+            Name.
+        
+        
+        Returns
+        -------
+        vecsps.TupleVector | None
+            Result described above.
+        """
+        if not self.is_separable:
+            return None
+        bounds = []
+        for func, space in zip(self.funcs, self.domain.summands, strict=True):
+            bound = getattr(func, name)
+            if bound is None:
+                return None
+            if np.isscalar(bound):
+                value = space.empty()
+                space.fill(value, bound)
+                bound = value
+            bounds.append(bound)
+        return self.domain.join(*bounds)
 
     @property
     def dom_l(self) -> vecsps.TupleVector | None:
-        return self.domain.join(*[func.dom_l for func in self.funcs]) if self.is_separable else None
+        r"""Dom l.
+        
+        
+        Returns
+        -------
+        vecsps.TupleVector | None
+            Result described above.
+        """
+        return self._join_domain_bounds("dom_l")
 
     @property
     def dom_u(self) -> vecsps.TupleVector | None:
-        return self.domain.join(*[func.dom_u for func in self.funcs]) if self.is_separable else None
+        r"""Dom u.
+        
+        
+        Returns
+        -------
+        vecsps.TupleVector | None
+            Result described above.
+        """
+        return self._join_domain_bounds("dom_u")
 
     @property
     def conj_dom_l(self) -> vecsps.TupleVector | None:
-        return self.domain.join(*[func.conj_dom_l for func in self.funcs]) if self.is_separable else None
+        r"""Conj dom l.
+        
+        
+        Returns
+        -------
+        vecsps.TupleVector | None
+            Result described above.
+        """
+        return self._join_domain_bounds("conj_dom_l")
 
     @property
     def conj_dom_u(self) -> vecsps.TupleVector | None:
-        return self.domain.join(*[func.conj_dom_u for func in self.funcs]) if self.is_separable else None
+        r"""Conj dom u.
+        
+        
+        Returns
+        -------
+        vecsps.TupleVector | None
+            Result described above.
+        """
+        return self._join_domain_bounds("conj_dom_u")
 
     def __add__(self, other: object) -> Functional | NotImplementedType:
         if isinstance(other,FunctionalOnDirectSum):
@@ -2934,22 +4838,22 @@ def as_functional(
     vecsp: VectorSpaceBase,
 ) -> Functional:
     r"""Convert `func` to Functional instance on vecsp.
-
+    
     - If func is a `HilbertSpace` then it generated the `SquaredNorm`.
     - If func is an Operator, it's wrapped in a `GramHilbertSpace` and then `SquaredNorm` functional.
     - If func is callable, e.g. an `hilbert.AbstractSpace` or `AbstractFunctional`, it is called on `vecsp` to construct the concrete functional or Hilbert space. In the later case the functional will be the `SquaredNorm`
-
+    
     Parameters
     ----------
-    func : Functional or HilbertSapce or regpy.operators.Operator or callable
+    func: HilbertSpace | Operator | Functional | Callable[[VectorSpaceBase], HilbertSpace | Functional]
         Functional or object from which to construct the Functional.
-    vecsp : regpy.vecsps.VectorSpaceBase
-        Underlying vector space for the functional. 
-
+    vecsp: VectorSpaceBase
+        Underlying vector space for the functional.
+    
     Returns
     -------
     Functional
-        Constructed Functional on the underlying vectorspace. 
+        Constructed Functional on the underlying vectorspace.
     """
     if not isinstance(func,Functional):
         if isinstance(func, operators.Operator):

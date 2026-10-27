@@ -1,5 +1,6 @@
 from math import isnan
 
+import numpy as np
 import ngsolve as ngs
 from netgen.geom2d import unit_square
 import pytest
@@ -62,8 +63,28 @@ class TestNgsVectorSpace():
 
     def test_mask(self):
         v = self.domain.from_ngs(ngs.x**2*ngs.y)
-        mask_regpy = self.domain.IfPos(v-0.5*self.domain.ones())
-        v[mask_regpy] = v
+        difference = v - 0.5 * self.domain.ones()
+        mask = self.domain.IfPos(difference)
+        assert self.domain.is_mask(mask)
+        selected = np.asarray(list(self.domain.iter_mask(mask)), dtype=bool)
+        coefficients = np.asarray(list(self.domain.iter_coefficients(v)))
+        original = coefficients.copy()
+        expected_mask = np.asarray(
+            list(self.domain.iter_coefficients(difference))
+        ) > 0
+        np.testing.assert_array_equal(selected, expected_mask)
+        assert selected.any() and (~selected).any()
+
+        result = self.domain.zeros()
+        self.domain.copyto(result, v, where=mask)
+        np.testing.assert_allclose(
+            list(self.domain.iter_coefficients(result)),
+            np.where(selected, coefficients, 0.),
+            rtol=0, atol=0,
+        )
+        np.testing.assert_array_equal(
+            list(self.domain.iter_coefficients(v)), original
+        )
 
 class TestNgsVectorSpaceWithInnerProd():
     bdr = "left|top|right|bottom"
@@ -119,5 +140,64 @@ class TestNgsVectorSpaceWithInnerProd():
 
     def test_mask(self):
         v = self.domain.from_ngs(ngs.x**2*ngs.y)
-        mask_regpy = self.domain.IfPos(v-0.5*self.domain.ones())
-        v[mask_regpy] = v
+        difference = v - 0.5 * self.domain.ones()
+        mask = self.domain.IfPos(difference)
+        assert self.domain.is_mask(mask)
+        selected = np.asarray(list(self.domain.iter_mask(mask)), dtype=bool)
+        coefficients = np.asarray(list(self.domain.iter_coefficients(v)))
+        original = coefficients.copy()
+        expected_mask = np.asarray(
+            list(self.domain.iter_coefficients(difference))
+        ) > 0
+        np.testing.assert_array_equal(selected, expected_mask)
+        assert selected.any() and (~selected).any()
+
+        result = self.domain.zeros()
+        self.domain.copyto(result, v, where=mask)
+        np.testing.assert_allclose(
+            list(self.domain.iter_coefficients(result)),
+            np.where(selected, coefficients, 0.),
+            rtol=0, atol=0,
+        )
+        np.testing.assert_array_equal(
+            list(self.domain.iter_coefficients(v)), original
+        )
+
+
+@pytest.mark.parametrize("as_real", [True, False])
+def test_ngs_vector_size_and_scalar_field(as_real):
+    mesh = ngs.Mesh(unit_square.GenerateMesh(maxh=0.5))
+    fes = ngs.H1(mesh, order=1, complex=True)
+    space = NgsVectorSpace(fes, as_real_space=as_real)
+    x = space.ones()
+    assert x.size == fes.ndof  # Vector storage size is not deprecated.
+    assert space.dimension == fes.ndof * (2 if as_real else 1)
+    dynamic = x + 2.0 * x
+    assert dynamic.size == fes.ndof
+    assert dynamic in space
+    np.testing.assert_allclose(space.flatten(dynamic), 3 * space.flatten(x))
+    out = space.empty()
+    space.copyto(out, dynamic)
+    np.testing.assert_allclose(space.flatten(out), space.flatten(dynamic))
+
+
+@pytest.mark.parametrize("as_real", [True, False])
+def test_ngs_coordinate_roundtrip(as_real):
+    mesh = ngs.Mesh(unit_square.GenerateMesh(maxh=0.5))
+    fes = ngs.H1(mesh, order=1, complex=True)
+    space = NgsVectorSpace(fes, as_real_space=as_real)
+    rng = np.random.default_rng(20260920)
+    native = rng.normal(size=fes.ndof) + 1j * rng.normal(size=fes.ndof)
+    x = space.zeros()
+    x.vec.FV().NumPy()[:] = native
+    expected = (np.stack((native.real, native.imag), axis=-1).reshape(-1)
+                if as_real else native)
+    np.testing.assert_allclose(space.flatten(x), expected)
+    np.testing.assert_allclose(list(space.iter_coefficients(x)), expected)
+    reconstructed = space.fromflat(expected)
+    np.testing.assert_allclose(reconstructed.vec.FV().NumPy(), native)
+    out = space.empty()
+    space.set_coefficients(out, iter(expected))
+    np.testing.assert_allclose(out.vec.FV().NumPy(), native)
+    basis = [space.flatten(e).copy() for e in space.iter_basis()]
+    np.testing.assert_allclose(basis, np.eye(space.dimension))

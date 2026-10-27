@@ -25,8 +25,9 @@ All classes and modules that are provided by each submodules can be imported by 
 
     from regpy.operators import *
 
-Note that the operators of the `ngsolve` submodule are only imported given the fact that you have installed ngsolve.
+The operators of the `ngsolve` submodule are only imported if you have installed ngsolve.
 """
+from __future__ import annotations
 
 import logging
 
