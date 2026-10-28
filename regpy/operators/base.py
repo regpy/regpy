@@ -433,9 +433,9 @@ class Operator:
         r"""Zero enabled counters without enabling counting or touching children.
         """
         if self.eval_count_enabled:
-            self._eval_counts = dict.fromkeys(
+            self._eval_counts.update(dict.fromkeys(
                 ('eval', 'deriv', 'adjoint', 'adjoint_eval', 'adjoint_deriv', 'adjoint_data'), 0
-            )
+            ))
 
     def total_eval_count(self) -> int:
         r"""Return counts weighted by two for adjoint_eval and adjoint_deriv.
@@ -613,6 +613,17 @@ class Operator:
         # ``self``.
         del self.adjoint
 
+    def copy_with_shared_eval_counts(self, owner: Operator) -> Operator:
+        """Copy operator state while charging evaluations to owner's counters.
+
+        Intended for derivative snapshots containing ``owner``. Numerical
+        state is independent; the instrumented owner's counter dictionary
+        is shared. Ordinary deepcopy retains its independent-copy semantics.
+        Counting is enabled on owner without resetting accumulated work.
+        """
+        owner.enable_eval_count(reset=False)
+        return deepcopy(self, {id(owner._eval_counts): owner._eval_counts})
+
     def __deepcopy__(self, memo: dict[int, Any]) -> Operator:
         cls = type(self)
         result = cls.__new__(cls)
@@ -778,7 +789,12 @@ class Operator:
         return vector
 
     def reset_detect_loop(self) -> None:
-        r"""Reset detect loop.
+        r"""Reset the recursion flags for the six fallback method pairs.
+
+        Each fallback keeps its flag set only while delegating to its paired
+        implementation and clears it in ``finally``. This also protects direct
+        internal calls and calls that raise, which need not pass through the
+        cleanup in :meth:`__call__`.
         """
         self._detect_loop = [False]*6  
 
@@ -985,8 +1001,11 @@ class Operator:
                 "By default the method _eval or _ieval are not implemented for an Operator!\n You as a user have to define it!"
             ))
         self._detect_loop[0] = True
-        out = self.codomain.zeros()
-        return self._ieval(x, out, **kwargs)
+        try:
+            out = self.codomain.zeros()
+            return self._ieval(x, out, **kwargs)
+        finally:
+            self._detect_loop[0] = False
     
     def _ieval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         r"""In place/ out evaluation. A method that ideally provides an in place evaluation into the specified out
@@ -1019,12 +1038,15 @@ class Operator:
                 "By default the method _eval or _ieval are not implemented for an Operator!\n You as a user have to define it!"
             ))
         self._detect_loop[0] = True
-        if out is x:
-            source = self.domain.empty()
-            self.domain.copyto(source, x)
-            x = source
-        self.codomain.copyto(out, self._eval(x, **kwargs))
-        return out
+        try:
+            if out is x:
+                source = self.domain.empty()
+                self.domain.copyto(source, x)
+                x = source
+            self.codomain.copyto(out, self._eval(x, **kwargs))
+            return out
+        finally:
+            self._detect_loop[0] = False
 
 
     def _derivative(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
@@ -1035,8 +1057,11 @@ class Operator:
             ))
         self.log.debug(f"deriv: {self._detect_loop}")
         self._detect_loop[1] = True
-        out = self.codomain.zeros()
-        return self._iderivative(x, out, **kwargs)
+        try:
+            out = self.codomain.zeros()
+            return self._iderivative(x, out, **kwargs)
+        finally:
+            self._detect_loop[1] = False
     
     def _iderivative(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         r"""In place/ out evaluation of derivative. A method that ideally provides an in place evaluation into the 
@@ -1069,12 +1094,15 @@ class Operator:
                 "By default, the method _derivative or _iderivative are not implemented for an Operator!\n You as a user have to define it!"
             ))
         self._detect_loop[1] = True
-        if out is x:
-            source = self.domain.empty()
-            self.domain.copyto(source, x)
-            x = source
-        self.codomain.copyto(out, self._derivative(x, **kwargs))
-        return out
+        try:
+            if out is x:
+                source = self.domain.empty()
+                self.domain.copyto(source, x)
+                x = source
+            self.codomain.copyto(out, self._derivative(x, **kwargs))
+            return out
+        finally:
+            self._detect_loop[1] = False
 
     def _adjoint(self, y: ReadOnlyVector, **kwargs: Any) -> Vector:
         if self.self_adjoint:
@@ -1086,8 +1114,11 @@ class Operator:
                 "By default, the method _adjoint or _iadjoint are not implemented for an Operator!\n You as a user have to define it!"
             ))
         self._detect_loop[2] = True
-        out = self.domain.zeros()
-        return self._iadjoint(y, out, **kwargs)
+        try:
+            out = self.domain.zeros()
+            return self._iadjoint(y, out, **kwargs)
+        finally:
+            self._detect_loop[2] = False
     
     def _iadjoint(self, y: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if self.self_adjoint:
@@ -1099,12 +1130,15 @@ class Operator:
                 "By default the method _adjoint or _iadjoint are not implemented for an Operator!\n You as a user have to define it!"
             ))
         self._detect_loop[2] = True
-        if out is y:
-            source = self.codomain.empty()
-            self.codomain.copyto(source, y)
-            y = source
-        self.domain.copyto(out, self._adjoint(y, **kwargs))
-        return out
+        try:
+            if out is y:
+                source = self.codomain.empty()
+                self.codomain.copyto(source, y)
+                y = source
+            self.domain.copyto(out, self._adjoint(y, **kwargs))
+            return out
+        finally:
+            self._detect_loop[2] = False
 
     def _adjoint_data(self, data: ObsDataT, **kwargs: Any) -> Vector:
         if self._detect_loop[3]:
@@ -1114,8 +1148,11 @@ class Operator:
             ))
         self.log.debug(f"adjdata: {self._detect_loop}")
         self._detect_loop[3] = True
-        out = self.domain.zeros()
-        return self._iadjoint_data(data, out, **kwargs)
+        try:
+            out = self.domain.zeros()
+            return self._iadjoint_data(data, out, **kwargs)
+        finally:
+            self._detect_loop[3] = False
     
     def _iadjoint_data(self, data: ObsDataT, out: Vector, **kwargs: Any) -> Vector:
         if self._detect_loop[3]:
@@ -1125,12 +1162,15 @@ class Operator:
             ))
         self.log.debug(f"adjdata: {self._detect_loop}")
         self._detect_loop[3] = True
-        if out is data:
-            source = self.codomain.empty()
-            self.codomain.copyto(source, data)
-            data = source
-        self.domain.copyto(out, self._adjoint_data(data, **kwargs))
-        return out
+        try:
+            if out is data:
+                source = self.codomain.empty()
+                self.codomain.copyto(source, data)
+                data = source
+            self.domain.copyto(out, self._adjoint_data(data, **kwargs))
+            return out
+        finally:
+            self._detect_loop[3] = False
         
     def adjoint_data(
         self, data: ObsDataT, out: Vector | None = None, **kwargs: Any
@@ -1187,8 +1227,11 @@ class Operator:
                 return deriv.adjoint(y)
         else:
             self._detect_loop[4] = True
-            out = self.domain.zeros()
-            return self._iadjoint_eval(x, out, **kwargs)
+            try:
+                out = self.domain.zeros()
+                return self._iadjoint_eval(x, out, **kwargs)
+            finally:
+                self._detect_loop[4] = False
     
     def _iadjoint_eval(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if self._detect_loop[4]:
@@ -1204,12 +1247,15 @@ class Operator:
                 return deriv.adjoint(y, out = out)
         else:
             self._detect_loop[4] = True
-            if out is x:
-                source = self.domain.empty()
-                self.domain.copyto(source, x)
-                x = source
-            self.domain.copyto(out, self._adjoint_eval(x, **kwargs))        
-            return out
+            try:
+                if out is x:
+                    source = self.domain.empty()
+                    self.domain.copyto(source, x)
+                    x = source
+                self.domain.copyto(out, self._adjoint_eval(x, **kwargs))        
+                return out
+            finally:
+                self._detect_loop[4] = False
             
 
     def _adjoint_derivative(self, x: ReadOnlyVector, **kwargs: Any) -> Vector:
@@ -1229,8 +1275,11 @@ class Operator:
                 return self._adjoint(self._derivative(x))
         else:
             self._detect_loop[5] = True
-            out = self.domain.zeros()
-            return self._iadjoint_derivative(x, out, **kwargs)
+            try:
+                out = self.domain.zeros()
+                return self._iadjoint_derivative(x, out, **kwargs)
+            finally:
+                self._detect_loop[5] = False
         
     def _iadjoint_derivative(self, x: ReadOnlyVector, out: Vector, **kwargs: Any) -> Vector:
         if self._detect_loop[5]:
@@ -1249,12 +1298,15 @@ class Operator:
                 return self._iadjoint(self._derivative(x), out)
         else:
             self._detect_loop[5] = True
-            if out is x:
-                source = self.domain.empty()
-                self.domain.copyto(source, x)
-                x = source
-            self.domain.copyto(out, self._adjoint_derivative(x, **kwargs))
-            return out
+            try:
+                if out is x:
+                    source = self.domain.empty()
+                    self.domain.copyto(source, x)
+                    x = source
+                self.domain.copyto(out, self._adjoint_derivative(x, **kwargs))
+                return out
+            finally:
+                self._detect_loop[5] = False
 
     @property
     def inverse(self) -> Operator:

@@ -1813,12 +1813,15 @@ class Laplacian(ConvolutionOperator):
         Convolution axes.
     kernel_matrix_shape: int | tuple[int, ...] | None [default: None]
         See description above
+    as_svd : bool [default: False]
+        See :class:`ConvolutionOperator`.
     self_adjoint: bool | None [default: None]
         See :class:`ConvolutionOperator`.
     """
     def __init__(self,grid: UniformGridFcts, pad_amount: int | ArrayLike=0,pad_value: Scalar=0.,
                  Fourier_truncation_amount: int | ArrayLike | None=None,convolution_axes: int | tuple[int, ...] | None=None,
                  kernel_matrix_shape: int | tuple[int, ...] | None=None,
+                 as_svd: bool = False,
                  self_adjoint: bool | None = None) -> None:
         if grid.shape_codomain == () or kernel_matrix_shape is None:
             if  grid.shape_codomain == () and kernel_matrix_shape is not None:
@@ -1828,6 +1831,7 @@ class Laplacian(ConvolutionOperator):
                             pad_amount=pad_amount,pad_value=pad_value,
                             Fourier_truncation_amount=Fourier_truncation_amount,
                             convolution_axes=convolution_axes,
+                            as_svd=as_svd,
                             self_adjoint=self_adjoint,
                             )
         else:
@@ -1842,6 +1846,7 @@ class Laplacian(ConvolutionOperator):
                             pad_amount=pad_amount,pad_value=pad_value,
                             Fourier_truncation_amount=Fourier_truncation_amount,
                             convolution_axes=convolution_axes,
+                            as_svd=as_svd,
                             self_adjoint=self_adjoint,
                             )
 
@@ -2026,6 +2031,7 @@ class PeriodicShift(ConvolutionOperator):
 
 def GaussianBlur(grid: UniformGridFcts,sigma: float=1.,pad_amount: int | ArrayLike=0,pad_value: Scalar=0.,
                  Fourier_truncation_amount: int | ArrayLike | None=None,convolution_axes: int | tuple[int, ...] | None=None,
+                 as_svd: bool = False,
                  self_adjoint: bool | None = None) -> ConvolutionOperator:
     r"""Convolution with a Gaussian kernel
     
@@ -2043,6 +2049,8 @@ def GaussianBlur(grid: UniformGridFcts,sigma: float=1.,pad_amount: int | ArrayLi
         Fourier truncation amount.
     convolution_axes: int | tuple[int, ...] | None [default: None]
         Convolution axes.
+    as_svd : bool [default: False]
+        See :class:`ConvolutionOperator`.
     self_adjoint: bool | None [default: None]
         See :class:`ConvolutionOperator`.
     
@@ -2057,6 +2065,7 @@ def GaussianBlur(grid: UniformGridFcts,sigma: float=1.,pad_amount: int | ArrayLi
     Lap = Laplacian(grid,pad_amount=pad_amount,pad_value=pad_value,
                         Fourier_truncation_amount=Fourier_truncation_amount,
                         convolution_axes=convolution_axes,
+                        as_svd=as_svd,
                         self_adjoint=self_adjoint)
     return Lap.functional_calculus(lambda t: np.exp((sigma/2)**2 * t))
 
@@ -2081,17 +2090,21 @@ class ExponentialConvolution(ConvolutionOperator):
         Fourier truncation amount.
     convolution_axes: int | tuple[int, ...] | None [default: None]
         Convolution axes.
+    as_svd : bool [default: False]
+        See :class:`ConvolutionOperator`.
     self_adjoint: bool | None [default: None]
         Self adjoint.
     """
     def __init__(self,grid: UniformGridFcts,a: float,pad_amount: int | ArrayLike=0,pad_value: Scalar=0.,
                  Fourier_truncation_amount: int | ArrayLike | None=None,convolution_axes: int | tuple[int, ...] | None=None,
+                 as_svd: bool = False,
                  self_adjoint: bool | None = None) -> None:
         super().__init__(grid,
                         lambda *x : np.prod([1/(1 + (2*np.pi*a*y)**2) for y in x],axis=0),
                         pad_amount=pad_amount,pad_value=pad_value,
                         Fourier_truncation_amount=Fourier_truncation_amount,
                         convolution_axes=convolution_axes,
+                        as_svd=as_svd,
                         self_adjoint=self_adjoint,
                         )
 
@@ -2215,7 +2228,11 @@ class PeriodizedHelmholtzVolumePotential(ConvolutionOperator):
     Parameters
     ----------
     grid: UniformGridFcts
-        Grid on which the operator or functional is defined.
+        Complex uniform spatial grid, either scalar-valued or with trailing
+        value axes storing independent fields (for example, incident waves).
+        Only the two or three *spatial* axes are convolved; the same Helmholtz
+        kernel is applied separately to every stacked field. The spatial grid
+        must be square/cubic with equal extents and even side length.
     kappa: float
         Kappa.
     self_adjoint: bool | None [default: None]
@@ -2227,25 +2244,42 @@ class PeriodizedHelmholtzVolumePotential(ConvolutionOperator):
             raise ValueError(Errors.value_error("The grid for a periodized Helmholtz volume potential need to be complex!"))
         if not (grid.ndim_domain ==2 or grid.ndim_domain==3):
             raise ValueError(Errors.value_error('PeriodicHelmholtzVolumePotential only implemented for dimensions 2 and 3.'))
-        self.kappa = kappa      
-        self.N = grid.shape[0]
-        if grid.ndim_domain==2:
-            if grid.shape != (self.N,self.N):
+        self.kappa = kappa
+        # The kernel depends only on spatial coordinates. Trailing codomain
+        # axes are independent stacks and must not enter the shape checks or
+        # the Fourier-coefficient calculation.
+        spatial_shape = grid.shape_domain
+        self.N = spatial_shape[0]
+        if grid.ndim_domain == 2:
+            if spatial_shape != (self.N, self.N):
                 raise ValueError(Errors.value_error("The shape of a two dimensional grid needs to be square!"))
             compute_kernel = self._compute_kernel_2d
         else:
-            if grid.shape != (self.N,)*3:
+            if spatial_shape != (self.N,) * 3:
                 raise ValueError(Errors.value_error("The shape of a non two dimensional grid needs to be a cube!"))
-            compute_kernel = self._compute_kernel_3d   
-        if self.N%2 != 0:
+            compute_kernel = self._compute_kernel_3d
+        if self.N % 2 != 0:
             raise ValueError(Errors.value_error("The number of points in each dimension need to be even!"))
         if not np.all(grid.extents == grid.extents[0]):
             raise ValueError(Errors.value_error('grid must be quadratic.'))
-        self.a = self.N * grid.spacing[0]/2.  # half of the periodicity length of the grid
+        self.a = self.N * grid.spacing[0] / 2.  # half the spatial period
 
-        super().__init__(grid,
-                        compute_kernel(self.kappa * self.a, grid.shape),
-                        self_adjoint=self_adjoint)
+        multiplier = compute_kernel(self.kappa * self.a, spatial_shape)
+        if grid.ndim_codomain:
+            # ConvolutionOperator regards value axes as stack axes. A singleton
+            # per value axis broadcasts the one spatial multiplier to all
+            # components without allocating repeated copies of the kernel.
+            multiplier = multiplier.reshape(
+                spatial_shape + (1,) * grid.ndim_codomain
+            )
+        super().__init__(
+            grid, multiplier,
+            # No need to build and label a potentially enormous SVD of a
+            # repeated block-diagonal operator for vector-valued grids.
+            # Keep the previous automatic behavior on scalar grids.
+            as_svd=False if grid.ndim_codomain else None,
+            self_adjoint=self_adjoint,
+        )
 
     # noinspection PyPep8Naming 
     @staticmethod
@@ -2274,11 +2308,11 @@ class PeriodizedHelmholtzVolumePotential(ConvolutionOperator):
         Jzero = tuple(s//2 for s in shape)
 
         K_hat =  R**2 / (piabsJ**2 - R**2) * (
-            1 - np.exp(1j*R) * (np.cos(piabsJ) - 1j*R * np.sin(piabsJ) / piabsJ)
+            1 - np.exp(1j*R) * (np.cos(piabsJ) - 1j*R * np.sinc(piabsJ / np.pi))
         )
         K_hat[Jzero] = -(1 - np.exp(1j*R) * (1 - 1j*R))
         K_hat[piabsJ == R] = -1j/4 * (2*R)**(-1/2) * (1 - np.exp(1j*R) * np.sin(R) / R)
-        return (2*R)**(3/2) * np.fftshift(K_hat)
+        return (2*R)**(3/2) * np.fft.fftshift(K_hat)
 
     def __repr__(self) -> str:
         return util.make_repr(self, self.kappa, self.a, self.N)

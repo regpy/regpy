@@ -41,7 +41,8 @@ class ForwardBackwardSplitting(RegSolver):
     op_norm: float | None [default: None]
         Norm of the forward operator. If supplied, it is used to compute the
         default step size ``1 / (op_norm**2 * data_fid.Lipschitz)`` instead of
-        estimating the norm numerically. An explicitly supplied ``tau`` takes
+        estimating the norm numerically (on the originating primal operator
+        for a transformed dual setting). An explicitly supplied ``tau`` takes
         precedence.
     update_setting: bool [default: False]
         If True, explicitly supplied data and initial guess are stored in the setting.
@@ -96,7 +97,8 @@ class ForwardBackwardSplitting(RegSolver):
         setting: Setting
             Problem setting containing the operator, penalty, and data fidelity.
         op_norm: float | None [default: None]
-            Operator-norm estimate; None requests numerical estimation.
+            Operator-norm estimate. If None, use the originating primal
+            setting when called on a transformed dual setting.
         op_lower_bound: float [default: 0.0]
             Op lower bound.
         
@@ -124,13 +126,22 @@ class ForwardBackwardSplitting(RegSolver):
                 out['info']+='Gradient of data functional not Lipschitz.'
         out['applicable'] = out['info']==''
         if out['applicable']: 
-            op_norm = setting.op.norm(setting.h_domain,setting.h_codomain) if op_norm is None else op_norm
+            if op_norm is None:
+                # Use the original primal operator for a transformed dual
+                # setting: ||T*|| = ||T|| in the dual Hilbert geometries.
+                norm_setting = (setting._primal_setting
+                                if setting._primal_setting is not None
+                                else setting)
+                op_norm = norm_setting.op.norm(
+                    norm_setting.h_domain, norm_setting.h_codomain
+                )
             par = {'tau':1/(op_norm**2 * setting.data_fid.Lipschitz)}
             mu_penalty  = setting.regpar * setting.penalty.convexity_param
             mu_data_fidelity = setting.data_fid.convexity_param * op_lower_bound**2 
             out['rate'] = (1. - par['tau'] * mu_data_fidelity) / (1. + par['tau']*mu_penalty)
             out['rate'] = -1. if out['rate'] == 1 else out['rate']
-            out['info'] = "FB used with step length tau={:.3e}.".format(par['tau'])
+            out['info'] = 'Dual ' if setting._primal_setting is not None else ''            
+            out['info'] += "FB used with step length tau={:.3e}.".format(par['tau'])
 
         return out, par
 
@@ -213,8 +224,9 @@ class FISTA(RegSolver):
         Norm of the forward operator. If supplied, it is used to compute the
         default step size ``1 / (op_norm**2 * data_fid.Lipschitz)`` instead of
         estimating the norm numerically. For codomain-free settings, the data
-        fidelity Lipschitz factor is one. An explicitly supplied ``tau`` takes
-        precedence.
+        fidelity Lipschitz factor is one. For transformed dual settings the
+        operator norm is estimated on the originating primal operator.
+        An explicitly supplied ``tau`` takes precedence.
     logging_level: int | str [default: 'INFO']
         logging level
     update_setting: bool [default: False]
@@ -224,6 +236,13 @@ class FISTA(RegSolver):
         Pass False when solving its dual. This labels coordinates and does not
         change the iteration formulas or construct a dual setting.
     
+    estimate_dual_init: bool [default: False]
+        If True, initialize the dual estimate on the first call to ``dual()``
+        by ``p = -data_fid.subgradient(op(x)) / regpar`` and its adjoint image.
+        If False, the initial dual estimate is zero. This affects monitoring
+        and stopping at iteration zero, not the primal iteration formulas.
+        Requires an explicit codomain.
+
     Notes
     -----
     In the unregularized mode, the iteration minimizes
@@ -247,7 +266,13 @@ class FISTA(RegSolver):
             logging_level: int | str = "INFO",
             update_setting: bool = False,
                  is_primal: bool = True,
+            estimate_dual_init: bool = False,
                  ) -> None:
+        if not isinstance(estimate_dual_init, bool):
+            raise TypeError('estimate_dual_init must be a bool.')
+        if estimate_dual_init and setting.codomain_free:
+            raise ValueError('estimate_dual_init requires an explicit codomain.')
+        self.estimate_dual_init = estimate_dual_init
         super().__init__(setting, is_primal=is_primal)
         if not self.op.linear:
             raise ValueError(Errors.not_linear_op(self.op,add_info="For nonlinear operators the FISTA method in regpy.solvers.nonlinear must be used."))
@@ -322,7 +347,8 @@ class FISTA(RegSolver):
         op_lower_bound: float [default: 0.0]
             Op lower bound.
         op_norm: float | None [default: None]
-            Operator-norm estimate; None requests numerical estimation.
+            Operator-norm estimate. If None, use the originating primal
+            setting when called on a transformed dual setting.
         
         
         Returns
@@ -362,10 +388,17 @@ class FISTA(RegSolver):
             )
             par['mu'] = par['mu_data_fidelity']+par['mu_penalty']
             if op_norm is None:
-                op_norm = setting.op.norm(
-                    setting.h_domain,
-                    None if setting.codomain_free else setting.h_codomain,
-                    codomain_free=setting.codomain_free,
+                # Avoid estimating ||T*|| on the transformed dual domain.
+                # The norm equals ||T|| when the respective Hilbert spaces
+                # are dual to each other, as in Setting.get_dual_setting().
+                norm_setting = (setting._primal_setting
+                                if setting._primal_setting is not None
+                                else setting)
+                op_norm = norm_setting.op.norm(
+                    norm_setting.h_domain,
+                    (None if norm_setting.codomain_free
+                     else norm_setting.h_codomain),
+                    codomain_free=norm_setting.codomain_free,
                 )
             data_lipschitz = (
                 1. if setting.codomain_free else setting.data_fid.Lipschitz
@@ -374,7 +407,8 @@ class FISTA(RegSolver):
             par['q'] = (par['tau'] * par['mu']) / (1+par['tau']*par['mu_penalty'])
             out['rate'] = 1.-ma.sqrt(par['q']) 
             if par['mu']>0:
-                out['info'] = "FISTA used with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.".format(par['mu_penalty'],par['mu_data_fidelity'],par['tau'])
+                out['info'] = 'dual ' if setting._primal_setting is not None else ''
+                out['info'] += "FISTA used with convexity parameters mu_R={:.3e}, mu_S={:.3e} and step length tau={:.3e}.".format(par['mu_penalty'],par['mu_data_fidelity'],par['tau'])
             else:
                 out['info'] = ''
                 out['rate'] = -2
@@ -406,6 +440,10 @@ class FISTA(RegSolver):
         if self.codomain_free:
             raise RuntimeError(Errors.runtime_error("Dual variables not available when FISTA is run without codomain vectors!"))
         if self._dual_variables_computed==False:
+            if self.estimate_dual_init and self.iteration_step_nr == 0:
+                self.op(self.x, out=self.p)
+                self.data_fid.subgradient(self.p, out=self.p)
+                self.op.adjoint(self.p, out=self.Tp)
             scale = -1./self.regpar
             self.p *= scale
             self.Tp *= scale

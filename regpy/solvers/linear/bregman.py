@@ -6,11 +6,13 @@ if TYPE_CHECKING:
     from regpy.vecsps.base import ReadOnlyVector, Vector
     from regpy.functionals.base import Functional
     from regpy.solvers.setting import Setting
+    from regpy.stoprules import StopRule
 
 from collections.abc import Callable, Iterable
 from copy import deepcopy
 from itertools import repeat
 from math import isfinite
+from logging import Logger
 from numbers import Integral, Real
 from typing import TYPE_CHECKING, Any
 
@@ -21,6 +23,39 @@ from ..sequences import Sequence
 __all__ = ["Bregman", "RunOnAlphaGrid"]
 
 _END = object()
+
+
+def _log_inner_summary(log: Logger, method_name: str, rule: StopRule) -> None:
+    """Report completed inner steps and the recorded evaluation total, if available.
+
+    Search nested combinations without relying on which component triggered.
+    CountIterations.iteration includes stop checks, so use the attached solver's
+    iteration_step_nr for the number of completed iterations. Prefer a counter
+    with evaluation snapshots when several counters are present. Never sum
+    snapshots or counters: each total is already cumulative for the inner run.
+    """
+    from regpy.stoprules import CountIterations
+
+    pending = [rule]
+    counters = []
+    while pending:
+        current = pending.pop()
+        if isinstance(current, CountIterations):
+            counters.append(current)
+        pending.extend(reversed(getattr(current, 'rules', ())))
+    if not counters:
+        return
+    counter = next((r for r in counters if r.eval_counts.get('total')), counters[0])
+    if counter.solver is None:
+        return
+    iterations = counter.solver.iteration_step_nr
+    totals = counter.eval_counts.get('total', ())
+    if totals:
+        log.info('%s stopped after %s its and %s op-evals.',
+                 method_name, iterations, totals[-1])
+    else:
+        log.info('%s stopped after %s its (op-evals not recorded).',
+                 method_name, iterations)
 
 
 class Bregman(RegSolver):
@@ -51,9 +86,11 @@ class Bregman(RegSolver):
     ----------
     setting: Setting
         Linear operator and convex penalty and fidelity. A regularization
-        parameter is optional when ``regpars`` is supplied. Explicit
-        codomain vectors and an explicit data-fidelity functional are required.
-        Data already incorporated into the fidelity are retained unchanged.
+        parameter is optional when ``regpars`` is supplied. Codomain-free
+        settings are supported for the quadratic fidelity encoded by the
+        operator's ``adjoint_eval`` and ``adjoint_data`` operations. Such
+        settings must contain data. With an explicit codomain, data already
+        incorporated into the fidelity are retained unchanged.
     regpars: Sequence | Iterable[float] | None [default: None]
         Finite or infinite sequence of finite, strictly positive parameters.
         Any iterable is accepted, including RegPy's arithmetic Sequences.
@@ -72,6 +109,8 @@ class Bregman(RegSolver):
         taken from ``setting._convex_solvers``, including stopping parameters.
         Dual methods are supported through Setting.run(), which returns a
         reconstruction in primal coordinates of the supplied setting.
+        Codomain-free settings require a primal inner method that supports
+        codomain-free problems, for example TikhonovCG for quadratic penalties.
     nr_its: int [default: 2]
         Number of outer steps for a constant parameter. Must be
         positive. Used only when regpars is None, in which case the setting
@@ -89,11 +128,17 @@ class Bregman(RegSolver):
         ``bregman_func(x, ystar)``. None uses R's default subgradient for the
         first divergence and whenever S has no subgradient implementation;
         otherwise it uses ``T.adjoint(-S.subgradient(Tx) / alpha_previous)``.
+        For codomain-free quadratic fidelity, the candidate is computed as
+        ``(T.adjoint_data(data) - T.adjoint_eval(x)) / alpha_previous``.
+        As in the explicit-codomain case, this candidate is projected onto
+        the penalty subdifferential using ``R.dist_subdiff``.
         Selection occurs once at initialization and once before each later
         inner solve, never speculatively after the last completed step.
     logging_level: int | str [default: 'INFO']
-        Outer logging level. Inner logging may be configured
-        in the inner method's method_params.
+        Outer logging level, including an INFO summary of each inner run when
+        CountIterations is present. Inner solver and stopping-rule logging
+        default independently to WARNING. Configure them through the inner
+        method's method_params and stoprule_params, respectively.
     is_primal: bool [default: True]
         Coordinate label for compatibility with RegSolver.
         This does not change which inner problem is solved.
@@ -107,7 +152,12 @@ class Bregman(RegSolver):
     subproblem, whose executed rule is available through ``get_stoprule``.
     Inner stopping tolerances control the accuracy of the outer iteration.
     
-    ``x`` and ``y`` expose the initial pair immediately. Each solver step
+    ``x`` and ``y`` expose the initial pair immediately. In codomain-free
+    mode, ``y`` remains None throughout; neither initialization nor the outer
+    iteration evaluates ``T(x)``. The backprojected data are computed once
+    for the default subgradient selection. The operator's normal and
+    adjoint-data operations must already include the fidelity's Gram factor.
+    Each solver step
     performs one inner solve; inherited iteration yields its result as
     read-only views. Finite sequences end without yielding a duplicate final
     iterate. One parameter is buffered in advance to recognize exhaustion.
@@ -163,6 +213,8 @@ class Bregman(RegSolver):
             raise ValueError('regpars must contain at least one parameter.')
         alpha = self._validate_alpha(self._pending_alpha)
         self._inner_template = self._method_template(setting, inner_solver)
+        if setting.codomain_free and not self._inner_template['primal']:
+            raise ValueError('Codomain-free Bregman requires a primal inner solver.')
         initial = setting.init if init is None else init
         if initial not in setting.op.domain:
             raise ValueError('init must belong to the operator domain.')
@@ -173,7 +225,13 @@ class Bregman(RegSolver):
         self.op.domain.copyto(self.x, initial)
         # This also validates the base point and subgradient before any solve.
         self._bregman_penalty = self._make_bregman_penalty()
-        self.y = self.op(self.x)
+        if setting.codomain_free:
+            self.data = setting.data
+            self.y = None
+            if self.select_subgradient is None:
+                self._backprojected_data = self.op.adjoint_data(self.data)
+        else:
+            self.y = self.op(self.x)
         self.inner_setting: Setting | None = None
         self.inner_method_name = '_bregman_inner'
 
@@ -225,7 +283,7 @@ class Bregman(RegSolver):
         if not isinstance(params, dict) or not isinstance(stopping, dict):
             raise TypeError('method_params and stoprule_params must be dictionaries.')
         if params.get('data') is not None or params.get('regpar') is not None:
-            raise ValueError('Configure data on the outer setting and parameters through regpars.')
+            raise ValueError('Configure data on the outer setting and regularizaparameters through regpar.')
         return dict(
             **{'class': cls, 'primal': primal, 'full': template.get('full', cls.__name__)},
             method_params=dict(params), stoprule_params=deepcopy(stopping),
@@ -265,7 +323,8 @@ class Bregman(RegSolver):
         if select_subgradient is not None and not callable(select_subgradient):
             info.append('select_subgradient must be callable or None.')
         if setting.codomain_free:
-            info.append('An explicit codomain and data-fidelity functional are required.')
+            if setting.data is None:
+                info.append('Codomain-free Bregman requires data in the setting.')
         elif not setting.data_fid.is_convex:
             info.append('The data fidelity must be convex.')
         return {'applicable': not info, 'info': ' '.join(info)}, {}
@@ -278,7 +337,12 @@ class Bregman(RegSolver):
         self._run_inner(alpha, self._bregman_penalty, self.x)
 
     def _run_inner(self, alpha: float, penalty: Functional, init: ReadOnlyVector) -> None:
-        r"""Execute a fresh inner problem and advance the parameter iterator.
+        r"""Solve at the zero linearization point and advance the alpha iterator.
+
+        Since the outer operator is linear, x0=y0=0 and deriv=setting.op
+        recover the original data term. The explicit penalty is copied without
+        a shift. This routine is shared with RunOnAlphaGrid, which also needs
+        inner-method configuration, warm starts and parameter advancement.
         
         Parameters
         ----------
@@ -289,14 +353,16 @@ class Bregman(RegSolver):
         init: ReadOnlyVector
             Initial iterate in the operator domain.
         """
-        from ..setting import Setting
-
-        inner = Setting(
-            op=self.op, penalty=penalty,
-            data_fid=self.data_fid, regpar=alpha,
-            init=init, incorporate_init_in_penalty=False,
-            explicitDataWarning=False, logging_level=self.log.level,
+        zero = self.op.domain.zeros(read_only=True)
+        inner = self.setting.get_linearized_tikh_setting(
+            x0=zero, regpar=alpha, deriv=self.setting.op,
+            y0=None if self.setting.codomain_free else self.op.codomain.zeros(),
+            # The codomain-free representation of y0=0 avoids allocating a
+            # codomain vector or invoking an explicit adjoint.
+            adjoint_y0=zero if self.setting.codomain_free else None,
+            inner_penalty=penalty,
         )
+        inner.init = init
         template = self._inner_template
         name = self.inner_method_name
         inner.add_method(name, template['class'], primal=template['primal'],
@@ -305,12 +371,16 @@ class Bregman(RegSolver):
         entry['method_params'].update(template['method_params'])
         entry['stoprule_params'].update(deepcopy(template['stoprule_params']))
         self.inner_setting = inner
-        level = entry['method_params'].get('logging_level', self.log.level)
+        entry['stoprule_params'].setdefault('logging_level', 'WARNING')
+        level = entry['method_params'].get('logging_level', 'WARNING')
         x, y = inner.run(name, logging_level=level)
+        _log_inner_summary(self.log, template['class'].__name__, inner.get_stoprule(name))
         if x not in self.op.domain:
             raise RuntimeError('The inner solver did not return a domain reconstruction.')
         self.op.domain.copyto(self.x, x)
-        if y is None:
+        if self.setting.codomain_free:
+            self.y = None
+        elif y is None:
             self.y = self.op(self.x)
         else:
             self.y = self.op.codomain.empty()
@@ -322,14 +392,15 @@ class Bregman(RegSolver):
         if self._pending_alpha is _END:
             self.converge()
 
-    def primal(self) -> tuple[Vector, Vector]:
+    def primal(self) -> tuple[Vector, Vector | None]:
         r"""Current pair in the coordinates of the supplied setting.
         
         
         Returns
         -------
-        tuple[Vector, Vector]
-            Result described above.
+        tuple[Vector, Vector | None]
+            Current reconstruction and operator image, or None for the
+            image in codomain-free mode.
         """
         return self.x, self.y
 
@@ -348,15 +419,24 @@ class Bregman(RegSolver):
             Constructed functional.
         """
         if self.select_subgradient is None:
-            if previous_alpha is None or 'subgradient' not in self.data_fid.methods:
+            if previous_alpha is None:
                 return self.penalty.bregman_func(self.x)
-            # self.y is T f_n and previous_alpha is alpha_n, even when the
-            # next solve uses a different regularization parameter.
-            p = self.data_fid.subgradient(self.y)
-            p *= (-1. / previous_alpha)
-            Tp = self.op.adjoint(p)
-            self.penalty.dist_subdiff(Tp,self.x,best_approx=Tp)
-            return self.penalty.bregman_func(self.x,Tp)
+            if self.setting.codomain_free:
+                # Both terms are domain covectors, including the fidelity
+                # Gram factor. Never form a vector in the operator codomain.
+                Tp = self.op.domain.empty()
+                self.op.domain.copyto(Tp, self._backprojected_data)
+                Tp -= self.op.adjoint_eval(self.x)
+                Tp /= previous_alpha
+            else:
+                if 'subgradient' not in self.data_fid.methods:
+                    return self.penalty.bregman_func(self.x)
+                # Use the parameter of the completed solve, not the next one.
+                p = self.data_fid.subgradient(self.y)
+                p *= (-1. / previous_alpha)
+                Tp = self.op.adjoint(p)
+            self.penalty.dist_subdiff(Tp, self.x, best_approx=Tp)
+            return self.penalty.bregman_func(self.x, Tp)
         subgradient = self.select_subgradient(
             self.setting, self.op.domain.read_only(self.x))
         if subgradient is None:
@@ -365,11 +445,12 @@ class Bregman(RegSolver):
 
 
 class RunOnAlphaGrid(RegSolver):
-    r"""Solve independent convex Tikhonov problems on a parameter grid.
+    r"""Solve convex Tikhonov problems on a parameter grid with warm starts.
     
     Each step minimizes ``S(Tf) + alpha * R(f)`` using a fresh inner setting,
-    solver, and stopping history. The original penalty and the same initial
-    guess are used at every step; there is no warm start between grid points.
+    solver, and stopping history. The original penalty is used at every step.
+    The first solve starts at ``init`` (or ``setting.init``); each subsequent
+    solve starts at a copy of the preceding reconstruction.
     
     This method is used to select the regularization parameter by a parameter choice rule. 
     
@@ -377,7 +458,7 @@ class RunOnAlphaGrid(RegSolver):
     ----------
     setting: Setting
         Must have no regularization parameter, a linear operator, convex
-        penalty and fidelity, and an explicit codomain and fidelity.
+        penalty and fidelity (or codomain-free quadratic fidelity).
     regpars: Sequence | Iterable[float]
         Nonempty, finite or infinite iterable of finite positive parameters.
         Parameters are validated lazily, as in Bregman.
@@ -385,10 +466,13 @@ class RunOnAlphaGrid(RegSolver):
         Convex solver label or method dictionary or None, as in
         Bregman. Labels retain configuration from ``setting._convex_solvers``.
     init: ReadOnlyVector | None [default: None]
-        Fixed initial guess for every solve, default ``setting.init``.
+        Initial guess for the first solve, default ``setting.init``.
+        Later solves use the preceding reconstruction as their initial guess.
         An explicit inner method initialization takes precedence.
     logging_level: int | str [default: 'INFO']
-        Outer logging level.
+        Outer logging level, including an INFO summary of each inner run when
+        CountIterations is present. Inner solver and stopping-rule logging
+        default to WARNING; explicit inner configuration takes precedence.
     is_primal: bool [default: True]
         Coordinate label for RegSolver.
     
@@ -424,17 +508,17 @@ class RunOnAlphaGrid(RegSolver):
             raise ValueError('regpars must contain at least one parameter.')
         alpha = self._validate_alpha(self._pending_alpha)
         self._inner_template = self._method_template(setting, inner_solver)
+        if setting.codomain_free and not self._inner_template['primal']:
+            raise ValueError('Codomain-free RunOnAlphaGrid requires a primal inner solver.')
         initial = setting.init if init is None else init
         if initial not in setting.op.domain:
             raise ValueError('init must belong to the operator domain.')
         super().__init__(setting, is_primal=is_primal)
         self.log.setLevel(logging_level)
         self.regpar = alpha
-        self._initial = self.op.domain.empty()
-        self.op.domain.copyto(self._initial, initial)
         self.x = self.op.domain.empty()
         self.op.domain.copyto(self.x, initial)
-        self.y = self.op(self.x)
+        self.y = None if setting.codomain_free else self.op(self.x)
         self.inner_setting: Setting | None = None
         self.inner_method_name = '_alpha_grid_inner'
 
@@ -465,14 +549,16 @@ class RunOnAlphaGrid(RegSolver):
         if not setting.penalty.is_convex:
             info.append('The penalty must be convex.')
         if setting.codomain_free:
-            info.append('An explicit codomain and data-fidelity functional are required.')
+            if setting.data is None:
+                info.append('Codomain-free RunOnAlphaGrid requires data in the setting.')
         elif not setting.data_fid.is_convex:
             info.append('The data fidelity must be convex.')
         return {'applicable': not info, 'info': ' '.join(info)}, {}
 
     def _next(self) -> None:
         alpha = self._validate_alpha(self._pending_alpha)
-        # Give every solve its own copy, even if an inner method mutates init.
+        # Warm-start from the last reconstruction without sharing writable
+        # storage with the outer iterate. The penalty remains unchanged.
         initial = self.op.domain.empty()
-        self.op.domain.copyto(initial, self._initial)
+        self.op.domain.copyto(initial, self.x)
         self._run_inner(alpha, self.penalty, initial)

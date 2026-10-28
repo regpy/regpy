@@ -34,43 +34,12 @@ def test_potential():
     #Exact data and Poission data
     exact_solution = op.domain.radialfct2curve(lambda t: np.sqrt(6*np.cos(1.5*t)**2+1)/3)
     exact_data = op(exact_solution.radial())
-    noise = op.codomain.randn()
-    noise = 0.01*setting.h_codomain.norm(exact_data)/setting.h_codomain.norm(noise)*noise
-    data = exact_data + noise
-
     #Initial guess
     init = op.domain.circle(radius=0.2)
+    setting = Setting(op, L2, L2, exact_data=exact_data,  init = init.coeff)
+    setting.add_Gaussian_noise(relative_noise_level=0.03,white_noise=False)
 
-    #Solver: NewtonCG or IrgnmCG
-    solver = NewtonCG(
-        setting, data, init = init.coeff,
-            cgmaxit=50, rho=0.6
-    )
-
-    """
-    solver = IrgnmCG(
-        setting, data,
-        regpar = 1,
-        regpar_step = 0.5,
-        init = init,
-        cg_pars = dict(
-            tol = 1e-4
-        )
-    )
-    """
-    stoprule = (
-        rules.CountIterations(100) +
-        rules.Discrepancy(
-            setting.h_codomain.norm, data,
-            noiselevel = setting.h_codomain.norm(noise),
-            tau=2.1
-        )
-    )
-
-    #Plot function
-
-
-    solver.run(stoprule)
+    setting.run('NewtCG',max_it=50)
 
 
 sys.path.pop(0)

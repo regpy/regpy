@@ -30,80 +30,31 @@ def test_volterra():
     op = Volterra(grid)
 
     exact_data = op(exact_solution)
-    noise = 0.03 * op.domain.randn()
-    data = exact_data + noise
-
-    setting = Setting(op, L2, L2, data = data,  regpar=0.01)
-
-    solver = TikhonovCG(setting)
-    stoprule = (
-        rules.CountIterations(1000) +
-        rules.Discrepancy(
-            setting.h_codomain.norm, data,
-            noiselevel=setting.h_codomain.norm(noise),
-            tau=1.1
-        )
-    )
-
-    _, _ = solver.run(stoprule)
+    setting = Setting(op, L2, L2, exact_data = exact_data,  regpar=0.01)
+    setting.add_Gaussian_noise(absolute_noise_level=0.03,white_noise=False)
+    setting.run('TikhCG')
+    assert setting.get_stoprule('TikhCG').main_rule.converged
 
     op = Volterra(grid,exponent=2)
-
     exact_data = op(exact_solution)
-    noise = 0.03 * op.domain.randn()
-    data = exact_data + noise
     init = op.domain.ones()*0.05
 
-    setting = Setting(op, Sobolev, L2, data = data, init = init)
-
-    solver = Landweber(setting,  stepsize=0.01)
-    stoprule = (
-        # Landweber is slow, so need to use large number of iterations
-        rules.CountIterations(max_iterations=100000) +
-        rules.Discrepancy(
-            setting.h_codomain.norm, data,
-            noiselevel=setting.h_codomain.norm(noise),
-            tau=1.1
-        )
-    )
-
-    _, _ = solver.run(stoprule)
-
-    op = Volterra(grid, exponent=2)
+    setting = Setting(op, Sobolev, L2, exact_data = exact_data, init = init)
+    setting.add_Gaussian_noise(absolute_noise_level=0.03,white_noise=False)    
+    setting.run('nlLW')
+    assert setting.get_stoprule('nlLW').main_rule.converged
 
     # Impulsive Noise
     sigma = 0.01*np.ones(grid.coords[0].shape[0])
     sigma[100:110] = 0.5
-
-    exact_data = op(exact_solution)
     noise = sigma * op.domain.randn()
     data = exact_data + noise
     init = op.domain.ones()
 
     #The penalty term |f|_{TV}
-    setting = Setting(
-        op=op, 
-        penalty=TV(grid), 
-        data_fid=HilbertNorm(h_space=L2), 
-        data = data,
-        regpar = 0.01,
-        init = init
-    )
-
-    # """Parameters for the inner computation of the proximal operator with the Chambolle algorithm"""
-
-    solver = FISTA(setting)
-    stoprule = (
-        # Method is slow, so need to use large number of iterations
-        rules.CountIterations(max_iterations=100) +
-        rules.Discrepancy(
-            setting.h_codomain.norm, data,
-            noiselevel=setting.h_codomain.norm(noise),
-            tau=1.1
-        )
-    )
-
-    _, _ = solver.run(stoprule)
+    setting = Setting(op, TV, L2,  data = data, regpar = 0.01, init = init)
+    setting.run('gFISTA',max_it = 100)
+    assert setting.get_stoprule('gFISTA').main_rule.converged    
 
 
 sys.path.pop(0)

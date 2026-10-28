@@ -40,25 +40,23 @@ def test_mediumscattering():
     r = scattering.domain.coord_distances()
     contrast[r < radius] = np.exp(-1/(radius - r[r < radius]**2))
 
-    op = scattering
-
     exact_solution = contrast
-    exact_data = op(exact_solution)
-    noise = 0.001 * op.codomain.randn()
-    data = exact_data + noise
-    init = op.domain.zeros()
+    exact_data = scattering(exact_solution)
+   
+    init = scattering.domain.zeros()
 
     myh_domain = Hm(mask = scattering.support,dtype=complex,index=2)
     setting = Setting(
-        op=op,
+        op=scattering,
         # Define Sobolev norm on support via embedding
         #h_domain=HilbertPullBack(Sobolev(index=2), embedding, inverse='cholesky'),
         penalty = myh_domain, 
-        data_fid =L2
+        data_fid =L2, 
+        exact_data=exact_data
     )
+    setting.add_Gaussian_noise(relative_noise_level=0.1,white_noise=False)
 
-    solver = IrgnmCG(
-        setting, data,
+    solver = IrgnmCG(setting, 
         regpar=0.0001, regpar_step=0.8,
         init=init,
         cg_pars=dict(
@@ -66,18 +64,10 @@ def test_mediumscattering():
             reltolx=1e-8
         )
     )
-    stoprule = (
-        rules.CountIterations(100) +
-        rules.Discrepancy(
-            setting.h_codomain.norm, data,
-            noiselevel=setting.h_codomain.norm(noise),
-            tau=1.1
-        )
-    )
+    stoprule = rules.Discrepancy()
 
-    _, _ =  solver.run(stoprule)
+    _, _ =  solver.run(stoprule, max_it = 100)
 
-    assert stoprule.rules[1].triggered
-
+    assert stoprule.main_rule.converged
 
 sys.path.pop(0)

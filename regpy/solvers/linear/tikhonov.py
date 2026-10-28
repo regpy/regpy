@@ -75,6 +75,34 @@ def _contains_count_iterations(stoprule: StopRule) -> bool:
     )
 
 
+def _cg_stoprule_logging(rule: StopRule, solver: RegSolver,
+                         other: StopRule | None = None,
+                         other_level: int | None = None) -> StopRule:
+    """Isolate internal rule loggers and preserve an external rule's level.
+
+    ClassLogger defaults are shared by instances. In particular, constructing
+    a CombineRules may reset an earlier combination's logger. Bind private
+    logger instances after building the internal tree, including every leaf.
+    """
+    def bind(current: StopRule, level: int | str) -> None:
+        current.log = logging.Logger(
+            f'{solver.log.name}.{type(current).__name__}', level=level)
+        current.log.parent = solver.log
+
+    pending = [rule]
+    while pending:
+        current = pending.pop()
+        bind(current, solver.logging_level)
+        pending.extend(getattr(current, 'rules', ()))
+    if other is None:
+        return rule
+    from regpy.stoprules import CombineRules
+    level = min(rule.log.level, other_level)
+    combined = CombineRules([rule, other], logging_level=level)
+    bind(combined, level)
+    return combined
+
+
 def _regularized_inner_setting(
     setting: Setting,
     regpar: float,
@@ -223,7 +251,10 @@ class TikhonovCG(RegSolver):
             self.history_dict["kappa"].append(kappa)
             self.log_info = 'kappa:{:1.1e}'.format(kappa)
             self.it+=1
-            return (self.it>=self.min_it)
+            satisfied = self.it >= self.min_it
+            if satisfied:
+                return self._set_stop_status(True, 'Minimum CG iteration count satisfied.')
+            return False
 
     class RelTolXStop(StopRule):
         r"""Stopping rule based on relative error in the domain of the operator.
@@ -290,8 +321,8 @@ class TikhonovCG(RegSolver):
                     / self.sq_norm_x
                     / self.solver.kappa
                 ) / self.solver.regpar
-                self.log_info = 'rel X:{:1.1e}>={:1.1e} '.format(
-                    valx, self.tolexpr
+                self.log_info = 'rel X:{:1.1e} {} {:1.1e}'.format(
+                    valx, '<' if valx < self.tolexpr else '>=', self.tolexpr
                 )
             self.history_dict["rel_err_x"].append(valx)
             if self.x_exact is not None:
@@ -309,7 +340,9 @@ class TikhonovCG(RegSolver):
                 self.history_dict["rel_err_x_true"].append(
                     np.inf if self.sq_norm_x == 0 else true_error / np.sqrt(self.sq_norm_x)
                 )
-            return valx < self.tolexpr
+            if valx < self.tolexpr:
+                return self._set_stop_status(True, 'CG relative X tolerance satisfied.')
+            return False
 
     class RelTolYStop(StopRule):
         r"""Stopping rule based on relative error in the domain of the operator.
@@ -393,8 +426,8 @@ class TikhonovCG(RegSolver):
                     / self.solver.kappa
                     / self.solver.regpar
                 )
-                self.log_info = "rel Y:{:1.1e}>={:1.1e} ".format(
-                    valy, self.tolexpr
+                self.log_info = "rel Y:{:1.1e} {} {:1.1e}".format(
+                    valy, '<' if valy < self.tolexpr else '>=', self.tolexpr
                 )
             self.history_dict["rel_err_y"].append(valy)
             if self.y_exact is not None:
@@ -414,7 +447,9 @@ class TikhonovCG(RegSolver):
                     if self.norm_y == 0
                     else true_error / sqrt(self.norm_y)
                 )
-            return valy < self.tolexpr
+            if valy < self.tolexpr:
+                return self._set_stop_status(True, 'CG relative Y tolerance satisfied.')
+            return False
 
     class TolStop(StopRule):
         r"""Stopping rule based on absolute tolerance
@@ -464,8 +499,12 @@ class TikhonovCG(RegSolver):
                         0.,
                     ))
                 )
-            self.log_info = "abs X:{:1.1e}>={:1.1e}".format(val, self.tol)
-            return val < self.tol
+            self.log_info = "abs X:{:1.1e} {} {:1.1e}".format(
+                val, '<' if val < self.tol else '>=', self.tol
+            )
+            if val < self.tol:
+                return self._set_stop_status(True, 'CG absolute tolerance satisfied.')
+            return False
 
     def __init__(
                 self, setting:Setting, 
@@ -753,6 +792,7 @@ class TikhonovCG(RegSolver):
         """
         if self.setting.codomain_free:
             return self._lavrentiev.get_stoprule(other_stoprule)
+        other_level = other_stoprule.log.level if other_stoprule is not None else None
         from regpy.stoprules import AndCombineRules,CombineRules, CountIterations             
         stoprule_list = []
         if self.tol is not None:
@@ -778,11 +818,9 @@ class TikhonovCG(RegSolver):
                 )
                 + internal_rule
             )
-        return (
-            internal_rule + other_stoprule
-            if other_stoprule is not None
-            else internal_rule
-        )
+        return _cg_stoprule_logging(
+            internal_rule, self, other_stoprule, other_level)
+
 
     def run(self, 
             stoprule: StopRule | None = None, 
@@ -966,11 +1004,9 @@ class TikhonovAlphaGrid(RegSolver):
         Absolute tolerance for CG iterations is
         ``tol_fac * delta / sqrt(alpha)``.
     logging_level: int | str [default: 'INFO']
-        Logging level for the inner CG iteration.
-    
-    Notes
-    -----
-    Further keyword arguments for TikhonovCG can be given.
+        Logging level for the outer solver and its inner-run summaries.
+    inner_it_logging_level: int | str [default: 'WARNING']
+        Logging level for the inner CG solver and all its stopping rules.
     """
     def __init__(
         self,
@@ -982,6 +1018,7 @@ class TikhonovAlphaGrid(RegSolver):
         delta: float | None = None,
         tol_fac: float = 0.5,
         logging_level: int | str = "INFO",
+        inner_it_logging_level: int | str = "WARNING",
     ) -> None:
         from .. import Naturals
         out, par = self.check_applicability(
@@ -1023,7 +1060,8 @@ class TikhonovAlphaGrid(RegSolver):
         """ absolute tolerance for CG iterations is tol_fac*delta/sqrt(alpha) if delta is specfied, 
         otherwise relative tolerance in domain is tol_fac/sqrt(alpha)"""
         self.logging_level = logging_level
-        """logging level for CG iteration."""
+        """Logging level for the outer iteration."""
+        self.inner_it_logging_level = inner_it_logging_level
 
     def _next(self) -> None:
         try:
@@ -1032,16 +1070,16 @@ class TikhonovAlphaGrid(RegSolver):
             return self.converge()
         self.alpha = alpha
         self.error_prop = 1/(2*np.sqrt(alpha))
-        inner_stoprule = CountIterations(max_iterations=self.max_CG_iter)
-        inner_stoprule.log = self.log.getChild('CountIterations')
-        inner_stoprule.log.setLevel("WARNING")
+        inner_stoprule = CountIterations(
+            max_iterations=self.max_CG_iter, eval_count=True,
+            logging_level=self.inner_it_logging_level)
         common = {
             'setting': _regularized_inner_setting(
-                self.setting, alpha, self.logging_level
+                self.setting, alpha, self.inner_it_logging_level
             ),
             'init': self.init,
             'x0': self.init,
-            'logging_level': self.logging_level,
+            'logging_level': self.inner_it_logging_level,
         }
         if self.setting.codomain_free:
             common['data'] = self.backprop_data
@@ -1053,11 +1091,14 @@ class TikhonovAlphaGrid(RegSolver):
             common['reltolx'] = self.tol_fac / sqrt(alpha)
         else:
             common['tol'] = self.tol_fac * self.delta / sqrt(alpha)
+        inner_stoprule.prepare_run(common['setting'].op)
         tikhcg = solver_class(**common)
         self.x, self.y = tikhcg.run(inner_stoprule)
         if self.setting.codomain_free:
             self.y = None
-        self.log.info('alpha = {}, inner CG its = {}'.format(alpha,inner_stoprule.iteration))
+        from .bregman import _log_inner_summary
+        _log_inner_summary(self.log, type(tikhcg).__name__, inner_stoprule)
+        self.log.info('alpha = %s', alpha)
 
     @staticmethod
     def check_applicability(
@@ -1486,6 +1527,7 @@ class LavrentievCG(RegSolver):
         """
         from regpy.stoprules import AndCombineRules, CombineRules
 
+        other_level = other_stoprule.log.level if other_stoprule is not None else None
         stoprule_list = []
         if self.tol is not None:
             self.tol_stop = TikhonovCG.TolStop(
@@ -1530,7 +1572,7 @@ class LavrentievCG(RegSolver):
                 )
                 + rule
             )
-        return rule + other_stoprule if other_stoprule is not None else rule
+        return _cg_stoprule_logging(rule, self, other_stoprule, other_level)
 
     def run(
         self,

@@ -6,6 +6,7 @@ from typing import Iterable, Tuple
 from regpy.stoprules import StopRule,CountIterations,DualityGapStopping
 from .. import RegSolver, Setting, Naturals
 from regpy.util import Errors
+from regpy.solvers.linear.bregman import _log_inner_summary
 
 __all__ =["GeneralizedTikhonov"]
 
@@ -34,7 +35,10 @@ class GeneralizedTikhonov(RegSolver):
     logging_level: str [default: 'INFO']
         Logging level for this object.
     inner_logging_level: str [default: 'WARNING']
-        Inner logging level.
+        Default for the inner solver and stopping rules. Explicit logging_level
+        entries in their parameter dictionaries take precedence. CountIterations
+        enables an INFO summary through the outer logger; evaluation counting is
+        enabled unless explicitly disabled for that counter.
     """
     def __init__(self,setting:Setting, 
                  inner_solver_class:type[RegSolver],
@@ -68,9 +72,9 @@ class GeneralizedTikhonov(RegSolver):
         if exhausted:
             raise ValueError(Errors.value_error("No valid regularization parameter found in alphas.",alphas))
         the_setting = self.setting if self.inner_solver_is_primal else self.setting.get_dual_setting()
-        self.inner_solver = self.inner_solver_class(the_setting,**self.inner_solver_params | {"logging_level":self.inner_logging_level}) 
-        self.inner_stoprule = sum([rule(**params | {"logging_level":self.inner_logging_level}) for rule,params in zip(self.inner_stoprule_class_list,self.inner_stoprule_param_list )])
+        self._initialize_inner_solver(the_setting)
         self.x,self.y = self.inner_solver.run(self.inner_stoprule)
+        _log_inner_summary(self.log, self.inner_solver_class.__name__, self.inner_stoprule)
         if not self.inner_solver_is_primal:
             self.x = self.setting.dual_to_primal((self.x,self.y))
             self.y = self.setting.op(self.x)
@@ -80,16 +84,35 @@ class GeneralizedTikhonov(RegSolver):
         """use the computed solution as initial guess for next iteration."""
     
 
+    def _initialize_inner_solver(self, setting: Setting) -> None:
+        """Configure inner logging and prepare counting before construction."""
+        rules = []
+        for rule_class, params in zip(self.inner_stoprule_class_list,
+                                      self.inner_stoprule_param_list):
+            options = {'logging_level': self.inner_logging_level, **params}
+            if issubclass(rule_class, CountIterations):
+                options.setdefault('eval_count', True)
+            rules.append(rule_class(**options))
+        self.inner_stoprule = sum(rules)
+        pending = [self.inner_stoprule]
+        while pending:
+            rule = pending.pop()
+            if isinstance(rule, CountIterations):
+                rule.prepare_run(setting.op)
+            pending.extend(getattr(rule, 'rules', ()))
+        options = {'logging_level': self.inner_logging_level, **self.inner_solver_params}
+        self.inner_solver = self.inner_solver_class(setting, **options)
+
     def _next(self) -> None:
         the_setting = self.setting if self.inner_solver_is_primal else self.setting.get_dual_setting()
-        self.inner_solver = self.inner_solver_class(the_setting,**self.inner_solver_params | {"logging_level":self.inner_logging_level}) 
-        self.inner_stoprule = sum([rule(**params | {"logging_level":self.inner_logging_level}) for rule,params in zip(self.inner_stoprule_class_list,self.inner_stoprule_param_list )])
+        self._initialize_inner_solver(the_setting)
 
         if not self._external_alpha_call:
             exhausted = self.set_next_alpha()
             if exhausted:
                self.converge()
         self.x,self.y = self.inner_solver.run(self.inner_stoprule)
+        _log_inner_summary(self.log, self.inner_solver_class.__name__, self.inner_stoprule)
         if not self.inner_solver_is_primal:
             self.x = self.setting.dual_to_primal((self.x,self.y))
             self.y = self.setting.op(self.x)

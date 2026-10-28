@@ -23,7 +23,7 @@ from regpy.hilbert import L2
 
 from .base import Functional, LinearFunctional, LinearCombination,HorizontalShiftDilation, NotInEssentialDomainError,NotTwiceDifferentiableError, as_functional
 
-__all__ = ["IntegralFunctionalBase","LppPower","L1MeasureSpace","KullbackLeibler","RelativeEntropy","Huber","Huber_old","Quadratic","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","L1Generic"]
+__all__ = ["IntegralFunctionalBase","LppPower","L1MeasureSpace","KullbackLeibler","KullbackLeiblerOffset","RelativeEntropy","Huber","Huber_old","Quadratic","QuadraticIntv","QuadraticBilateralConstraints","QuadraticLowerBound","QuadraticNonneg","L1Generic"]
 
 
 class IntegralFunctionalBase(Functional):
@@ -3329,6 +3329,124 @@ class KullbackLeibler(IntegralFunctionalBase):
         return out
 
 
+class _OffsetKullbackLeibler(HorizontalShiftDilation):
+    """Keep data owned by KL even before the first observation is assigned."""
+
+    @property
+    def data(self) -> ReadOnlyVector:
+        return self.func.data
+
+    @data.setter
+    def data(self, value: ReadOnlyVector | None) -> None:
+        if value is None:
+            del self.data
+            return
+        self.func.data = self.func._copy_vector(value)
+        self._shifted_data_fid = True
+        self.is_data_func = True
+
+    @data.deleter
+    def data(self) -> None:
+        del self.func.data
+        self._shifted_data_fid = True
+        self.is_data_func = False
+
+    def as_data_func(self, data: ReadOnlyVector | None = None) -> Functional:
+        if data is not None:
+            self.data = data
+        elif not self.is_data_func:
+            self.data = self.domain.zeros()
+        return self
+
+
+def KullbackLeiblerOffset(
+    domain: MeasureSpaceFcts,
+    offset: float | ReadOnlyVector | None = None,
+    **kwargs: Any,
+) -> Functional:
+    r"""Construct the concrete implementation of ``KL(offset=...)``.
+
+    With a positive offset sigma and observations g, the default result is
+
+    .. code-block:: python
+
+        KullbackLeibler(domain, w=sigma, data=g,
+                       quad_taylor_l=sigma).shift(-sigma)
+
+    Thus both arguments of KL are offset: ``KL(g + sigma, u + sigma)``.
+    The lower quadratic extension starts at ``u=0`` in the final coordinates.
+    It allows negative trial values without evaluating a logarithm there.
+
+    Parameters
+    ----------
+    domain: MeasureSpaceFcts
+        Space on which the abstract KL functional is instantiated.
+    offset: float | ReadOnlyVector | None [default: None]
+        Finite, nonnegative scalar or vector in domain. None or an
+        identically zero offset preserves the ordinary KullbackLeibler
+        construction. The default quadratic extension requires a strictly
+        positive offset at every coordinate.
+    **kwargs: Any
+        Arguments for KullbackLeibler. An explicit ``w`` is added to the
+        offset. ``data`` may be supplied now or later by Setting. Explicit
+        lower constraints or linear/quadratic extension settings override
+        the default lower quadratic extension. Bounds and extension
+        thresholds are in the unshifted argument coordinates ``u + offset``.
+
+    Returns
+    -------
+    Functional
+        KullbackLeibler for an absent/zero offset, otherwise its horizontal
+        shift by minus the offset. Later data assignment changes KL's first
+        argument, not the horizontal shift. Inputs are copied.
+
+    Examples
+    --------
+    >>> fidelity = KL(offset=sigma)
+    >>> setting = Setting(op, penalty, fidelity, data=data, regpar=alpha)
+    """
+    if offset is None:
+        return KullbackLeibler(domain, **kwargs)
+    values = np.asarray(offset)
+    if (not np.issubdtype(values.dtype, np.number)
+            or np.iscomplexobj(values) or not np.all(np.isfinite(values))
+            or np.any(values < 0)):
+        raise ValueError('offset must contain finite, nonnegative real values.')
+    if values.ndim == 0:
+        sigma = float(values) * domain.ones()
+    elif offset in domain:
+        sigma = domain.empty()
+        domain.copyto(sigma, offset)
+    else:
+        raise ValueError('offset must be a scalar or a vector in domain.')
+    if np.all(sigma == 0):
+        return KullbackLeibler(domain, **kwargs)
+
+    if ('quad_taylor_l' not in kwargs
+            and kwargs.get('lin_taylor_l') is None
+            and kwargs.get('constr_l') is None):
+        if np.any(sigma == 0):
+            raise ValueError(
+                'The default quadratic extension requires a strictly positive '
+                'offset. Use quad_taylor_l=None to disable that extension.'
+            )
+        kwargs['quad_taylor_l'] = sigma.copy()
+    w = kwargs.pop('w', None)
+    weight = sigma if w is None else sigma + w
+    data = kwargs.pop('data', None)
+    if data is not None:
+        if data not in domain:
+            raise ValueError('data must belong to domain.')
+        copied_data = domain.empty()
+        domain.copyto(copied_data, data)
+        data = copied_data
+    func = KullbackLeibler(domain, w=weight, data=data, **kwargs)
+    result = _OffsetKullbackLeibler(func, shift=-sigma)
+    # The intrinsic shift never contains observations, even before data exist.
+    result._shifted_data_fid = True
+    return result
+
+
 class RelativeEntropy(IntegralFunctionalBase):
     r"""Relative Entropy divergence define by
     
@@ -3721,12 +3839,14 @@ class RelativeEntropy(IntegralFunctionalBase):
     def _f_conj_second_deriv(self, u_star: ReadOnlyVector, out: np.ndarray | None=None, mask: Mask | None=None, **kwargs: Any) -> np.ndarray:
         return self._f_conj(u_star, out=out, mask=mask, **kwargs)
 
-def Huber(domain: MeasureSpaceFcts, as_primal: bool=True, sigma: float=1., **kwargs: Any) -> Quadratic:
+def Huber(domain: MeasureSpaceFcts, as_primal: bool=True, sigma: float=1., L1_type: bool=False, **kwargs: Any) -> Quadratic:
     r"""Return the Huber functional as a Quadratic with linear tails.
     
     Its pointwise value is x**2/2 for abs(x)<=sigma and
     sigma*abs(x)-sigma**2/2 otherwise. The signature and normalization
-    match Huber_old. sigma may be a positive scalar or domain element.
+    match Huber_old when L1_type=False. When L1_type=True, the
+    integrand is divided pointwise by sigma, so its linear tails have
+    slopes -1 and +1. sigma may be a positive scalar or domain element.
     as_primal=False uses the reciprocal measure, as in the legacy class.
     Data shifts preserve the Quadratic type and translate the tail joins.
     
@@ -3737,7 +3857,10 @@ def Huber(domain: MeasureSpaceFcts, as_primal: bool=True, sigma: float=1., **kwa
     as_primal: bool [default: True]
         As primal.
     sigma: float [default: 1.0]
-        Sigma.
+        Positive Huber transition threshold.
+    L1_type: bool [default: False]
+        If True, divide the pointwise Huber integrand by sigma so that
+        the linear tails have slopes -1 and +1.
     **kwargs: Any
         Additional keyword arguments forwarded to the underlying implementation.
     
@@ -3757,8 +3880,12 @@ def Huber(domain: MeasureSpaceFcts, as_primal: bool=True, sigma: float=1., **kwa
     if not as_primal:
         domain = deepcopy(domain)
         domain.measure = 1. / domain.measure
-    # These are the defining Huber tails. Alternative modifications of the
-    # integrand remain available through Huber_old.
+    # Scaling the quadratic coefficient scales its linear Taylor tails too.
+    # This also supports spatially varying sigma without changing the measure.
+    if L1_type:
+        if "a" in kwargs:
+            raise ValueError("Huber(L1_type=True) does not accept an explicit a coefficient.")
+        kwargs["a"] = 1. / sigma
     functional = Quadratic(domain, lin_taylor_l=-sigma, lin_taylor_u=sigma, **kwargs)
     functional.sigma = sigma
     return functional

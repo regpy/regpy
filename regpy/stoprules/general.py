@@ -27,6 +27,55 @@ from regpy.vecsps import ReadOnlyVector, Vector, VectorSpaceBase
 if TYPE_CHECKING:
     from regpy.solvers import Solver
 
+class _RuleLogger(logging.Logger):
+    """Instance-local level, with output routed through an existing logger.
+
+    Do not register this logger with logging.getLogger: two rules may have
+    the same display name while requiring independent logging levels.
+    """
+
+    def __init__(self, target: logging.Logger) -> None:
+        super().__init__(target.name, target.level)
+        self.parent = target
+
+    def setLevel(self, level: int | str) -> None:
+        super().setLevel(level)
+        # logging's manager only invalidates caches of registered loggers.
+        self._cache.clear()
+
+    def __deepcopy__(self, memo: dict[int, object]) -> _RuleLogger:
+        # Logger.__reduce__ cannot copy unregistered loggers. Keep the output
+        # destination, but give the copied rule its own mutable logger state.
+        result = type(self)(self.parent)
+        memo[id(self)] = result
+        result.setLevel(self.level)
+        result.disabled = self.disabled
+        result.propagate = self.propagate
+        result.handlers = self.handlers.copy()
+        result.filters = self.filters.copy()
+        return result
+
+
+class _RuleClassLogger(ClassLogger):
+    """Retain class access and isolate all instance logger assignments."""
+
+    def __get__(self, instance: object | None, owner: type | None = None) -> logging.Logger:
+        if instance is None:
+            return super().__get__(instance, owner)
+        logger = vars(instance).get("_log")
+        if logger is None:
+            logger = _RuleLogger(super().__get__(None, owner or type(instance)))
+            vars(instance)["_log"] = logger
+        return logger
+
+    def __set__(self, instance: object, value: logging.Logger) -> None:
+        if not isinstance(value, logging.Logger):
+            raise TypeError("log must be a logging.Logger instance.")
+        # Setting.run assigns named solver children here. Wrapping also this
+        # path prevents nested rules of the same class sharing a level again.
+        super().__set__(instance, _RuleLogger(value))
+
+
 LoggingLevel: TypeAlias = int | str
 Schedule: TypeAlias = Iterable[int] | None
 Iterate: TypeAlias = tuple[ReadOnlyVector, ReadOnlyVector | None]
@@ -190,6 +239,25 @@ class StopRule:
     iteration starts. :meth:`stop` then delegates the decision to
     :meth:`_stop`. If this is the main rule, a positive decision stores the
     current iterate through :meth:`trigger`.
+
+    Only the main rule exposes ``converged`` and ``stop_reason``. Before it
+    triggers, these are ``None`` and ``""``. Afterwards, ``converged`` is a bool:
+    True means that the configured acceptance criterion was met; False means
+    a limit, numerical failure, or an unclassified stop. This is not a proof
+    of convergence (in particular, small iterate changes can mean stagnation).
+    A solver calling ``converge()`` alone does not certify an external rule.
+    Use ``rule.main_rule`` when a rule has been included in a combination.
+
+    A rule that selects a stored reconstruction independently of what stops
+    the run can set ``selects_best_iterate = True`` and override
+    :meth:`best_iterate`. Combined rules then prefer its result, including
+    when another component triggers or the solver finishes by itself.
+
+    Custom implementations should return ``self._set_stop_status(True, reason)``
+    when their acceptance criterion is met, or use False for other stops.
+    Pass ``failure=True`` for numerical failures; these override simultaneous
+    acceptance by another rule. A bare True from an existing custom ``_stop``
+    remains supported but is conservatively classified as unconfirmed.
     
     Parameters
     ----------
@@ -203,7 +271,8 @@ class StopRule:
         This is useful for expensive stopping criteria that do not need to be checked on every iteration.
     """
 
-    log = ClassLogger()
+    log = _RuleClassLogger()
+    selects_best_iterate: bool = False
 
     solver: Solver | None
     x: ReadOnlyVector
@@ -226,6 +295,12 @@ class StopRule:
         self._log_current_step: bool = True
         self._current_step: int = 0
 
+        self._parent_rule: StopRule | None = None
+        self._converged: bool | None = None
+        self._stop_reason: str = ""
+        self._stop_failure: bool = False
+        self._force_evaluation: bool = False
+        self._last_evaluated_step: int | None = None
         self.triggered: bool = False
         """Whether the stoprule decided to stop."""
         self.history_dict: dict[str, list[float]] = {}
@@ -236,6 +311,61 @@ class StopRule:
         r"""Whether this is the main stoprule of the solver or a sub-rule used for example in a combined rule."""
         self.log_info: str = ""
         self.log.setLevel(logging_level)
+
+    @property
+    def main_rule(self) -> StopRule:
+        """Return the outermost rule responsible for the stopping decision."""
+        rule = self
+        while rule._parent_rule is not None:
+            rule = rule._parent_rule
+        return rule
+
+    @property
+    def converged(self) -> bool | None:
+        """Acceptance status of the main rule; None until it triggers."""
+        if not self.is_main_rule:
+            raise AttributeError("Only the main rule exposes converged; use main_rule.")
+        return self._converged if self.triggered else None
+
+    @property
+    def stop_reason(self) -> str:
+        """Explanation of the main rule's stop; empty before triggering."""
+        if not self.is_main_rule:
+            raise AttributeError("Only the main rule exposes stop_reason; use main_rule.")
+        return self._stop_reason if self.triggered else ""
+
+    def _set_stop_status(self, converged: bool, reason: str,
+                         *, failure: bool = False) -> bool:
+        """Classify a positive decision from _stop and return True.
+
+        ``failure`` distinguishes numerical breakdown from an ordinary cap.
+        This private state also lets combined rules classify their components.
+        """
+        self._converged = bool(converged)
+        self._stop_reason = str(reason)
+        self._stop_failure = failure
+        return True
+
+    def _check_final(self) -> bool:
+        """Check a skipped criterion at a cap without duplicating measurements."""
+        step = getattr(self.solver, "iteration_step_nr", None)
+        if isinstance(step, Integral):
+            self._current_step = int(step)
+        elif self._parent_rule is not None:
+            self._current_step = self._parent_rule._current_step
+        if self._last_evaluated_step == self._current_step:
+            return self._last_result
+        # Counters must not be incremented again by the final criterion pass.
+        if isinstance(self, CountIterations):
+            return self._last_result
+        force, calls = self._force_evaluation, self._stop_call_nr
+        self._force_evaluation = True
+        self._stop_call_nr = self._current_step
+        try:
+            return self.stop()
+        finally:
+            self._force_evaluation = force
+            self._stop_call_nr = calls
 
     def _complete_init_with_solver(self, solver: Solver) -> None:
         r"""Attach a solver and complete rule-specific initialization.
@@ -273,6 +403,11 @@ class StopRule:
         """
         self.solver = None
         self.triggered = False
+        self._converged = None
+        self._stop_reason = ""
+        self._stop_failure = False
+        self._force_evaluation = False
+        self._last_evaluated_step = None
         self._stop_call_nr = 0
         self._currently_applied = True
         self._last_result = False
@@ -299,7 +434,11 @@ class StopRule:
         Self
             Result described above.
         """
-        return cast(Self, deepcopy(self))
+        # A copied component is a new main rule, not a copy of its entire tree.
+        memo = {} if self._parent_rule is None else {id(self._parent_rule): None}
+        rule = cast(Self, deepcopy(self, memo))
+        rule.is_main_rule = True
+        return rule
 
     def stop(self) -> bool:
         r"""Check whether to stop iterations.
@@ -325,7 +464,7 @@ class StopRule:
         self._stop_call_nr += 1
         self._current_step = step
         self._currently_applied = (
-            self.schedule is None or self.schedule.contains(step)
+            self._force_evaluation or self.schedule is None or self.schedule.contains(step)
         )
         self._log_current_step = self._currently_applied
 
@@ -334,7 +473,14 @@ class StopRule:
                 key: len(history)
                 for key, history in self.history_dict.items()
             }
-            should_stop = self._stop()
+            self._converged = None
+            self._stop_reason = ""
+            self._stop_failure = False
+            should_stop = bool(self._stop())
+            if should_stop and self._converged is None:
+                self._set_stop_status(False, self.log_info or
+                                      f"{type(self).__name__} stopped without an acceptance certificate.")
+            self._last_evaluated_step = step
             self._last_result = should_stop
             for key, history in self.history_dict.items():
                 number_new = len(history) - old_history_lengths.get(key, 0)
@@ -378,6 +524,8 @@ class StopRule:
             raise MissingValueError(
                 "The stopping rule cannot trigger without a current iterate."
             )
+        if self._converged is None:
+            self._set_stop_status(False, "Rule explicitly triggered without an acceptance certificate.")
         self.triggered = True
         self.x = self.solver.x
         self.y = self.solver.y if hasattr(self.solver,"y") else None
@@ -460,7 +608,7 @@ class NoneRule(StopRule):
 
     def __init__(self, schedule: Schedule | None = None) -> None:
         super().__init__(schedule=schedule)
-        self.triggered = True
+        self.triggered = False
 
     def _stop(self) -> bool:
         return False
@@ -646,237 +794,132 @@ class ErrorMonitor(StopRule):
         return False
 
 class CombineRules(StopRule):
-    r"""Combine several stopping rules into one that stops if one of the rules stops. (logical OR)
-    
-    The resulting rule triggers when any of the given rules triggers. The
-    first rule that triggers is responsible for selecting the best solution.
-    
+    """Stop when any component stops (logical OR).
+
+    All components are checked. Numerical failures take precedence; otherwise
+    a satisfied acceptance criterion takes precedence over a limit, independent
+    of component order. If a limit triggers, skipped scheduled criteria are
+    checked once at the final iterate. For result selection, components with
+    ``selects_best_iterate=True`` take precedence over the triggering component.
+    They are tried in component order (including nested combinations); the
+    first available result is returned. This does not change the stop reason
+    or convergence status. Nested rules retain their identity and link to ``main_rule``;
+    only that root exposes ``converged`` and ``stop_reason``.
+
     Parameters
     ----------
     rules: Sequence[StopRule]
-        The rules to be combined.
+        Rules to combine. A rule instance must not be shared by different trees.
     logging_level: LoggingLevel | None [default: None]
-        Logging level. If ``None``, the minimum level of the component rules
-        is used.
+        Logging level; None uses the minimum component level.
     schedule: Schedule | None [default: None]
-        Optional schedule for the combined rule as a whole. Component rules
-        retain and apply their own independent schedules.
+        Schedule for the entire combination. Component schedules remain active.
     """
 
-    def __init__(
-        self,
-        rules: Sequence[StopRule],
-        logging_level: LoggingLevel | None = None,
-        schedule: Schedule | None = None,
-    ) -> None:
-        if not isinstance(rules, Sequence) or any(
-            not isinstance(rule, StopRule) for rule in rules
-        ):
-            raise TypeError(Errors.type_error(
-                "Combining stopping rules requires a sequence of StopRule "
-                f"instances. Got {rules} of type {type(rules)}."
-            ))
+    _require_all: bool = False
+
+    def __init__(self, rules: Sequence[StopRule],
+                 logging_level: LoggingLevel | None = None,
+                 schedule: Schedule | None = None) -> None:
+        if not isinstance(rules, Sequence) or any(not isinstance(r, StopRule) for r in rules):
+            raise TypeError("Combining rules requires a sequence of StopRule instances.")
         if not rules:
-            raise ValueError(Errors.value_error(
-                "At least one stopping rule is required."
-            ))
+            raise ValueError("At least one stopping rule is required.")
         super().__init__(schedule=schedule)
-        self.rules: list[StopRule] = []
-        r"""List of :class:`StopRule` the combined rules.
-        """
-        self.history_dict = {}
-        r"""Dictionary of the convergence histories of the rules."""
-        for rule in rules:
-            if type(rule) is type(self) and hasattr(rule,"solver") and rule.solver is self.solver:
-                self.rules.extend(cast(CombineRules, rule).rules)
-            else:
-                self.rules.append(rule)
-            self.history_dict.update(rule.history_dict)
+        self.rules: list[StopRule] = list(rules)
+        for rule in self.rules:
             rule.is_main_rule = False
-        if logging_level is None:
-            self.log.setLevel(min([rule.log.level if hasattr(rule,'log') else 50 for rule in self.rules]))
-        else:
-            self.log.setLevel(logging_level)
-        
-        self.active_rule: StopRule | None = None
-        r"""
-        The rule that triggered the stop condition, or ``None`` if no rule has triggered yet.
-        """
-
-    def __repr__(self) -> str:
-        return 'CombineRules({})'.format(self.rules)
-    
-    def reset(self) -> None:
-        r"""Reset the state for a new run.
-        """
-        self.active_rule = None
-        super().reset()
-        for rule in self.rules:
-            rule.reset()
-            self.history_dict.update(rule.history_dict) 
-    
-    def _complete_init_with_solver(self, solver: Solver) -> None:
-        self.solver = solver
-        for rule in self.rules:
-            rule._complete_init_with_solver(self.solver)
-
-    def _stop(self) -> bool:
-        triggered =False
-        self.log_info = ''
-        log_current_step = False
-        for rule in self.rules:
-            try:
-                rule_triggered = rule.stop()
-            except MissingValueError:
-                if self.solver is None or self.solver.x is None:
-                    raise RuntimeError(Errors.generic_message("One of the combined stopping rules needs the operator value to evaluate the stopping condition. Please provide the operator to the solver or make sure that the solver computes the operator value before calling the stopping rules."))
-                op = getattr(self.solver, 'op', None)
-                if op is None:
-                    raise RuntimeError(Errors.generic_message("One of the combined stopping rules needs the operator value to evaluate the stopping condition. Please provide the operator to the solver or make sure that the solver computes the operator value before calling the stopping rules."))
-                self.solver.y = op(self.solver.x)
-                rule_triggered = rule.stop()
-            log_current_step = log_current_step or rule.log_current_step
-            if rule_triggered:
-                self.log_info += 'Rule {} triggered.'.format(rule)
-                if self.active_rule is None:
-                    # The first triggering rule selects the best iterate.
-                    self.active_rule = rule
-                    self.active_rule.trigger()
-                    self.x, self.y = self.active_rule.x, self.active_rule.y
-                self.triggered = True
-                triggered = True
-            else:
-                self.log_info = ''
-        self._log_current_step = log_current_step or triggered
-        log_infos_rules = ''
-        for rule in self.rules:
-            log_infos_rules += rule.log_info + ' | '
-        log_infos_rules = log_infos_rules[:-3]
-        if self.is_main_rule:
-            if self._log_current_step:
-                self.log.log(
-                    logging.INFO if self.triggered else logging.DEBUG,
-                    log_infos_rules
-                    + ('\n' if self.log_info != '' else '')
-                    + self.log_info,
-                )
-        else:
-            self.log_info = '(' + log_infos_rules + (')' if self.log_info == '' else '['+self.log_info+'])')
-        return triggered
-
-class AndCombineRules(StopRule):
-    r"""Combine several stopping rules into one that stops if all of the rules stop.
-    
-    The resulting rule triggers when all of the given rules trigger. 
-    It delegates selecting the solution to the first rule.
-    
-    Parameters
-    ----------
-    rules: Sequence[StopRule]
-        The rules to be combined.
-    logging_level: LoggingLevel | None [default: None]
-        Logging level. If ``None``, the minimum level of the component rules
-        is used.
-    schedule: Schedule | None [default: None]
-        Optional schedule for the combined rule as a whole. Component rules
-        retain and apply their own independent schedules.
-    """
-
-    def __init__(
-        self,
-        rules: Sequence[StopRule],
-        logging_level: LoggingLevel | None = None,
-        schedule: Schedule | None = None,
-    ) -> None:
-        if not isinstance(rules, Sequence) or any(
-            not isinstance(rule, StopRule) for rule in rules
-        ):
-            raise TypeError(Errors.type_error(
-                "Combining stopping rules requires a sequence of StopRule "
-                f"instances. Got {rules} of type {type(rules)}."
-            ))
-        if not rules:
-            raise ValueError(Errors.value_error(
-                "At least one stopping rule is required."
-            ))
-        super().__init__(schedule=schedule)
-        self.rules: list[StopRule] = []
-        r"""List of :class:`StopRule` the combined rules.
-        """
-        self.history_dict = {}
-        r"""Dictionary of the convergence histories of the rules."""
-        for rule in rules:
-            if type(rule) is type(self) and hasattr(rule,"solver") and rule.solver is self.solver:
-                self.rules.extend(cast(AndCombineRules, rule).rules)
-            else:
-                self.rules.append(rule)
+            rule._parent_rule = self
             self.history_dict.update(rule.history_dict)
-            rule.is_main_rule = False
-        if logging_level is None:         
-            self.log.setLevel(min([rule.log.level if hasattr(rule,'log') else 50 for rule in self.rules]))
-        else:
-            self.log.setLevel(logging_level)
+        self.log.setLevel(min(r.log.level for r in self.rules)
+                          if logging_level is None else logging_level)
         self.active_rule: StopRule | None = None
 
     def __repr__(self) -> str:
-        return 'AndCombineRules({})'.format(self.rules)
-    
+        return f"{type(self).__name__}({self.rules!r})"
+
     def reset(self) -> None:
-        r"""Reset the state for a new run.
-        """
-        self.active_rule = None
+        """Reset decisions, measurements and all components for a new run."""
         super().reset()
+        self.active_rule = None
         for rule in self.rules:
             rule.reset()
-            self.history_dict.update(rule.history_dict) 
-    
+            self.history_dict.update(rule.history_dict)
+
     def _complete_init_with_solver(self, solver: Solver) -> None:
         self.solver = solver
         for rule in self.rules:
-            rule._complete_init_with_solver(self.solver)
+            rule._complete_init_with_solver(solver)
+
+    def _evaluate(self, rule: StopRule, final: bool = False) -> bool:
+        try:
+            return rule._check_final() if final else rule.stop()
+        except MissingValueError:
+            if self.solver is None or self.solver.x is None or not hasattr(self.solver, "op"):
+                raise RuntimeError("A stopping rule requires an unavailable operator value.")
+            self.solver.y = self.solver.op(self.solver.x)
+            return rule._check_final() if final else rule.stop()
+
+    def _check_final(self) -> bool:
+        # The combination may have run while some of its children were skipped.
+        # Reuse leaf decisions but descend through every level of the tree.
+        self._last_evaluated_step = None
+        return super()._check_final()
 
     def _stop(self) -> bool:
-        triggered =True
-        self.log_info = ''
-        log_current_step = False
+        decisions = [self._evaluate(r, self._force_evaluation) for r in self.rules]
+        # A terminating OR combination gives off-schedule criteria a last chance.
+        if (not self._require_all and not self._force_evaluation
+                and any(d and r._converged is not True and not r._stop_failure
+                        for r, d in zip(self.rules, decisions))):
+            decisions = [self._evaluate(r, True) for r in self.rules]
+        stopped = all(decisions) if self._require_all else any(decisions)
+        self.log_info = " | ".join(r.log_info for r in self.rules if r.log_info)
+        self._log_current_step = stopped or any(r.log_current_step for r in self.rules)
+        if stopped:
+            candidates = [r for r, decision in zip(self.rules, decisions) if decision]
+            failures = [r for r in candidates if r._stop_failure]
+            accepted = [r for r in candidates if r._converged is True]
+            selected = (failures or accepted or candidates)[0]
+            success = not failures and (len(accepted) == len(self.rules)
+                                       if self._require_all else bool(accepted))
+            # AND selects through the first component, as before.
+            self.active_rule = self.rules[0] if self._require_all else selected
+            self.active_rule.trigger()
+            reasons = "; ".join(r._stop_reason for r in candidates)
+            self._set_stop_status(success, reasons, failure=bool(failures))
+        if self.is_main_rule and self._log_current_step:
+            self.log.log(logging.INFO if stopped else logging.DEBUG,
+                         self._stop_reason if stopped else self.log_info)
+        return stopped
+
+    @property
+    def selects_best_iterate(self) -> bool:
+        """Whether a component selects a result independently of stopping."""
+        return any(rule.selects_best_iterate for rule in self.rules)
+
+    def best_iterate(self) -> BestIterate | None:
+        """Prefer a result selector, then fall back to the active component."""
         for rule in self.rules:
-            try:
-                rule_triggered = rule.stop()
-            except MissingValueError:
-                if self.solver is None or self.solver.x is None:
-                    raise RuntimeError(Errors.generic_message("One of the combined stopping rules needs the operator value to evaluate the stopping condition. Please provide the operator to the solver or make sure that the solver computes the operator value before calling the stopping rules."))
-                op = getattr(self.solver, 'op', None)
-                if op is None:
-                    raise RuntimeError(Errors.generic_message("One of the combined stopping rules needs the operator value to evaluate the stopping condition. Please provide the operator to the solver or make sure that the solver computes the operator value before calling the stopping rules."))
-                self.solver.y = op(self.solver.x)
-                rule_triggered = rule.stop()
-            log_current_step = log_current_step or rule.log_current_step
-            if not rule_triggered:
-                triggered = False
-            else:
-                self.log_info = ''
-        if triggered:
-            self.log_info += 'All rules triggered.'
-            self.triggered = True
-            self.rules[0].trigger() # first rule decides best iterate
-            self.x, self.y = self.rules[0].x, self.rules[0].y
-        self._log_current_step = log_current_step or triggered
-        log_infos_rules = ''
-        for rule in self.rules:
-            log_infos_rules += rule.log_info + ' & '
-        log_infos_rules = log_infos_rules[:-3]
-        if self.is_main_rule:
-            if self._log_current_step:
-                self.log.log(
-                    logging.INFO if self.triggered else logging.DEBUG,
-                    log_infos_rules
-                    + ('\n' if self.log_info != '' else '')
-                    + self.log_info,
-                )
-        else:
-            self.log_info = '(' + log_infos_rules + (')' if self.log_info == '' else '['+self.log_info+'])')
-        return triggered
-    
+            if rule.selects_best_iterate:
+                best = rule.best_iterate()
+                if best is not None:
+                    return best
+        if self.active_rule is not None:
+            return self.active_rule.best_iterate()
+        return super().best_iterate()
+
+
+class AndCombineRules(CombineRules):
+    """Stop when all components stop (logical AND).
+
+    Accepts the same parameters as CombineRules. An independent result selector
+    takes precedence; otherwise the first component selects the best iterate. Convergence is confirmed only if every component confirms
+    acceptance; satisfying an iteration cap is not an acceptance criterion.
+    """
+
+    _require_all = True
+
 
 class CountIterations(StopRule):
     r"""Stopping rule based on number of iterations.
@@ -901,19 +944,23 @@ class CountIterations(StopRule):
         is reached at an omitted step, the rule stops at the next scheduled
         step. If ``None``, the limit is checked on every call.
     eval_count: bool [default: False]
-        If True, enable counting only on solver.op and reset its counters
-        when attaching the rule, then store
-        cumulative snapshots in eval_counts, a dictionary of integer lists
+        If True, enable counting on the setting's ``evaluation_operator``
+        (falling back to ``solver.op``) without resetting its counters. Store cumulative counts relative to this rule's own starting
+        baseline in eval_counts, a dictionary of integer lists
         with the six Operator keys and 'total'. eval_count_steps records the
         corresponding solver steps, including step zero in while-style runs.
         Snapshots are recorded even on steps omitted by schedule. Constructor
         work is included when Setting.run prepares the rule before solver
         construction. Direct solver.run calls start measurements at attachment
         unless prepare_run was called beforehand. Counting remains enabled after
-        the run for inspection; use solver.op.disable_eval_count() to remove
-        instrumentation. False leaves existing operator counting unchanged.
+        the run for inspection; use the rule's ``counting_operator`` to inspect
+        or disable instrumentation. Nested rules have independent baselines, so inner
+        runs do not reset or truncate the outer history. Do not manually reset
+        or disable the operator's counters while a counting rule is active.
+        False leaves existing operator counting unchanged.
     max_op_evals: int | None [default: None]
-        Stop when the weighted operator evaluation total reaches this cap,
+        Stop when the weighted operator evaluation total since this rule's
+        starting baseline reaches this cap,
         or when max_iterations is reached. None disables this additional cap.
         Supplying a cap automatically enables evaluation counting. Uses
         Operator.total_eval_count(), including its doubled weights for
@@ -943,6 +990,8 @@ class CountIterations(StopRule):
                 raise ValueError("max_op_evals must be nonnegative.")
         self.max_op_evals = None if max_op_evals is None else int(max_op_evals)
         self._prepared_operator = None
+        self._count_operator = None
+        self._eval_baseline: dict[str, int] = {}
         self.eval_count = eval_count or max_op_evals is not None
         self.eval_counts: dict[str, list[int]] = {}
         self.eval_count_steps: list[int] = []
@@ -973,6 +1022,8 @@ class CountIterations(StopRule):
         """
         super().reset()
         self._prepared_operator = None
+        self._count_operator = None
+        self._eval_baseline = {}
         self.iteration = 0
         self.eval_counts = {}
         self.eval_count_steps = []
@@ -982,8 +1033,11 @@ class CountIterations(StopRule):
     def prepare_run(self, operator: Operator) -> None:
         r"""Start measurements before constructing a solver (used by Setting).
         
+        Capture a private baseline without resetting the operator counters.
         Attachment to the same operator preserves construction-time work.
         Direct solver.run calls instead start measurements at attachment.
+        Resetting this rule clears its history and baseline, not the shared
+        operator's counters.
         
         Parameters
         ----------
@@ -993,31 +1047,62 @@ class CountIterations(StopRule):
         if self.timing:
             self.start_time = time.process_time()
         if self.eval_count:
-            operator.enable_eval_count(reset=True)
+            operator.enable_eval_count(reset=False)
+            self._eval_baseline = dict(operator.eval_counts)
+            self._eval_baseline['total'] = operator.total_eval_count()
         self._prepared_operator = operator
 
     def _complete_init_with_solver(self, solver: Solver) -> None:
         super()._complete_init_with_solver(solver)
-        operator = getattr(solver, 'op', None)
+        # A specialized setting may optimize over a stacked/operator-space
+        # representation but wish to count work on its physical forward model.
+        # Resolve this once at attachment so a nested run cannot silently
+        # change our counter target or reset an outer run's baseline.
+        setting = getattr(solver, 'setting', None)
+        operator = getattr(setting, 'evaluation_operator', None)
+        if operator is None:
+            operator = getattr(solver, 'op', None)
         if self._prepared_operator is None or self._prepared_operator is not operator:
-            if self.timing:
-                self.start_time = time.process_time()
-            if self.eval_count:
-                operator.enable_eval_count(reset=True)
+            self.prepare_run(operator)
+        self._count_operator = operator
         self._prepared_operator = None
+        if self.max_op_evals is not None:
+            limits = getattr(solver, '_operator_evaluation_limits', None)
+            if limits is None:
+                limits = solver._operator_evaluation_limits = []
+            if all(rule is not self for rule in limits):
+                limits.append(self)
         if self.eval_count:
             self.eval_counts = {key: [] for key in operator.eval_counts}
             self.eval_counts['total'] = []
             self.eval_count_steps = []
 
+    @property
+    def counting_operator(self) -> Operator | None:
+        """Actual operator monitored by this rule, or None before attachment."""
+        return self._count_operator
+
+    def remaining_op_evals(self) -> int | None:
+        """Return the live remaining budget, without evaluating this stoprule.
+
+        Inner solvers can inspect this between steps without advancing outer
+        iteration counters or writing duplicate history entries.
+        """
+        if self.max_op_evals is None:
+            return None
+        if self.solver is None:
+            raise RuntimeError("Evaluation budget requires an attached solver.")
+        used = self._count_operator.total_eval_count() - self._eval_baseline['total']
+        return max(0, self.max_op_evals - used)
+
     def _record_eval_counts(self) -> None:
         if self.eval_count:
             if self.solver is None:
                 raise RuntimeError("Evaluation counting requires an attached solver.")
-            snapshot = self.solver.op.eval_counts
-            snapshot['total'] = self.solver.op.total_eval_count()
+            snapshot = self._count_operator.eval_counts
+            snapshot['total'] = self._count_operator.total_eval_count()
             for key, value in snapshot.items():
-                self.eval_counts[key].append(value)
+                self.eval_counts[key].append(value - self._eval_baseline[key])
             self.eval_count_steps.append(self._current_step)
 
     def _stop(self) -> bool:
@@ -1036,10 +1121,15 @@ class CountIterations(StopRule):
             self.iteration += 1
             triggered = self.iteration >= self.max_iterations
             self.log_info = 'it. {}>={}'.format(self.iteration, self.max_iterations)
+        reasons = [f"Iteration cap reached ({self.max_iterations})."] if triggered else []
         if self.max_op_evals is not None:
             total = self.eval_counts['total'][-1]
+            if total >= self.max_op_evals:
+                reasons.append(f"Operator evaluation cap reached ({total} >= {self.max_op_evals}).")
             triggered = triggered or total >= self.max_op_evals
             self.log_info += f' | op_evals {total}>={self.max_op_evals}'
+        if triggered:
+            self._set_stop_status(False, " ".join(reasons))
         # In a combination, an ordinary iteration-count message should not
         # cause logging between scheduled evaluations of an informative rule.
         # The actual stopping event must always remain visible.

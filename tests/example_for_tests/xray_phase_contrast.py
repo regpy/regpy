@@ -1,4 +1,5 @@
-import logging
+"""Regression test for the X-ray phase-contrast tutorial notebook."""
+
 import sys
 
 import numpy as np
@@ -6,65 +7,54 @@ from scipy.datasets import ascent
 
 from regpy.vecsps import UniformGridFcts
 from regpy.hilbert import L2
+from regpy.operators import FourierInterpolationOperator
 from regpy.solvers import Setting
-from regpy.solvers.nonlinear.irgnm import IrgnmCG
-import regpy.stoprules as rules
-import regpy.util as util
-
-util.set_rng_seed(15873098306879350073259142812684978477)
+from regpy.util import set_rng_seed
 
 from . import import_example_package
 
 import_example_package("./examples/xray_phase_contrast/")
+try:
+    from xray_phase_contrast_operator import get_xray_phase_contrast
+finally:
+    sys.path.pop(0)
 
-from xray_phase_contrast_operator import get_xray_phase_contrast
 
 def test_xray_phase_contrast():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
+    """IRGNM reaches the notebook's discrepancy threshold within 30 steps."""
+    fresnel_number = 5e-4
+    noise_level = 0.01
+
+    # Downsample the phantom as in the notebook, then pad each axis by 25%.
+    image = ascent().astype(np.float64)
+    image_grid = UniformGridFcts(*image.shape)
+    trunc_op = FourierInterpolationOperator(
+        image_grid, Fourier_truncation_amount=160,
     )
-
-
-    # Example parameters
-    fresnel_number = 5e-4    # Fresnel-number of the simulated imaging system, associated with the unit-lengthscale
-                            # in grid (i.e. with the size of one pixel for the above choice of grid)
-    noise_level = 0.01      # Noise level in the simulated data
-
-
-    # Uniform grid of unit-spacing
-    grid = UniformGridFcts(np.arange(1024), np.arange(1024))
-
-    # Forward operator
-    op = get_xray_phase_contrast(grid, fresnel_number)
-
-    # Create phantom phase-image (= padded example-image)
-    exact_solution = ascent().astype(np.float64)
+    exact_solution = trunc_op(image)
     exact_solution /= exact_solution.max()
-    pad_amount = tuple([(grid.shape[0] - exact_solution.shape[0])//2,
-                        (grid.shape[1] - exact_solution.shape[1])//2])
-    exact_solution = np.pad(exact_solution, pad_amount, 'constant', constant_values=0)
+    padding = tuple((n // 4, n // 4) for n in exact_solution.shape)
+    exact_solution = np.pad(exact_solution, padding, mode="constant")
 
-    # Create exact and noisy data
+    # Construct the operator after resizing so its domain matches the image.
+    grid = UniformGridFcts(*exact_solution.shape)
+    op = get_xray_phase_contrast(grid, fresnel_number)
+    assert exact_solution in op.domain
     exact_data = op(exact_solution)
-    noise = noise_level * op.codomain.randn()
-    data = exact_data + noise
 
-    # Image-reconstruction using the IRGNM method
-    setting = Setting(op=op, penalty=L2, data_fid=L2)
-    solver = IrgnmCG(setting, data, regpar=10)
-    stoprule = (
-        rules.CountIterations(max_iterations=100) +
-        rules.Discrepancy(
-            setting.h_codomain.norm,
-            data,
-            noiselevel=setting.h_codomain.norm(noise),
-            tau=1.1
-        )
+    setting = Setting(op, L2, L2, exact_data=exact_data)
+    set_rng_seed(20261011)
+    setting.add_Gaussian_noise(
+        relative_noise_level=noise_level, white_noise=False,
     )
 
-    reco, reco_data = solver.run(stoprule)
+    # Exercise the method registry and its default stopping-rule factory,
+    # exactly as in the saved notebook.
+    reco, reco_data = setting.run('IRGN_CG', max_it=30)
+    stoprule = setting.get_stoprule('IRGN_CG')
 
-    assert stoprule.rules[1].triggered
-
-sys.path.pop(0)
+    assert stoprule.converged, stoprule.stop_reason
+    assert reco in op.domain
+    assert reco_data in op.codomain
+    assert np.all(np.isfinite(reco))
+    assert np.all(np.isfinite(reco_data))

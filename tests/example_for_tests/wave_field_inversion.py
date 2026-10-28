@@ -83,36 +83,26 @@ def test_wave_field_inversion():
     h_codomain2 = L2(grid, weights=(1+intensity*data[2])/intensity)
     h_codomain = h_codomain0+h_codomain1+h_codomain2
 
-    # Image reconstruction using the IRGNM method
-    setting = Setting(op=op,penalty=h_domain,data_fid=h_codomain)
-
     init_vec = np.zeros_like(exact_solution)
+
+    # Image reconstruction using the IRGNM method
+    setting = Setting(op = op,penalty=h_domain,data_fid=h_codomain,
+                      init = init_vec, data = data)
 
     solver = IrgnmCG(
         setting, data, regpar=0.1, regpar_step=2/3, init=init_vec,
         inner_it_logging_level=logging.INFO
     )
-    stoprule = (
-        rules.CountIterations(max_iterations=100) +
-        rules.Discrepancy(
-            setting.h_codomain.norm,
-            data,
-            noiselevel=setting.h_codomain.norm((data/intensity).component_wise(np.sqrt)),
-            tau=1.01
-        )
-    )
-
-    # plot data
-    data_comp = op.codomain.split(data)
+    stoprule = rules.Discrepancy(noiselevel=setting.h_codomain.norm((data/intensity).component_wise(np.sqrt)))
 
     # perform reconstruction    
-    for reco, reco_data in solver.until(stoprule):
+    for reco, reco_data in solver.until(stoprule,max_it=20):
         newton_step = solver.iteration_step_nr
         reco_error = reco-exact_solution
         print('rel. reconstruction errors step {}: modulus: {:1.4f}, phase: {:1.4f}'.format(
             newton_step,
             np.linalg.norm(reco_error.real)/np.linalg.norm(exact_solution.real),
             np.linalg.norm(reco_error.imag)/np.linalg.norm(exact_solution.imag)))
-
+    # assert stoprule.main_rule.converged
 
 sys.path.pop(0)

@@ -4,9 +4,23 @@ import traceback
 import numpy as np
 import pytest
 
-from regpy.vecsps import NumPyVectorSpace
-from regpy.operators import MatrixMultiplication
+
+import numpy as np
+import pytest
+
+
+from regpy.vecsps import NumPyVectorSpace, MeasureSpaceFcts,UniformGridFcts, DirectSum as VectorDirectSum
+from regpy.operators import MatrixMultiplication, Identity, PtwMultiplication
+from regpy.functionals.base import as_functional
+from regpy.hilbert import as_hilbert_space, L2
 from regpy.hilbert.base import *
+from regpy.hilbert.base import (
+    AbstractScaledSpace,
+    AbstractSum,
+    ScaledHilbertSpace,
+    DirectSum as HilbertDirectSum,
+    MaskedHilbertSpace,
+)
 from regpy.util import set_rng_seed, Errors
 
 set_rng_seed(15873098306879350073259142812684978477)
@@ -185,14 +199,24 @@ def test_masked_l2_registration_nested_masks():
     full = NumPyVectorSpace(4)
     first = full.get_masked_space(np.array([True, False, True, True]))
     second = first.get_masked_space(np.array([False, True, True]))
-    # A restricted Gram is represented by projections, not by one of the
-    # recognized diagonal operator types. The registry deliberately rejects it.
-    with pytest.raises(ValueError, match="recognized as coordinate-diagonal"):
-        L2(second)
-    h = MaskedHilbertSpace(L2(first), second)
-    assert isinstance(h.space, MaskedHilbertSpace)
+    # Nested restriction of the identity Gram is still diagonal and invertible.
+    # Check both the automatically registered L2 and the explicitly nested space.
+    automatic = L2(second)
+    explicit = MaskedHilbertSpace(L2(first), second)
+    assert isinstance(automatic, MaskedHilbertSpace)
+    assert isinstance(explicit.space, MaskedHilbertSpace)
+
     x = np.array([2., -3.])
-    np.testing.assert_allclose(h.gram(x), x)
+    for h in (automatic, explicit):
+        np.testing.assert_allclose(h.gram(x), x)
+        np.testing.assert_allclose(h.gram_inv(h.gram(x)), x)
+        np.testing.assert_allclose(h.gram.inverse(h.gram(x)), x)
+        np.testing.assert_allclose(h.norm(x)**2, np.dot(x, x))
+
+    # The two nested masks retain the original coordinates 2 and 3.
+    np.testing.assert_array_equal(second.extend(x), np.array([0., 2., -3.]))
+    np.testing.assert_array_equal(first.extend(second.extend(x)),
+                                  np.array([0., 0., 2., -3.]))
 
 
 def test_masked_hilbert_direct_sum_inverse():
@@ -265,3 +289,148 @@ def test_masked_l2_rejects_unrecognized_gram_types(monkeypatch, matrix):
     np.testing.assert_allclose(
         explicit.gram(x), matrix[np.ix_([0, 2], [0, 2])] @ x
     )
+
+
+def small_grid():
+    return UniformGridFcts((0., 1., 7), (0., 1., 8))
+
+
+@pytest.mark.parametrize('factor', [0.001, 0.5, 1., 2., np.float64(3.), np.int64(4)])
+def test_abstract_and_concrete_scale_norm_on_same_vector_space(factor):
+    grid = small_grid()
+    x = grid.ones()
+    x[2:5, 1:4] += 0.3
+    base = L2(grid)
+    deferred = factor * L2
+    actual = as_hilbert_space(deferred, grid)
+    direct = factor * base
+
+    assert isinstance(deferred, AbstractScaledSpace)
+    assert isinstance(actual, ScaledHilbertSpace)
+    assert isinstance(direct, ScaledHilbertSpace)
+    assert actual.vecsp == grid
+    assert direct.vecsp == grid
+    assert not isinstance(actual, HilbertDirectSum)
+    np.testing.assert_allclose(actual.norm(x), factor * base.norm(x))
+    np.testing.assert_allclose(direct.norm(x), factor * base.norm(x))
+    np.testing.assert_allclose(actual.gram(x), factor**2 * base.gram(x))
+    np.testing.assert_allclose(actual.gram_inv(x), float(factor)**-2 * base.gram_inv(x))
+    np.testing.assert_allclose(as_functional(deferred, grid)(x),
+                               factor**2 * as_functional(L2, grid)(x))
+
+
+def test_nested_scaling_is_combined():
+    grid = small_grid()
+    abstract = 2. * (3. * L2)
+    concrete = 2. * (3. * L2(grid))
+    assert abstract.factor == 6.
+    assert concrete.factor == 6.
+    assert abstract.space is L2
+    assert not isinstance(concrete.space, ScaledHilbertSpace)
+    np.testing.assert_allclose(abstract(grid).gram(grid.ones()),
+                               36. * L2(grid).gram(grid.ones()))
+
+
+def test_abstract_direct_sum_addition_is_not_changed():
+    grid1, grid2 = small_grid(), small_grid()
+    vecsp = VectorDirectSum(grid1, grid2)
+    abstract = L2 + 2. * L2
+    concrete = abstract(vecsp)
+    assert isinstance(abstract, AbstractSum)
+    assert isinstance(concrete, HilbertDirectSum)
+    assert concrete.vecsp == vecsp
+    x = vecsp.ones()
+    expected = L2(grid1).norm(x[0])**2 + 4. * L2(grid2).norm(x[1])**2
+    np.testing.assert_allclose(concrete.norm(x)**2, expected)
+
+
+def test_scalar_multiplier_is_a_norm_factor_not_a_penalty_weight():
+    grid = small_grid()
+    weight = 0.001
+    x = grid.ones()
+    # To obtain weight * ||x||_L2**2 one must scale the Hilbert norm by sqrt(weight).
+    penalty = as_functional(np.sqrt(weight) * L2, grid)
+    reference = weight * as_functional(L2, grid)
+    np.testing.assert_allclose(penalty(x), reference(x))
+    np.testing.assert_allclose(penalty.conj(grid.ones()),
+                               reference.conj(grid.ones()))
+
+
+@pytest.mark.parametrize('invalid', [0., -2., np.nan, np.inf])
+def test_invalid_norm_scales_rejected(invalid):
+    grid = small_grid()
+    with pytest.raises(ValueError):
+        _ = invalid * L2
+    with pytest.raises(ValueError):
+        _ = invalid * L2(grid)
+
+
+def _masked_grid():
+    grid = UniformGridFcts((-1., 1., 9), (-1., 1., 11))
+    xx, yy = grid.coords
+    mask = xx**2 + yy**2 <= 0.75**2
+    return grid, grid.get_masked_space(mask)
+
+
+def test_masked_uniform_grid_l2_gram_is_invertible_pointwise():
+    """The exact failure in the Born2D notebook: a masked uniform-grid L2 Gram."""
+    grid, masked = _masked_grid()
+    hilbert = L2(masked)
+    assert isinstance(hilbert, MaskedHilbertSpace)
+    assert isinstance(hilbert.gram, PtwMultiplication)
+
+    rng = np.random.default_rng(16)
+    x = rng.standard_normal(masked.shape)
+
+    # The induced masked Hilbert geometry must retain physical quadrature.
+    reference = masked.restrict(L2(grid).gram(masked.extend(x)))
+    np.testing.assert_allclose(hilbert.gram(x), reference, rtol=1e-13, atol=1e-14)
+
+    # Both APIs must be available: general operators need gram.inverse, while
+    # functionals may use the specialized HilbertSpace.gram_inv.
+    np.testing.assert_allclose(hilbert.gram.inverse(hilbert.gram(x)), x,
+                               rtol=1e-13, atol=1e-13)
+    np.testing.assert_allclose(hilbert.gram_inv(hilbert.gram(x)), x,
+                               rtol=1e-13, atol=1e-13)
+
+
+def test_masked_gram_preserves_nonconstant_measure_weights():
+    """Do not accidentally replace weighted L2 with an unweighted identity."""
+    full = MeasureSpaceFcts(measure=np.array([
+        [0.5, 1., 3., 0.75],
+        [1.5, 2., 0.25, 5.],
+        [1., 4., 2.5, 0.8],
+    ]))
+    mask = np.array([
+        [False, True, True, False],
+        [True, True, False, False],
+        [False, True, True, False],
+    ])
+    masked = full.get_masked_space(mask)
+    hilbert = L2(masked)
+    full_hilbert = L2(full)
+    x = np.linspace(0.2, 1.5, masked.shape[0])
+
+    reference = masked.restrict(full_hilbert.gram(masked.extend(x)))
+    np.testing.assert_allclose(hilbert.gram(x), reference, rtol=1e-13)
+    np.testing.assert_allclose(hilbert.gram.inverse(reference), x, rtol=1e-13)
+
+
+def test_squared_norm_hessian_has_inverse_on_masked_domain():
+    """TikhonovCG calls penalty.hessian(...).inverse, NOT hilbert.gram_inv."""
+    _, masked = _masked_grid()
+    penalty = as_functional(L2, masked)
+    x = np.linspace(-0.7, 1.2, masked.shape[0])
+
+    hessian = penalty.hessian(x)
+    np.testing.assert_allclose(hessian.inverse(hessian(x)), x,
+                               rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize('factor', [0.3, 1., 4.])
+def test_scaled_masked_hessian_remains_invertible(factor):
+    """Ordinary regularization weights must not reintroduce a composition."""
+    _, masked = _masked_grid()
+    penalty = as_functional(factor * L2, masked)
+    x = np.linspace(0.2, 1., masked.shape[0])
+    hessian = penalty.hessian(x)

@@ -19,7 +19,7 @@ from regpy.operators import DirectSum as DirectSumOp
 from regpy.operators.bases_transform import BasisTransform
 
 
-__all__ = ["HilbertSpace","HilbertPullBack","GramHilbertSpace","MaskedHilbertSpace","DirectSum","TensorProd","L2Generic","AbstractSpace"]
+__all__ = ["HilbertSpace","HilbertPullBack","GramHilbertSpace","MaskedHilbertSpace","DirectSum","TensorProd","L2Generic","ScaledHilbertSpace","AbstractSpace","AbstractScaledSpace"]
 
 class HilbertSpace:
     r"""Base class for Hilbert spaces. Subclasses must at least implement the `gram` property, which
@@ -199,11 +199,63 @@ class HilbertSpace:
         else:
             return NotImplemented
 
-    def __rmul__(self, other: float | HilbertSpace) -> HilbertSpace | NotImplementedType:
-        if isinstance(other,float) or isinstance(other,int):
-            return DirectSum((other, self), flatten=True)
-        else:
+    def __rmul__(self, other: float) -> HilbertSpace | NotImplementedType:
+        if _is_real_scale(other):
+            return ScaledHilbertSpace(self, other)
+        return NotImplemented
+
+
+def _is_real_scale(value: object) -> bool:
+    """Recognize real norm scaling factors, but not bool or complex numbers."""
+    return (not isinstance(value, (bool, np.bool_))
+            and isinstance(value, (int, float, np.integer, np.floating)))
+
+
+def _positive_norm_scale(value: float) -> float:
+    """Validate a scalar multiplier of a Hilbert *norm* (not its square)."""
+    value = float(value)
+    if not np.isfinite(value) or value <= 0:
+        raise ValueError("Hilbert norm scaling must be finite and strictly positive.")
+    return value
+
+
+class ScaledHilbertSpace(HilbertSpace):
+    r"""Scale the norm of a Hilbert space without changing its vector space.
+
+    ``(c * H).norm(x) == c * H.norm(x)`` for ``c > 0``. Hence the
+    squared-norm functional and the Gram operator are scaled by ``c**2``.
+    This is *not* a singleton direct sum: ``(c * H).vecsp == H.vecsp``.
+
+    Nested scaling is combined, so ``a * (b * H)`` has factor ``a*b``.
+    """
+
+    def __init__(self, space: HilbertSpace, factor: float) -> None:
+        if not isinstance(space, HilbertSpace):
+            raise TypeError("space must be a HilbertSpace.")
+        factor = _positive_norm_scale(factor)
+        if isinstance(space, ScaledHilbertSpace):
+            factor *= space.factor
+            space = space.space
+        self.space = space
+        self.factor = _positive_norm_scale(factor)
+        super().__init__(space.vecsp)
+
+    @memoized_property
+    def gram(self) -> Operator:
+        return (self.factor**2) * self.space.gram
+
+    @memoized_property
+    def gram_inv(self) -> Operator:
+        return (self.factor**-2) * self.space.gram_inv
+
+    @memoized_property
+    def cholesky(self) -> Operator:
+        return self.factor * self.space.cholesky
+
+    def __eq__(self, other: object) -> bool | NotImplementedType:
+        if not isinstance(other, ScaledHilbertSpace):
             return NotImplemented
+        return self.factor == other.factor and self.space == other.space
 
 
 class MaskedHilbertSpace(HilbertSpace):
@@ -258,14 +310,23 @@ class MaskedHilbertSpace(HilbertSpace):
 
     @memoized_property
     def gram(self) -> Operator:
-        r"""Return the Gram operator representing the Hilbert inner product.
-        
-        
-        Returns
-        -------
-        Operator
-            Constructed operator.
+        r"""Gram on masked coefficients, with a direct diagonal representation.
+
+        If the full-space Gram is coordinate-diagonal, restricting it preserves
+        diagonality.  Returning PtwMultiplication rather than P G P* is useful
+        beyond evaluating the Gram: solvers may need ``gram.inverse`` (e.g. the
+        inverse of a squared-norm penalty Hessian).  A generic composition has
+        no inverse because the projection and its adjoint are rectangular.
+
+        For non-diagonal full-space Grams, retain the original P G P* form.
         """
+        diagonal = self._coordinate_diagonal(self.space.gram)
+        if diagonal is not None:
+            mask = np.fromiter(
+                self.space.vecsp.iter_mask(self.vecsp.mask), dtype=bool,
+            )
+            retained = np.asarray(diagonal)[mask]
+            return PtwMultiplication(self.vecsp, retained)
         return self.projection * self.space.gram * self.projection.adjoint
 
     @memoized_property
@@ -787,9 +848,10 @@ class AbstractSpaceBase:
     Abstract spaces do not have elements, properties or any other structure, their sole purpose is
     to pick the proper concrete implementation for a given vector space.
 
-    This class only implements operator overloads so that scaling and adding abstract spaces works
-    analogously to the concrete `HilbertSpace` instances, returning `AbstractSum` instances. The
-    interesing stuff is in `AbstractSpace`.
+    Addition produces an `AbstractSum` (for a direct-sum vector space), while
+    scalar multiplication produces an `AbstractScaledSpace` (on the *same*
+    vector space). A scalar multiplies the Hilbert norm; the squared-norm
+    functional is therefore multiplied by its square.
     """
 
     log = ClassLogger()
@@ -812,11 +874,35 @@ class AbstractSpaceBase:
         else:
             return NotImplemented
 
-    def __rmul__(self, other: float | HilbertSpace) -> HilbertSpace | NotImplementedType:
-        if isinstance(other,float):
-            return AbstractSum((other, self), flatten=True)
-        else:
-            return NotImplemented
+    def __rmul__(self, other: float) -> AbstractScaledSpace | NotImplementedType:
+        if _is_real_scale(other):
+            return AbstractScaledSpace(self, other)
+        return NotImplemented
+
+
+class AbstractScaledSpace(AbstractSpaceBase):
+    r"""Deferred norm scaling for an abstract Hilbert space.
+
+    ``(c * L2)(grid)`` constructs the concrete ``c * L2(grid)`` on
+    ``grid``, not on a one-component direct sum. Scaling a *norm* by
+    ``c`` scales its squared-norm functional by ``c**2``.
+
+    Abstract sums remain direct sums: ``(L2 + c * Sobolev)(grid1 + grid2)``
+    still constructs the appropriate direct-sum Hilbert space.
+    """
+
+    def __init__(self, space: AbstractSpaceBase, factor: float) -> None:
+        if not isinstance(space, AbstractSpaceBase):
+            raise TypeError("space must be an abstract Hilbert space.")
+        factor = _positive_norm_scale(factor)
+        if isinstance(space, AbstractScaledSpace):
+            factor *= space.factor
+            space = space.space
+        self.space = space
+        self.factor = _positive_norm_scale(factor)
+
+    def __call__(self, vecsp: VectorSpaceBase, **kwargs: Any) -> HilbertSpace:
+        return ScaledHilbertSpace(self.space(vecsp, **kwargs), self.factor)
 
 
 class AbstractSpace(AbstractSpaceBase):

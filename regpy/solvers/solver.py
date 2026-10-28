@@ -9,6 +9,9 @@ if TYPE_CHECKING:
 
 from collections.abc import Callable, Generator
 
+from numbers import Integral
+import sys
+
 import numpy as np
 
 from regpy.vecsps import Vector, ReadOnlyVector
@@ -186,8 +189,9 @@ class Solver:
         max_it: int | None,
         *,
         while_type: bool,
+        max_op_evals: int | None = None,
     ) -> StopRule:
-        r"""Return ``stoprule`` augmented by an iteration limit.
+        r"""Return ``stoprule`` augmented by iteration and operator-evaluation limits.
         
         Parameters
         ----------
@@ -195,8 +199,10 @@ class Solver:
             Stoprule.
         max_it: int | None
             Maximum number of iterations.
+        max_op_evals: int | None [default: None]
+            Optional weighted operator-evaluation limit.
         while_type: bool
-            While type.
+            Whether to check before the first iteration.
         
         
         Returns
@@ -211,22 +217,22 @@ class Solver:
                 f'stoprule must be a StopRule or None. Got {stoprule!r}.'
             ))
 
-        if max_it is None:
+        for name, value in (("max_it", max_it), ("max_op_evals", max_op_evals)):
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, Integral):
+                raise TypeError(f"{name} must be an integer or None. Got {value!r}.")
+            if value < 0:
+                raise ValueError(f"{name} must be non-negative. Got {value}.")
+        if max_it is None and max_op_evals is None:
             return stoprule
-        if isinstance(max_it, bool) or not isinstance(max_it, int):
-            raise TypeError(Errors.type_error(
-                f'max_it must be an integer or None. Got {max_it!r}.'
-            ))
-        if max_it < 0:
-            raise ValueError(Errors.value_error(
-                f'max_it must be non-negative. Got {max_it}.'
-            ))
 
         from regpy.stoprules import CountIterations
 
         count_rule = CountIterations(
-            max_iterations=max_it,
+            max_iterations=sys.maxsize if max_it is None else int(max_it),
             while_type=while_type,
+            max_op_evals=max_op_evals,
         )
         if isinstance(stoprule, NoneRule):
             return count_rule
@@ -236,6 +242,7 @@ class Solver:
         self,
         stoprule: StopRule | None = None,
         max_it: int | None = None,
+        max_op_evals: int | None = None,
     ) -> Generator[tuple[ReadOnlyVector | None, ReadOnlyVector | None], None, None]:
         r"""Generate current iterates under control of a stopping rule.
         
@@ -258,11 +265,20 @@ class Solver:
         ----------
         stoprule: StopRule | None [default: None]
             The stoprule to be used. If omitted, stopping will only be
-            based on the return value of `next` and on ``max_it``.
+            based on the return value of `next` and on ``max_it`` or ``max_op_evals``.
         max_it: int | None [default: None]
             Maximum number of iterations. If provided, a
             :class:`regpy.stoprules.CountIterations` rule is combined with
             ``stoprule``. Must be non-negative.
+        max_op_evals: int | None [default: None]
+            Maximum weighted operator evaluations since attaching the cap to
+            this solver. Enables counting automatically and requires a solver
+            with an operator. Stops when either cap is reached. Checks occur
+            between iterations, so one step may exceed the evaluation cap.
+            Constructor work is excluded. Must be non-negative; ``until``
+            requires a positive cap because it attempts a first step before
+            checking. If only this cap is supplied, the iteration cap is
+            ``sys.maxsize`` (effectively unlimited).
         
         Yields
         ------
@@ -273,18 +289,23 @@ class Solver:
         Raises
         ------
         TypeError
-            If ``stoprule`` is not a stopping rule or ``max_it`` is not an
+            If ``stoprule`` is not a stopping rule or either cap is not an
             integer or ``None``.
         ValueError
-            If ``max_it`` is negative.
+            If either cap is negative.
         """
         stoprule = self._add_max_iterations(
-            stoprule, max_it, while_type=True
+            stoprule, max_it, while_type=True, max_op_evals=max_op_evals
         )
         stoprule._complete_init_with_solver(self)
         while not stoprule.stop() and self.next(): 
             yield self._read_only_iterate()
-        self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
+        if self.is_converged() or stoprule.main_rule.converged is True:
+            self.log.info('Solver converged after %s iteration(s).', self.iteration_step_nr)
+        else:
+            self.log.info('Solver stopped after %s iteration(s): %s',
+                          self.iteration_step_nr,
+                          stoprule.main_rule.stop_reason or 'No convergence certificate.')
  
 
 
@@ -292,6 +313,7 @@ class Solver:
         self,
         stoprule: StopRule | None = None,
         max_it: int | None = None,
+        max_op_evals: int | None = None,
     ) -> Generator[tuple[ReadOnlyVector | None, ReadOnlyVector | None], None, None]:
         r"""Generate current iterates under control of a stopping rule.
         
@@ -308,11 +330,20 @@ class Solver:
         ----------
         stoprule: StopRule | None [default: None]
             The stoprule to be used. If omitted, stopping will only be
-            based on the return value of `next` and on ``max_it``.
+            based on the return value of `next` and on ``max_it`` or ``max_op_evals``.
         max_it: int | None [default: None]
             Maximum number of iterations. If provided, a
             :class:`regpy.stoprules.CountIterations` rule is combined with
             ``stoprule``. Must be non-negative.
+        max_op_evals: int | None [default: None]
+            Maximum weighted operator evaluations since attaching the cap to
+            this solver. Enables counting automatically and requires a solver
+            with an operator. Stops when either cap is reached. Checks occur
+            between iterations, so one step may exceed the evaluation cap.
+            Constructor work is excluded. Must be non-negative; ``until``
+            requires a positive cap because it attempts a first step before
+            checking. If only this cap is supplied, the iteration cap is
+            ``sys.maxsize`` (effectively unlimited).
         
         Yields
         ------
@@ -323,20 +354,20 @@ class Solver:
         Raises
         ------
         TypeError
-            If ``stoprule`` is not a stopping rule or ``max_it`` is not an
+            If ``stoprule`` is not a stopping rule or either cap is not an
             integer or ``None``.
         ValueError
-            If ``max_it`` is negative or zero. Since :meth:`until` always
+            If either cap is negative or zero. Since :meth:`until` always
             attempts an initial iteration, use :meth:`while_` or :meth:`run`
             when zero iterations should be allowed.
         """
         stoprule = self._add_max_iterations(
-            stoprule, max_it, while_type=False
+            stoprule, max_it, while_type=False, max_op_evals=max_op_evals
         )
-        if max_it == 0:
+        if max_it == 0 or max_op_evals == 0:
             raise ValueError(Errors.value_error(
                 'until always performs at least one iteration and therefore '
-                'does not accept max_it=0. Use while_ or run instead.'
+                'does not accept max_it=0 or max_op_evals=0. Use while_ or run instead.'
             ))
         stoprule._complete_init_with_solver(self)
         self.next()
@@ -344,12 +375,18 @@ class Solver:
         while not stoprule.stop() and self.next(): 
             yield self._read_only_iterate()
 
-        self.log.info('Solver converged after {} iteration.'.format(self.iteration_step_nr))
+        if self.is_converged() or stoprule.main_rule.converged is True:
+            self.log.info('Solver converged after %s iteration(s).', self.iteration_step_nr)
+        else:
+            self.log.info('Solver stopped after %s iteration(s): %s',
+                          self.iteration_step_nr,
+                          stoprule.main_rule.stop_reason or 'No convergence certificate.')
 
     def run(
         self,
         stoprule: StopRule | None = None,
         max_it: int | None = None,
+        max_op_evals: int | None = None,
     ) -> tuple[ReadOnlyVector | None, ReadOnlyVector | None] | ReadOnlyVector:
         r"""Run the solver with the given stoprule.
         
@@ -357,11 +394,20 @@ class Solver:
         ----------
         stoprule: StopRule | None [default: None]
             The stoprule to be used. If omitted, stopping will only be based
-            on convergence of the solver or ``max_it``.
+            on convergence of the solver or either supplied cap.
         max_it: int | None [default: None]
             Maximum number of iterations. If provided, a
             :class:`regpy.stoprules.CountIterations` rule is combined with
             ``stoprule``. Must be non-negative.
+        max_op_evals: int | None [default: None]
+            Maximum weighted operator evaluations since attaching the cap to
+            this solver. Enables counting automatically and requires a solver
+            with an operator. Stops when either cap is reached. Checks occur
+            between iterations, so one step may exceed the evaluation cap.
+            Constructor work is excluded. Must be non-negative; ``until``
+            requires a positive cap because it attempts a first step before
+            checking. If only this cap is supplied, the iteration cap is
+            ``sys.maxsize`` (effectively unlimited).
         
         Returns
         -------
@@ -374,13 +420,13 @@ class Solver:
         Raises
         ------
         TypeError
-            If ``stoprule`` is not a stopping rule or ``max_it`` is not an
+            If ``stoprule`` is not a stopping rule or either cap is not an
             integer or ``None``.
         ValueError
-            If ``max_it`` is negative.
+            If either cap is negative.
         """
         stoprule = self._add_max_iterations(
-            stoprule, max_it, while_type=True
+            stoprule, max_it, while_type=True, max_op_evals=max_op_evals
         )
         for _ in self.while_(stoprule):
             pass

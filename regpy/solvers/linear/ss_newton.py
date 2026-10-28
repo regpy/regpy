@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from regpy.vecsps.base import Scalar, Vector
     from regpy.operators.base import Operator
     from regpy._typing import Mask
+    from regpy.stoprules import StopRule
 from math import sqrt,inf
 from collections.abc import Iterable
 from numbers import Real
@@ -70,7 +71,7 @@ class SemiSmoothNewton(RegSolver):
     ..math::
         psi_{minus} \leq f \leq psi_{plus} 
     
-    for a separable smooth penalty functional :math:`\mathcal{R}` and a smooth convex data functional (strictly convex or separable) :math:`\mathcal{S}_{g^{\delta}}` 
+    for a smooth penalty functional :math:`\mathcal{R}` (separable when domain extension is needed) and a smooth convex data functional (strictly convex or separable) :math:`\mathcal{S}_{g^{\delta}}` 
     and a linear operator :math:`T`.
     
     Parameters
@@ -80,7 +81,10 @@ class SemiSmoothNewton(RegSolver):
         equipped with a Hilbert space.
     init: ReadOnlyVector | None [default: None]
         Zeroth iterate. If None, it is taken from the setting. 
-        init must be feasible. It is exposed as iteration zero through x, y
+        init must be feasible up to rounding errors. Violations no larger than
+        32 machine epsilons times max(1, abs(value), abs(violated bound))
+        are projected onto the bounds in a private copy; larger violations
+        raise ValueError. The projected initial guess is exposed as iteration zero through x, y
         and primal(), before any CG solve. Boundary multipliers are initialized
         from the objective gradient at this point, and the next active sets
         are computed from these multipliers. The first call to next() performs
@@ -102,7 +106,8 @@ class SemiSmoothNewton(RegSolver):
     logging_level: int | str [default: 'INFO']
         default: logging:INFO
     cg_logging_level: int | str [default: 'WARNING']
-        default: logging.INFO
+        Level for inner CG and its stopping rules. An explicit logging_level
+        in cg_pars takes precedence. Inner-run summaries use the outer INFO level.
     cg_reltols: Iterable[float] | None [default: None]
         Positive finite relative domain tolerances for successive CG solves.
         None creates a fresh (1.0/3.0) ** Naturals(), yielding
@@ -145,9 +150,17 @@ class SemiSmoothNewton(RegSolver):
     would change the objective rather than merely extend the penalty outside
     the active-set constraints.
     Direct sums of these functionals are handled componentwise, recursively.
-    The original setting penalty is not modified.
+    The original setting penalty is not modified. Internal Newton iterates
+    may be infeasible. Both primal() and run() return feasible copies, without
+    projecting the internal state or changing the Newton iteration.
     
-    For separable fidelities, each Hessian must be represented as pointwise
+    Strictly convex fidelities use their full quadratic Taylor model, also
+    for complex codomains. This path requires an invertible Taylor Hessian;
+    strict convexity alone does not mathematically guarantee invertibility
+    at every point. No ordering of the codomain is required on this path.
+
+    For non-strictly-convex separable fidelities, the codomain must be real,
+    ordered and maskable. Each Hessian must be represented as pointwise
     multiplication or a scalar multiple of Identity, with finite nonnegative
     entries. Positive-curvature coordinates define the inner CG data space.
     Zero-curvature gradient contributions are added to the quadratic penalty
@@ -196,15 +209,18 @@ class SemiSmoothNewton(RegSolver):
                 self.op.domain.iter_coefficients(self.psi_plus), strict=True)):
             raise ValueError("psi_minus must be strictly below psi_plus.")
         self._validate_constraints(original_penalty)
+        if not original_penalty.is_separable:
+            space = self.op.domain
+            if (any(not np.isneginf(v) for v in space.iter_coefficients(self.psi_minus))
+                    or any(not np.isposinf(v) for v in space.iter_coefficients(self.psi_plus))):
+                raise ValueError("Non-separable penalties are supported only without finite box constraints.")
         self.R = self._extended_penalty(original_penalty)
         x0 = self.op.domain.empty()
         self.op.domain.copyto(x0, setting.get_or_update_initial_guess(init, update=False))
-        if any(not l <= v <= u for l, v, u in zip(
-                self.op.domain.iter_coefficients(self.psi_minus),
-                self.op.domain.iter_coefficients(x0),
-                self.op.domain.iter_coefficients(self.psi_plus), strict=True)):
-            raise ValueError(Errors.generic_message('x0 not feasible.'))
+        self._project_initial_roundoff(x0)
         self.x, self.y = x0, self.op(x0)
+        self._feasible_cached_x: Vector | None = None
+        self._feasible_cached_y: Vector | None = None
         self._cg_dual = None
         self._cg_dual_adjoint = None
 
@@ -438,9 +454,9 @@ class SemiSmoothNewton(RegSolver):
             shift = penalty.shift_val
             inner_lower = lower if shift is None else lower - shift
             inner_upper = upper if shift is None else upper - shift
-            inner_lower = penalty.dilation * inner_lower
-            inner_upper = penalty.dilation * inner_upper
-            if penalty.dilation < 0:
+            inner_lower = penalty.dilation_factor * inner_lower
+            inner_upper = penalty.dilation_factor * inner_upper
+            if penalty.dilation_factor < 0:
                 inner_lower, inner_upper = inner_upper, inner_lower
             result = deepcopy(penalty)
             result.func = self._extended_penalty(penalty.func, inner_lower, inner_upper)
@@ -492,7 +508,7 @@ class SemiSmoothNewton(RegSolver):
         tuple[Any, Any, None, None] | tuple[None, None, None, Any] | tuple[Any, Any, Any, Any]
             Result described above.
         """
-        if not self.S.is_separable:
+        if self.S.is_strictly_convex or not self.S.is_separable:
             return quadTaylor(self.S, self.y), self.op, None, None
         space = self.op.codomain
         hessian = self.S.hessian(self.y)
@@ -577,13 +593,20 @@ class SemiSmoothNewton(RegSolver):
                                   regpar=self.regpar,
                                   data = model_op(projection(self.x)-self.x)
                                   )         
+            cg_parameters = self._next_cg_parameters()
+            cg_parameters.setdefault('logging_level', self.cg_logging_level)
+            inner_stoprule = CountIterations(
+                cg_parameters.get('max_it', 1000), eval_count=True,
+                logging_level=cg_parameters['logging_level'])
+            inner_stoprule.prepare_run(quad_setting.op)
             tikhcg = TikhonovCG(quad_setting, 
                                 init=projection(full_R_taylor.reference_vector()),                                
                                 x0 = projection(self.x), 
-                                logging_level=self.cg_logging_level,
-                                **self._next_cg_parameters()
+                                **cg_parameters
                                 )
-            aux, _ = tikhcg.run()
+            aux, _ = tikhcg.run(inner_stoprule)
+            from regpy.solvers.linear.bregman import _log_inner_summary
+            _log_inner_summary(self.log, type(tikhcg).__name__, inner_stoprule)
             # Capture before resetting S_taylor.data below: CG's dual belongs
             # to the shifted, restricted quadratic subproblem.
             self._store_cg_dual(tikhcg, data_projection, linear)
@@ -693,20 +716,98 @@ class SemiSmoothNewton(RegSolver):
             self._cg_dual_adjoint = self.op.adjoint(self._cg_dual)
         return self._cg_dual, self._cg_dual_adjoint
 
-    def primal(self) -> tuple[Vector | None, Vector | None]:
-        r"""Return the current primal iterate and operator image, when available.
-        
-        
+    def _project_initial_roundoff(self, x0: Vector) -> None:
+        """Reject genuine infeasibility and clip roundoff in a private vector.
+
+        At each violated bound b, allow 32 * eps * max(1, abs(b), abs(v)),
+        where eps is the machine precision of the iterate coefficient v.
+        Infinite bounds do not contribute to this scale. Validate all
+        coordinates before changing x0; use the space's mask operations to
+        support direct sums as well as NumPy spaces.
+        """
+        space = self.op.domain
+        for lower, value, upper in zip(
+                space.iter_coefficients(self.psi_minus),
+                space.iter_coefficients(x0),
+                space.iter_coefficients(self.psi_plus), strict=True):
+            if not np.isfinite(value):
+                raise ValueError(Errors.generic_message('x0 not feasible: nonfinite coefficient.'))
+            if lower <= value <= upper:
+                continue
+            dtype = np.asarray(value).dtype
+            eps = (np.finfo(dtype).eps if np.issubdtype(dtype, np.floating)
+                   else np.finfo(float).eps)
+            bound = lower if value < lower else upper
+            tolerance = 32 * eps * max(1., abs(value), abs(bound))
+            if not np.isfinite(bound) or abs(value - bound) > tolerance:
+                raise ValueError(Errors.generic_message('x0 not feasible.'))
+        space.copyto(x0, self.psi_minus,
+                     where=space.geq_mask(self.psi_minus, x0))
+        space.copyto(x0, self.psi_plus,
+                     where=space.geq_mask(x0, self.psi_plus))
+
+    def primal(self) -> tuple[Vector, Vector]:
+        r"""Return a feasible copy of the current iterate and its operator image.
+
+        Clip to ``[psi_minus, psi_plus]`` without changing the internal Newton
+        state. Reuse self.y if the iterate is already feasible, or the cached
+        image if the projected vector is unchanged. Returned vectors do not
+        share writable storage with the internal state or private cache.
+        """
+        space = self.op.domain
+        projected = space.empty()
+        space.copyto(projected, self.x)
+        space.copyto(projected, self.psi_minus,
+                     where=space.geq_mask(self.psi_minus, projected))
+        space.copyto(projected, self.psi_plus,
+                     where=space.geq_mask(projected, self.psi_plus))
+
+        def same(left: ReadOnlyVector, right: ReadOnlyVector) -> bool:
+            return space.nrTrues(space.eq_mask(left, right)) == space.dimension
+
+        if self.y is not None and same(projected, self.x):
+            value = self.y
+        elif (self._feasible_cached_x is not None
+              and same(projected, self._feasible_cached_x)):
+            value = self._feasible_cached_y
+        else:
+            value = self.op(projected)
+            self._feasible_cached_x = space.empty()
+            space.copyto(self._feasible_cached_x, projected)
+            self._feasible_cached_y = self.op.codomain.empty()
+            self.op.codomain.copyto(self._feasible_cached_y, value)
+        image = self.op.codomain.empty()
+        self.op.codomain.copyto(image, value)
+        return projected, image
+
+    def run(self, stoprule: StopRule | None = None,
+            max_it: int | None = None) -> tuple[Vector, Vector]:
+        r"""Run Newton and return the feasible final reconstruction.
+
+        Parameters
+        ----------
+        stoprule: StopRule | None [default: None]
+            Rule controlling termination. The final iterate is always used;
+            best_iterate() is not called.
+        max_it: int | None [default: None]
+            Additional maximum number of Newton iterations.
+
         Returns
         -------
-        tuple[Vector | None, Vector | None]
-            Result described above.
+        tuple[Vector, Vector]
+            The final iterate projected onto the box constraints and its
+            operator image, as supplied by primal(). Its cached image is
+            reused when available, avoiding duplicate operator evaluations.
+
+        Notes
+        -----
+        The internal Newton state remains unprojected. The inherited iteration
+        interfaces still expose that internal state. In a dual setting the
+        result remains in dual coordinates; Setting.run handles conversion.
         """
-        projected_x = self.op.domain.empty()
-        self.op.domain.copyto(projected_x, self.x)
-        self.op.domain.copyto(projected_x, self.psi_minus, where=self.active_minus)
-        self.op.domain.copyto(projected_x, self.psi_plus, where=self.active_plus)
-        return (projected_x, self.op(projected_x))
+        for _ in self.while_(stoprule=stoprule, max_it=max_it):
+            pass
+        return self.primal()
 
     @staticmethod
     def check_applicability(setting: Setting,op_norm: float | None=None) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -744,14 +845,15 @@ class SemiSmoothNewton(RegSolver):
                 out['info'] += 'Data functional not twice differentiable. '
             if not (setting.data_fid.is_strictly_convex or setting.data_fid.is_separable):
                 out['info'] += 'Data fidelity must be strictly convex or separable. '
-            if setting.data_fid.is_separable and (
+            if (not setting.data_fid.is_strictly_convex
+                    and setting.data_fid.is_separable) and (
                     not isinstance(setting.op.codomain, MaskableVectorSpace)
                     or not setting.op.codomain.is_ordered):
-                out['info'] += 'Separable fidelity requires a real ordered maskable codomain. ' 
+                out['info'] += 'Non-strictly-convex separable fidelity requires a real ordered maskable codomain. ' 
             if setting.data_fid.Lipschitz==np.inf:
                 out['info'] += 'Data functional not Lipschitz continuous. '                
         def check_penalty(penalty: Functional) -> bool:
-            r"""Check if penalty is separable and has a hessian.
+            r"""Check for a Hessian and either full domain or supported separable extension.
             
             Parameters
             ----------
@@ -766,7 +868,7 @@ class SemiSmoothNewton(RegSolver):
             """
             if isinstance(penalty, FunctionalOnDirectSum):
                 return all(check_penalty(f) for f in penalty.funcs)
-            if not penalty.is_separable or 'hessian' not in penalty.methods:
+            if 'hessian' not in penalty.methods:
                 return False
             lower, upper = penalty.dom_l, penalty.dom_u
             def infinite(bound: ReadOnlyVector | float, sign: int) -> bool:
@@ -789,12 +891,14 @@ class SemiSmoothNewton(RegSolver):
                     return False
                 vals = (bound,) if np.isscalar(bound) else penalty.domain.iter_coefficients(bound)
                 return all(np.isneginf(v) if sign < 0 else np.isposinf(v) for v in vals)
-            return ((infinite(lower, -1) and infinite(upper, 1))
-                    or SemiSmoothNewton._is_shifted_integral(penalty)
-                    or SemiSmoothNewton._is_integral_conjugate(penalty))
+            if infinite(lower, -1) and infinite(upper, 1):
+                return True
+            return (penalty.is_separable
+                    and (SemiSmoothNewton._is_shifted_integral(penalty)
+                         or SemiSmoothNewton._is_integral_conjugate(penalty)))
         if not check_penalty(setting.penalty):
-            out['info'] += ('Penalty must have a separable Hessian and support '
-                            'extension, componentwise for direct sums. ')
+            out['info'] += ('Penalty must have a Hessian and either full effective domain '
+                            'or separability with supported extension, componentwise for direct sums. ')
         out['applicable'] = out['info']==''
         out['rate'] = np.nan
         return out, None

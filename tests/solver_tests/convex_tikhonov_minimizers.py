@@ -73,19 +73,23 @@ def problem():
 
 def make_setting(problem):
     """Return a fresh setting so that solver runs cannot share state."""
-    sett =  Setting(
+    sett = Setting(
         op=problem["operator"],
         penalty=problem["penalty"],
         data_fid=problem["data_fidelity"],
         regpar=1e-1,
     )
-    sett.set_stoprule_params(list(sett.applicable_methods().keys()),{'reltol':1e-2})
+    # Configure the gap rule explicitly; retain each method's default caps.
+    sett.set_stoprule_params(
+        list(sett.applicable_methods()),
+        {'factory': 'DualityGapStopping', 'tol': GAP_TOL, 'reltol': 1e-2},
+    )
     return sett
 
 @pytest.fixture(scope="module")
 def ss_newton_reference(problem):
     """Compute the reference reconstruction used in the notebook."""
-    return make_setting(problem).run("SSN", gap_tol=GAP_TOL)[0]
+    return make_setting(problem).run("SSN")[0]
 
 
 @pytest.mark.parametrize("solver", SOLVERS)
@@ -98,7 +102,7 @@ def test_shifted_kl_with_constrained_relative_entropy(
     if solver == "SSN":
         reconstruction = ss_newton_reference
     else:
-        reconstruction = make_setting(problem).run(solver, gap_tol=GAP_TOL)[0]
+        reconstruction = make_setting(problem).run(solver)[0]
 
     assert np.all(np.isfinite(reconstruction))
     assert np.all(reconstruction >= -BOUND_TOL)

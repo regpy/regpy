@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from regpy.vecsps.base import VectorSpaceBase
-    from regpy.hilbert.base import HilbertSpace
 import logging
 
 from regpy.vecsps import *
@@ -11,11 +10,15 @@ from regpy import hilbert
 
 from .base import Functional,AbstractFunctional,SquaredNorm
 from .integral_functionals import *
-from .vector_integral_functionals import VectorIntegralFunctional, LppL2, L1L2, TVUniformGridFcts
+from .vector_integral_functionals import (VectorIntegralFunctional, 
+                                          LppL2, L1L2, HuberL2, 
+                                          TVUniformGridFcts
+                                        )
 
 from .matrix_functionals import *
 
-__all__ = ["Functional", "L1", "Lpp", "TV", "KL", "RE", "Hub", "QuadIntv", "QuadNonneg", "QuadBil", "QuadLow", "QuadPosSemi", 
+__all__ = ["Functional", "L1", "Lpp", "TV", "KL", "RE", "Hub", 
+           "QuadIntv", "QuadNonneg", "QuadBil", "QuadLow", "QuadPosSemi", 
            "HilbertNorm", "VFunc"]
 from .vector_integral_functionals import __all__ as __mod_all__
 __all__ += __mod_all__
@@ -67,10 +70,12 @@ def _register_functionals() -> None:
     L1.register(MeasureSpaceFcts, L1MeasureSpace)
 
     TV.register(UniformGridFcts, TVUniformGridFcts)
+    # Masked uniform grids retain their full grid and coefficient bitmap.
+    TV.register(MaskedMeasureSpaceFcts, TVUniformGridFcts)
 
     Lpp.register(MeasureSpaceFcts, LppPower)
  
-    KL.register(MeasureSpaceFcts, KullbackLeibler)
+    KL.register(MeasureSpaceFcts, KullbackLeiblerOffset)
     
     RE.register(MeasureSpaceFcts, RelativeEntropy)
 
