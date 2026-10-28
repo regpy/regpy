@@ -20,6 +20,103 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 ### Fixed: Bugs that were fixed
 -->
 
+## [1.2.0]
+
+### Added 
+
+### Additions to `regpy.vecsps`
+- Iterators over elements of a vector
+- Vector class for typing
+- Surface classes 
+
+#### Additions to `regpy.operators`
+- A Composition operator can be marked SVD decomposition. For Convolution operators, this
+  can be required in the constructor to allow for the application of spectral methods if the parameters permit.  
+- An operator can be marked as self-adjoint (as operator from a space to its dual -- automatically for adjoint_eval). In this case _adjoint is ignored. This affects the definition of the norm. For a nonlinear operator this means that the derivative is self-adjoint (as, e.g., for gradients of convex functionals).
+- Evaluation counters (for performance monitoring of solvers)
+- Allowed for the incorporation of multiples of the identity as codomain gram operators into adjoint_eval and adjoint_deriv.
+- Optional buffers in Composition operators to avoid repeated allocations in iterative methods. 
+- Nemytskii operators, including vector-valued and mixed complex/real cases
+- adjoint_eval also in FourierTransform, including real case
+
+#### Additions to `regpy.functionals`
+- Bregman distances and Bregman functionals
+- wrapper class Gradient_as_operator
+- Quadratic(IntegralFunctionalBase)
+- properties is_norm_squared_type, separable, and strictly_convex
+- NullFunctional
+
+### Additions to `regpy.hilbert`
+- MaskedHilbertSpaces
+
+#### Additions to `regpy.solvers`
+- method dictionaries also for settings that are not convex Tikhonov; methods get_method_params,  set_stoprule_params, get_stoprule_params to configure methods before Setting.run
+- applicablity checks for all solvers
+- spectral regularization methods
+- Bregman iterations, both for linear and nonlinear operators
+- general method running a Tikhonov solver with warm initial guess on a sequence of regularization parameters to let a StopRule determine an "optimal" value of the paramter
+- Semismooth Newton methods for general separable penalty functionals and convex data fidelity functionals.
+- nu-methods
+- codomain-free versions of all solvers where possible
+- Lavrentiev and Richardson 
+- convergence plot utility
+- special settings, in particular for TV
+- sequence calculus -- also implemented in regularization methods
+- CombinedSolver  (allowing also for hybrid primal / dual solvers)
+
+#### Additions to `regpy.stoprules`
+- schedules: If evaluation of stoprule is expensive, checks may be performed only at selected steps.
+- Check of optimality conditions for nonlinear Tikhonov functionals 
+- factories, including default factories. 
+   stoprules are instantiated immediately before the start of the solver. This also allows reliable timing. 
+- converged status. This disguishes if an iteration has been stopped by a cap on the number of iterations or operator evaluations or by a criterion guaranteeing convergence informing the user that they can trust the result. 
+
+#### Additions to `regpy.tests`
+- systematic tests of Solvers. Agreements in special cases (e.g., comparisons with spectral implementations, standard vs. codomain-free variants, nonlinear solvers applied to linear operators) + convergence tests
+- tests of StopRules
+
+### Changed  
+- Completed typing everywhere
+
+#### Changes in `regpy.vecsps`
+- Introduced a strict protocol for duck typing of vectors summarized the protocol classes Vector and ReadOnlyVector. These are also useful for typing. Violations of this contract (such as x.real, etc) have been eliminated.   
+- In course of this,  intermediate classes MaskableVectorSpace and MaskedVectorSpace between VectorSpaceBase and NumPyVectorSpace/NGSolveVectorSpace were introduced.
+- Allowed for complex vector spaces, not treated as real spaces -- also in Operator. In particular, complex linear algebra can now be used for complex linear operators. A flag
+as_real_space indicates if a vector space with a complex data type is treated as real or as a complex space. This affects, in particular, the dimension of the vector space as well as iterators over elements and basis vectors. 
+
+#### Changes in `regpy.operators`
+- in-place variants added whenever useful
+
+#### Changes in `regpy.functionals`
+- in-place variants and use of buffers for gradients, proximal operators, etc. 
+- numpy split in integral_functionals, vector_integral_functionals, and matrix_integral_functionals 
+- derived several classes such as QuadraticBilateralConstraint from new Quadratic
+- TV: Fixed bugs and allowed for more efficient solvers than Chambolle
+- RelativeEntropy can also be used as data_functional -- useful if it has to incorporated the initial guess
+
+#### Changes in `regpy.solvers`
+- duality gap evaluated with the help of Bregman distance to avoid cancellation effects;
+  separation between domain and codomain
+- used in-place variants as much as possible to avoid unnecessary repeated allocations. 
+- init now attribute of Setting. A flag incorporate_init_in_penalty determines if init is only used as starting point of iterative solvers or if it is also incorporated into the penalty
+- deleted back-tracking in Landweber (poor performance, lack of theory). For rapidly changing operator norms, scheduled re-evaluations of the operator norm can be used instead. 
+- ADMM: use of SVD (if available) to compute Tikhonov inverse; corrected use of Gram matrices
+
+#### Changes in `regpy.stoprules`
+- introduced submodule containing stoprules
+- added factories (including default factories)
+- interface of Discrepancy simplied
+
+### Deprecated
+- attribute size of VectorSpaceBase (use dimension instead!)
+- Setting.set_method_parameters. Use set_method_params instead! (for consistency of names)
+
+### Removed
+- shape and ndim as attributes of VectorSpaceBase
+- Old interface of Discrepancy
+- ApproximateHessian
+- IrgnmSemiSmooth (available as IRN with SSN as inner solver)
+
 ## [1.1.0]
 
 ### Added
