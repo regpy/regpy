@@ -2212,10 +2212,10 @@ class Setting:
 def get_linear_reg_method_dictionary() -> dict:
     r"""Return regularization methods intended for linear operators.
     
-    ``FISTA`` is available without a regularization parameter when the
-    setting penalty is of squared-norm type or is a null functional. In that
-    mode the penalty determines the domain Hilbert geometry but is not part of
-    the minimized objective.
+    ``nFISTA`` and ``nFB`` are available without a regularization parameter
+    for supported convex penalties. Squared-norm terms are discarded, while
+    bound constraints from Quadratic integral penalties are retained, also
+    componentwise on direct sums.
     
     
     Returns
@@ -2226,6 +2226,7 @@ def get_linear_reg_method_dictionary() -> dict:
     from .linear import (
         CGNE,
         FISTA,
+        ForwardBackwardSplitting,
         Landweber as linLandweber,
         Bregman,
         RunOnAlphaGrid,
@@ -2238,7 +2239,11 @@ def get_linear_reg_method_dictionary() -> dict:
     return _with_stoprule_defaults({
             'nFISTA':   {'class': FISTA,
                         'primal': True,
-                        'full': 'Fast Iterative Thresholding for with no penalty'
+                        'full': 'Fast Iterative Shrinkage-Thresholding for unregularized linear problems, with optional box constraints'
+                        },
+            'nFB':      {'class': ForwardBackwardSplitting,
+                        'primal': True,
+                        'full': 'Forward-Backward Splitting for unregularized linear problems, with optional box constraints'
                         },
             'linLW':    {'class': linLandweber, 
                          'full': 'Landweber iteration for linear problems'
