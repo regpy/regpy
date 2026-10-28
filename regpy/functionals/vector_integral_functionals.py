@@ -408,8 +408,11 @@ class TVUniformGridFcts(Composed):
 
     Parameters
     ----------
-    domain : regpy.vecsps.UniformGridFcts
-        Underlying domain. 
+    domain : UniformGridFcts | MaskedVectorSpace
+        Uniform grid or a masked space obtained from a UniformGridFcts.
+        Masked vectors are extended by zero before finite differences; TV
+        therefore includes jumps across the mask boundary.  The gradient
+        codomain is the full-grid vector-valued measure space. 
     h_domain : regpy.hilbert.HilbertSapce (default: L2)
         Underlying Hilbert space for proximal. 
     beta: float (>=0) [optional, default:0.]
@@ -460,7 +463,8 @@ class TVUniformGridFcts(Composed):
             super().__init__(op=tv.grad,
                              data_fid = tv.func, 
                              penalty = L2, 
-                             init = penalty_shift, 
+                             init = penalty_shift,
+                             incorporate_init_in_penalty=True,
                              regpar = 1./tau,
                              explicitDataWarning=False)
 
@@ -504,7 +508,11 @@ class TVUniformGridFcts(Composed):
             super().__init__(setting, x=x,y=y)
             self.lastx = self.x
             primal = setting._primal_setting
-            self.vol_el =  primal.op.domain.volume_elem            
+            # Masked spaces store flattened values, but their L2 geometry
+            # retains the same cell volume as the generating uniform grid.
+            self.vol_el = TVUniformGridFcts._grid_and_extension(
+                primal.op.domain
+            )[0].volume_elem            
             self.grad = primal.op
             self.x = x if x is not None else  self.grad.codomain.zeros()
             self.S = primal.data_fid
@@ -592,6 +600,36 @@ class TVUniformGridFcts(Composed):
             out['rate']=np.nan            
             return out,par 
 
+    @staticmethod
+    def _grid_and_extension(domain: VectorSpaceBase):
+        """Return the underlying uniform grid and zero-extension operator.
+
+        Nested masks are supported.  A mask on a different kind of measure
+        space is deliberately not interpreted as a regular spatial grid.
+        """
+        from regpy.vecsps.maskable import MaskedVectorSpace
+
+        if isinstance(domain, UniformGridFcts):
+            return domain, None
+        if not isinstance(domain, MaskedVectorSpace):
+            raise TypeError(
+                "TV requires a UniformGridFcts or a masked space derived "
+                "from UniformGridFcts."
+            )
+
+        current = domain
+        extension = None
+        while isinstance(current, MaskedVectorSpace):
+            full = current.get_full_space()
+            step = rop.CoordinateProjection(full, current.mask).adjoint
+            extension = step if extension is None else step * extension
+            current = full
+        if not isinstance(current, UniformGridFcts):
+            raise TypeError(
+                "TV requires a masked space derived from UniformGridFcts."
+            )
+        return current, extension
+
     #####################################################################
     def __init__(self, domain: VectorSpaceBase,
                  beta:float =0.,
@@ -604,13 +642,25 @@ class TVUniformGridFcts(Composed):
                 ) -> None:
         from regpy.stoprules import DualityGapStopping,CountIterations,StopRule
 
-        if not isinstance(domain, UniformGridFcts):
-            raise TypeError(Errors.not_instance(domain,UniformGridFcts,'only implemented for UniformGridFcts'))
-        self.grad = rop.ForwardFDGradient(domain, boundary_condition=boundary_condition)
+        # On a masked grid, compute spatial derivatives on the original
+        # uniform grid after extending missing coefficients by zero.  This
+        # preserves the spatial geometry, the value axes (e.g. RGB channels),
+        # and the correct TV jump across the support boundary.
+        full_grid, self.extension = self._grid_and_extension(domain)
+        self.full_grid = full_grid
+        full_grad = rop.ForwardFDGradient(
+            full_grid, boundary_condition=boundary_condition
+        )
+        self.grad = (full_grad if self.extension is None
+                     else full_grad * self.extension)
 
-        self.beta = beta # also sets self.func as L1L2 or HuberL2!
-        super().__init__(self.func, op= self.grad, op_norm = self.grad.norm(),
-                         methods = {'eval','proximal'},conj_methods = {'proximal'})
+        self.beta = beta  # also sets self.func as L1L2 or HuberL2
+        # Zero extension is isometric for the standard uniform-grid L2 norm,
+        # so the analytic full-grid gradient bound remains valid.  Avoid
+        # estimating the norm of a potentially large composition numerically.
+        super().__init__(self.func, op=self.grad, op_norm=full_grad.norm(),
+                         methods={'eval', 'proximal'},
+                         conj_methods={'proximal'})
 
         self.prox_setting = TVUniformGridFcts.TV_prox_setting(self)
         if prox_method not in self.prox_setting.applicable_methods():
@@ -619,7 +669,18 @@ class TVUniformGridFcts(Composed):
             self.prox_method = prox_method      
         self._fista_zero_data = {}
         if prox_stop_rule is None:
-            prox_stop_rule = DualityGapStopping(tol=1e-4,stop_at_infty = False,logging_level=prox_it_logging_level) + CountIterations(500,logging_level=prox_it_logging_level)
+            # The TV proximal objective may be extremely small, especially on
+            # masked grids or for small-amplitude iterates.  An absolute
+            # duality-gap tolerance such as 1e-4 can therefore certify the
+            # initial (nonoptimal) iterate before FISTA has taken a step.
+            # Use a scale-independent relative criterion instead.
+            prox_stop_rule = (
+                DualityGapStopping(
+                    tol=1e-12, reltol=0.1, stop_at_infty=False,
+                    logging_level=prox_it_logging_level,
+                )
+                + CountIterations(500, logging_level=prox_it_logging_level)
+            )
         elif not isinstance(prox_stop_rule,StopRule):
             raise ValueError(Errors.value_error(f"{prox_stop_rule} is not a StopRule."))
         if not isinstance(prox_method_param,dict):
@@ -682,6 +743,8 @@ class TVUniformGridFcts(Composed):
         return func
       
     def _proximal(self, x: ReadOnlyVector, tau: float, out: Vector | None=None, **kwargs: Any) -> Vector:
+        # Setting.init also updates penalty.as_data_func(x) because the
+        # proximal setting uses incorporate_init_in_penalty=True.
         self.prox_setting.init = x
         self.prox_setting.regpar = 1. / tau
         prox_method_param = self.prox_method_param.copy()

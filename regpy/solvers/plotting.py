@@ -306,6 +306,62 @@ def _evals_for_history(rule: StopRule, key: Any, length: int, components: list[s
     )
 
 
+
+def _cg_tolerance_components(components: Sequence[StopRule]) -> list[tuple[StopRule, str, float]]:
+    """Return recorded CG error criteria and their *actual* stop thresholds.
+
+    Relative criteria use ``tol/(1 + tol)`` internally, not the constructor's
+    ``tol``.  Looking for the concrete rule types also excludes unrelated
+    histories with coincidentally similar names.
+    """
+    from regpy.solvers.linear.tikhonov import TikhonovCG
+
+    specifications = (
+        (TikhonovCG.TolStop, "abs_err"),
+        (TikhonovCG.RelTolXStop, "rel_err_x"),
+        (TikhonovCG.RelTolYStop, "rel_err_y"),
+    )
+    result = []
+    for component in components:
+        for rule_type, key in specifications:
+            if isinstance(component, rule_type) and component.history_dict.get(key):
+                threshold = (component.tolexpr if key.startswith("rel_err_")
+                             else component.tol)
+                result.append((component, key, float(threshold)))
+                break
+    return result
+
+
+def _convergence_plot_axes(axes_argument: Any, number: int, plt: Any) -> tuple[Any, np.ndarray, bool]:
+    """Use caller-provided Matplotlib axes or create exactly as many as needed."""
+    from matplotlib.axes import Axes
+
+    if axes_argument is None:
+        figure, grid = plt.subplots(number, 1, figsize=(8.0, 3.4 * number),
+                                   squeeze=False, sharex=False)
+        return figure, grid[:, 0], True
+
+    if isinstance(axes_argument, Axes):
+        supplied = np.asarray([axes_argument], dtype=object)
+    elif isinstance(axes_argument, (list, tuple, np.ndarray)):
+        supplied = np.asarray(axes_argument, dtype=object).ravel()
+    else:
+        raise TypeError("axes must be a Matplotlib Axes or a sequence/array of Axes.")
+    if not all(isinstance(axis, Axes) for axis in supplied):
+        raise TypeError("axes must contain only Matplotlib Axes objects.")
+    if supplied.size < number:
+        raise ValueError(
+            f"convergence_plots requires {number} axes for the available "
+            f"convergence plots, but only {supplied.size} were provided."
+        )
+    selected = supplied[:number]
+    if len({id(axis) for axis in selected}) != number:
+        raise ValueError("axes must refer to distinct Matplotlib Axes objects.")
+    figure = selected[0].figure
+    if any(axis.figure is not figure for axis in selected):
+        raise ValueError("All axes used by convergence_plots must belong to the same figure.")
+    return figure, selected, False
+
 def convergence_plots(
     setting: Setting,
     x_axis: str = "its",
@@ -315,15 +371,20 @@ def convergence_plots(
     ref_err_x: float | None = None,
     ref_err_y: float | None = None,
     gap_pow: float = 2,
+    axes: Any | None = None,
 )  -> tuple[Any, Any]:
     r"""Plot convergence histories for selected methods that have been run.
     
     The function inspects the stopping rule stored for every method in
     ``setting._methods``. Nested combined rules are searched recursively for
     :class:`ErrorMonitor`, :class:`DualityGapStopping`, and
-    :class:`OptimalityCondStopping` components. Each available history type
-    gets its own subplot, and every recorded history is plotted on a
-    logarithmic y-axis. The duality-gap subplot appears first and also shows
+    :class:`OptimalityCondStopping` components, as well as the internal
+    absolute and relative error criteria of :class:`TikhonovCG`. All active
+    CG criteria and their stopping thresholds appear together in one dedicated
+    subplot with a logarithmic y-axis, separate from the duality gap and
+    other convergence histories. The relative stop thresholds are
+    ``reltol/(1 + reltol)``, as used by the CG stopping rules. Every recorded
+    history is plotted on a logarithmic y-axis. The duality-gap subplot appears first and also shows
     the x-error histories as dashed lines and y-errors as dotted lines, both
     without markers. Y-errors are divided by sqrt(setting.regpar) only for
     convex Tikhonov settings (is_tikhonov and is_convex). These also share one errors panel.
@@ -331,8 +392,8 @@ def convergence_plots(
     comparison subplot containing their original and additional gaps, with
     one labelled curve per functional and method and the gap_pow transform.
     Only the first overlay of each error type is labelled in the gap panel.
-    Final curve points are excluded from y-limit selection where possible,
-    except in the errors panel, which uses automatic scaling of all points.
+    Every positive finite curve point, including the final one, is considered
+    when setting logarithmic y-limits (the errors panel uses autoscaling).
     Method colors are shared across subplots and retained on the setting.
     Application plots can retrieve them with ``get_method_colors(setting)``. Curve widths and marker sizes
     are half the Matplotlib defaults active when this function is called.
@@ -374,6 +435,12 @@ def convergence_plots(
         Positive finite exponent denominator for duality-gap curves. Plot
         gap**(1/gap_pow) for both gap panels, with matching subplot titles. Stored histories
         and all other subplot values are unchanged.
+    axes: matplotlib.axes.Axes | sequence of Axes | None [default: None]
+        Axes to draw into, in the order of the generated panels. A single Axes,
+        a list/tuple or a NumPy array (including a subplot grid) is accepted.
+        If omitted, a new figure and the required number of axes are created.
+        Extra supplied axes are left untouched. All used axes must belong to
+        the same figure. A ValueError is raised if too few axes are supplied.
     
     Returns
     -------
@@ -389,8 +456,9 @@ def convergence_plots(
         dictionary, or if ``methods`` or ``title`` has the wrong type.
     ValueError
         If a requested method name is unknown, if no requested histories are
-        available, if x_axis is unknown, or if a history cannot be aligned
-        with the requested timing or evaluation counter.
+        available, if x_axis is unknown, if a history cannot be aligned
+        with the requested timing or evaluation counter, or if too few axes
+        are supplied.
     """
     if (isinstance(gap_pow, (bool, np.bool_))
             or not isinstance(gap_pow, (int, float, np.integer, np.floating))):
@@ -398,8 +466,6 @@ def convergence_plots(
     if not np.isfinite(gap_pow) or gap_pow <= 0:
         raise ValueError("gap_pow must be positive and finite.")
     import matplotlib.pyplot as plt    
-    from matplotlib.axes import Axes
-    from matplotlib.figure import Figure
     if not isinstance(x_axis, str):
         raise TypeError("x_axis must be a string.")
     if x_axis not in {"its", "time", "op_evals"}:
@@ -432,6 +498,10 @@ def convergence_plots(
     series: dict[str, list[tuple[str, np.ndarray, np.ndarray]]] = {
         subplot_title: [] for subplot_title, _, _ in _PLOT_SPECS
     }
+    # For each labelled CG criterion retain the stopping threshold and its
+    # criterion type, which also determines the line style.
+    cg_thresholds: dict[str, tuple[float, str]] = {}
+    series["CG stopping criteria"] = []
 
     for method_name, method_data in selected_methods:
         if not isinstance(method_data, dict):
@@ -446,7 +516,8 @@ def convergence_plots(
         # setting is not attached to the solver, although its child rules are
         # attached and contain the recorded histories.
         components = list(_rule_components(stoprule))
-        has_requested_history = any(
+        cg_components = _cg_tolerance_components(components)
+        has_requested_history = bool(cg_components) or any(
             isinstance(component, rule_type)
             and any(
                 len(component.history_dict.get(key, ())) > 0
@@ -502,6 +573,26 @@ def convergence_plots(
                         (label, horizontal, values)
                     )
 
+        for criterion_index, (component, key, threshold) in enumerate(cg_components, start=1):
+            values = np.asarray(component.history_dict[key], dtype=float)
+            if values.ndim != 1:
+                raise ValueError(
+                    f"CG history {key!r} of method {method_name!r} must be one-dimensional."
+                )
+            horizontal = (
+                _times_for_history(component, key, len(values), clocks)
+                if x_axis == "time"
+                else _evals_for_history(component, key, len(values), components)
+                if x_axis == "op_evals"
+                else _history_steps(component, key, len(values))
+            )
+            label = f"{method_name}: {key}"
+            if any(label == old_label for old_label, _, _ in series["CG stopping criteria"]):
+                label = f"{method_name}: {key} #{criterion_index}"
+            curve_methods[label] = method_name
+            series["CG stopping criteria"].append((label, horizontal, values))
+            cg_thresholds[label] = (threshold, key)
+
     # A comparison is useful only for methods with multiple recorded gaps.
     comparison = series["Duality gap comparison"]
     gap_counts = {}
@@ -537,8 +628,8 @@ def convergence_plots(
         active_series.append(("Errors in x and y", []))
     if not active_series:
         raise ValueError(
-            "No recorded ErrorMonitor, DualityGapStopping, or "
-            "OptimalityCondStopping histories were found."
+            "No recorded ErrorMonitor, DualityGapStopping, "
+            "OptimalityCondStopping, or CG tolerance histories were found."
         )
 
     # Keep each method's color stable across histories and subplots.
@@ -547,19 +638,14 @@ def convergence_plots(
     linewidth = plt.rcParams['lines.linewidth'] / 2
     markersize = plt.rcParams['lines.markersize'] / 2
 
-    figure, axes_grid = plt.subplots(
-        len(active_series),
-        1,
-        figsize=(8.0, 3.4 * len(active_series)),
-        squeeze=False,
-        sharex=False,
+    figure, plot_axes, created_figure = _convergence_plot_axes(
+        axes, len(active_series), plt
     )
-    axes: np.ndarray = axes_grid[:, 0]
     x_label = {"its": "Iteration", "time": "CPU time [s]",
                "op_evals": "Operator evaluations (weighted)"}[x_axis]
 
     for axis, (subplot_title, curves) in zip(
-        axes, active_series, strict=True
+        plot_axes, active_series, strict=True
     ):
         axis.set_yscale("log")
         axis.tick_params(axis="both", labelsize=fontsize-2)
@@ -580,10 +666,26 @@ def convergence_plots(
                      if subplot_title == "Duality gap comparison" else '-')
             marker = (('.', 's', 'o','x')[curve_index % 4]
                       if subplot_title == "Duality gap comparison" else 'o')
+            if subplot_title == "CG stopping criteria":
+                threshold, key = cg_thresholds[label]
+                style, marker = {
+                    "abs_err": ("-", "o"),
+                    "rel_err_x": ("--", "s"),
+                    "rel_err_y": ("-.", "^"),
+                }[key]
             axis.plot(horizontal, plotted_values, marker=marker, linestyle=style, label=label,
                       color=method_colors[curve_methods[label]],
                       linewidth=linewidth, markersize=markersize)
             include_for_scaling(plotted_values)
+            if subplot_title == "CG stopping criteria":
+                # The relative CG rules stop at tol/(1+tol), *not* tol.
+                # Non-positive thresholds cannot be displayed on a log axis.
+                if np.isfinite(threshold) and threshold > 0:
+                    axis.axhline(threshold, linestyle=":", alpha=0.8,
+                                 color=method_colors[curve_methods[label]],
+                                 linewidth=linewidth,
+                                 label=f"{label} threshold ({threshold:.3g})")
+                    include_for_scaling([threshold])
         if subplot_title in ("Duality gap", "Errors in x and y"):
             labelled = set()
             for label, horizontal, values, style, suffix in error_curves:
@@ -625,11 +727,14 @@ def convergence_plots(
         axis.legend(fontsize = fontsize-2)
 
     if title is not None:
-        figure.suptitle(title,fontsize = fontsize+2)
-        figure.tight_layout(rect=(0, 0, 1, 0.97))
-    else:
-        figure.tight_layout()
-    return figure, axes
+        figure.suptitle(title, fontsize=fontsize+2)
+    # Do not rearrange a caller-managed layout.
+    if created_figure:
+        if title is not None:
+            figure.tight_layout(rect=(0, 0, 1, 0.97))
+        else:
+            figure.tight_layout()
+    return figure, plot_axes
 
 
 def op_eval_over_time_plot(

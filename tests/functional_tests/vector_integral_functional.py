@@ -3,7 +3,7 @@ import numpy as np
 from regpy.functionals import Hub, TV, VFunc, HuberL2, L1L2, LppL2
 from regpy.util import functional_tests as ft
 from regpy.util import set_rng_seed
-from regpy.vecsps import UniformGridFcts
+from regpy.vecsps import UniformGridFcts, MaskedMeasureSpaceFcts, MaskedVectorSpace
 from regpy.operators import ForwardFDGradient
 
 set_rng_seed(15873098306879350073259142812684978477)
@@ -117,3 +117,46 @@ def test_tv_exact_uses_single_frobenius_norm_per_pixel():
         np.sqrt(np.sum(np.abs(gx)**2, axis=(-2, -1))),
     )
     np.testing.assert_allclose(func(gx), expected)
+
+def disk_mask(grid, radius=0.8):
+    xx, yy = grid.coords
+    return xx**2 + yy**2 <= radius**2
+
+
+@pytest.mark.parametrize('beta', [0., 0.2])
+@pytest.mark.parametrize('boundary_condition', ['Neum', 'Diri', 'per'])
+def test_masked_tv_equals_full_grid_tv_of_zero_extension(beta, boundary_condition):
+    grid = UniformGridFcts((-1., 1., 9), (-1., 1., 11))
+    masked = grid.get_masked_space(disk_mask(grid))
+    assert isinstance(masked, MaskedVectorSpace)
+    tv = TV(masked, beta=beta, boundary_condition=boundary_condition)
+    full_tv = TV(grid, beta=beta, boundary_condition=boundary_condition)
+
+    x = np.linspace(-0.5, 1., masked.shape[0])
+    np.testing.assert_allclose(tv(x), full_tv(masked.extend(x)), rtol=1e-13, atol=1e-13)
+    np.testing.assert_allclose(tv.grad(x), full_tv.grad(masked.extend(x)),
+                               rtol=1e-13, atol=1e-13)
+    assert tv.domain == masked
+    assert tv.grad.domain == masked
+    assert tv.grad.codomain == full_tv.grad.codomain
+
+
+@pytest.mark.parametrize('beta', [0., 0.1])
+def test_masked_tv_penalizes_jump_at_support_boundary(beta):
+    grid = UniformGridFcts((-1., 1., 11), (-1., 1., 11))
+    masked = grid.get_masked_space(disk_mask(grid, radius=0.55))
+    tv = TV(masked, beta=beta)
+    assert tv(masked.ones()) > 0.
+    assert TV(grid, beta=beta)(grid.ones()) == pytest.approx(0.)
+
+
+def test_masked_gradient_algebraic_adjoint():
+    grid = UniformGridFcts((-1., 1., 8), (-1., 1., 9))
+    masked = grid.get_masked_space(disk_mask(grid, radius=0.7))
+    grad = TV(masked).grad
+    rng = np.random.default_rng(52)
+    x = rng.standard_normal(masked.shape)
+    p = rng.standard_normal(grad.codomain.shape)
+    np.testing.assert_allclose(np.vdot(grad(x), p),
+                               np.vdot(x, grad.adjoint(p)),
+                               rtol=2e-13, atol=2e-13)

@@ -179,10 +179,10 @@ def _run_inner_cg(
         x0=solver.deriv.domain.zeros(),
         **cg_pars,
     )
-    result = cg.run(stoprule=stoprule)
-    from ..linear.bregman import _log_inner_summary
-    _log_inner_summary(solver.log, type(cg).__name__, stoprule)
-    return result
+    # Inner solver and stopping-rule messages are controlled independently of
+    # the outer solver (WARNING by default). IRGNM/LM reports one INFO summary
+    # after the solve, including alpha and the number of *completed* CG steps.
+    return cg.run(stoprule=stoprule)
 
 class IrgnmCG(RegSolver):
     r"""The Iteratively Regularized Gauss-Newton Method method. In each iteration, minimizes
@@ -220,7 +220,8 @@ class IrgnmCG(RegSolver):
         Maximum number of inner CG iterations.
     inner_it_logging_level: int | str [default: 'WARNING']
         Level for inner CG and its stopping rules, unless cg_pars supplies
-        logging_level. Inner-run summaries use the outer solver's INFO level.
+        logging_level. At outer INFO level, only the outer alpha/CG-iteration
+        summary is emitted (unless inner logging is explicitly enabled).
     simplified_op: Operator | None [default: None]
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. This option is
@@ -332,7 +333,8 @@ class IrgnmCG(RegSolver):
         else:
             self.y , self.deriv = self.op.linearize(self.x)
         self._nr_inner_steps = stoprule.solver.iteration_step_nr
-        self.log.info('it %s: alpha=%s', self.iteration_step_nr, self.regpar)
+        self.log.info('it %s: alpha=%.3e, CG iterations=%d',
+                      self.iteration_step_nr, self.regpar, self._nr_inner_steps)
         try:
             self.regpar = _next_regularization_parameter(
                 self._regpar_iterator
@@ -423,7 +425,8 @@ class LevenbergMarquardt(RegSolver):
         Maximum number of inner CG iterations.
     inner_it_logging_level: int | str [default: 'WARNING']
         Level for inner CG and its stopping rules, unless cg_pars supplies
-        logging_level. Inner-run summaries use the outer solver's INFO level.
+        logging_level. At outer INFO level, only the outer alpha/CG-iteration
+        summary is emitted (unless inner logging is explicitly enabled).
     simplified_op: Operator | None [default: None]
         An operator the with the same mapping properties as setting.op, which is cheaper to evaluate. 
         It is used for the derivative in the Newton equation. This option is
@@ -537,7 +540,8 @@ class LevenbergMarquardt(RegSolver):
         else:
             self.y , self.deriv = self.op.linearize(self.x)
         self._nr_inner_steps = stoprule.solver.iteration_step_nr
-        self.log.info('it %s: alpha=%s', self.iteration_step_nr, self.regpar)
+        self.log.info('it %s: alpha=%.3e, CG iterations=%d',
+                      self.iteration_step_nr, self.regpar, self._nr_inner_steps)
         try:
             self.regpar = _next_regularization_parameter(
                 self._regpar_iterator

@@ -495,7 +495,7 @@ class BoundConstrSetting(Setting):
         self.set_method_params('FISTA_SSN', {'fista_reltol': 0.5, 'ssn_primal': True})
         self.set_stoprule_params('FISTA_SSN',
                                       {'factory':'DualityGapStopping',
-                                       'max_it':100
+                                       'max_it':1000
                                        }
                                        )
         # This combined solver takes the original primal Setting and creates
@@ -510,7 +510,7 @@ class BoundConstrSetting(Setting):
         self.set_method_params('dFISTA_SSN', {'fista_reltol': 0.5, 'ssn_primal': False})
         self.set_stoprule_params('dFISTA_SSN',
                                       {'factory':'DualityGapStopping',
-                                       'max_it':100
+                                       'max_it':1000
                                        }
                                        )
 
