@@ -1,626 +1,543 @@
 Operators in RegPy
 ==================
 
-This tutorial expands on the :doc:`usage guide <usage>` and explains how to
-define custom operators using :class:`regpy.operators.Operator`.
+An :class:`regpy.operators.Operator` represents a possibly nonlinear map
+:math:`F:X\to Y` between RegPy vector spaces. Both real- and complex-valued
+vectors occur in practice. In particular, an operator between complex array
+spaces need not be complex-linear: differentiation and adjoints use the
+underlying real duality whenever appropriate. See :doc:`Spaces` for vector
+storage, scalar fields and Hilbert-space structures.
 
-In RegPy, an operator represents a possibly nonlinear mapping between vector
-spaces :math:`\mathbb{X}` and :math:`\mathbb{Y}`:
+Users evaluate an operator with ``F(x)`` and can optionally supply a writable
+result buffer using ``F(x, out=y)``. RegPy also supports compositions,
+linear combinations, scalar and pointwise multiplication, and offsets in the
+input or output. We first explain how to implement a simple operator; the
+section :ref:`building_operators` then discusses combinations in detail.
 
-.. math::
-    F\colon \mathbb{X}\to\mathbb{Y}.
-
-The spaces :math:`\mathbb{X}` and :math:`\mathbb{Y}` are instances of
-:class:`regpy.vecsps.VectorSpaceBase`. Their vectors are duck typed and need
-not be NumPy arrays; see :doc:`Spaces`. Complex coefficient spaces are treated
-as real vector spaces, so a finite-dimensional domain and codomain can be
-identified with :math:`\mathbb{R}^N` and :math:`\mathbb{R}^M`, respectively.
-
-A linear operator :math:`T\colon \mathbb{X}\to\mathbb{Y}` can be represented
-by a matrix :math:`\underline{T}\in\mathbb{R}^{M\times N}`. Forming this
-matrix may be inefficient or impossible, whereas applying it to a vector is
-often feasible. RegPy represents this action through ``_eval`` and the action
-of the standard vector-space adjoint through ``_adjoint``.
-
-Equivalently, ``_adjoint`` represents the dual operator
-:math:`T'\colon\mathbb{Y}'\to\mathbb{X}'` after identifying each space with
-its dual through the standard real pairing:
+The operator's adjoint is defined with respect to the *standard vector-space
+pairings*, not with respect to arbitrary Hilbert-space norms chosen for an
+inverse problem. For NumPy vectors the standard real pairing is
 
 .. math::
-    \langle u,v\rangle = \operatorname{Re}(\operatorname{vdot}(u,v)).
 
-The same real-pairing convention is used throughout RegPy, including for
-functionals.
+   \langle x,z\rangle_{\mathbb R}=\operatorname{Re}\bigl(\operatorname{vdot}(x,z)\bigr).
 
-Thus ``_eval`` and ``_adjoint`` must satisfy
+When Hilbert norms are induced by Gram operators :math:`G_X,G_Y`, the
+corresponding Hilbert adjoint is instead :math:`G_X^{-1}T^*G_Y`. This
+separation is important when implementing discrete adjoints.
 
-.. code-block:: python
+.. _implementing_linear_operators:
 
-    T.codomain.vdot(T(x), y).real == T.domain.vdot(x, T.adjoint(y)).real
+Implementing a linear operator
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-If :math:`T` is :math:`\mathbb{C}`-linear and represented by a matrix
-:math:`\underline{T}\in\mathbb{C}^{M\times N}`, then ``T.adjoint`` is
-represented by the conjugate transpose of
-:math:`\underline{T}`. In that case, the corresponding complex identity also
-holds before taking real parts.
+Every linear operator defines its ``domain`` and ``codomain`` and supplies an
+evaluation and its adjoint. The public ``op(x)`` and ``op.adjoint(y)``
+interfaces dispatch to the implementation hooks ``_eval`` and ``_adjoint``
+(or the in-place variants discussed below).
 
-Regularization methods often equip the spaces with additional Hilbert-space
-structures. If their inner products are represented by the Gram matrices
-:math:`G_{\mathbb{X}}` and :math:`G_{\mathbb{Y}}`, then the corresponding
-Hilbert-space adjoint is
-
-.. math::
-    T^{\ast} = G_{\mathbb{X}}^{-1} T' G_{\mathbb{Y}},
-
-where :math:`T'` denotes the adjoint with respect to the standard
-vector-space pairings.
-
-This decomposition motivates RegPy's design: an operator adjoint is defined
-with respect to the standard pairings supplied by its vector spaces. Additional
-Hilbert-space geometry is introduced separately through Gram operators. The
-operator representation therefore remains independent of the inner products,
-data-fidelity terms, and penalties used by a particular inverse problem.
-
-Using existing operators
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-The easiest way to construct an operator is often to combine existing classes
-from :mod:`regpy.operators`. The module includes multiplication, Fourier
-transform, convolution, direct-sum, and composition operators.
-
-.. code-block:: python
-
-    op_1 = Some_Operator(...)
-    op_2 = Some_other_Operator(...)
-
-    my_op = op_1 * op_2  # requires op_2.codomain == op_1.domain
-    shifted_op = my_op + my_op.codomain.rand()
-
-Common operator operations include:
-
-* ``a * op1 + b * op2``: linear combination;
-* ``op1 * op2``: composition;
-* ``op * factor``: composition with pointwise multiplication in the domain;
-* ``op + offset``: shift in the codomain.
-
-
-.. _Linear_Operator:
-
-Linear operators
-~~~~~~~~~~~~~~~~
-
-Every operator requires ``domain`` and ``codomain`` instances derived from
-:class:`regpy.vecsps.VectorSpaceBase`. They may be supplied to the constructor
-or constructed from its parameters. These objects describe vector membership
-and storage operations; they do not prescribe a Hilbert-space inner product.
-
-The initialization
-------------------
-
-For example, an operator between two uniform two-dimensional grids may accept
-axis specifications ``(start, end, number)`` and construct
-:class:`regpy.vecsps.UniformGridFcts` instances:
-
-.. code-block:: python
-
-    def __init__(self, d_1, d_2, cd_1, cd_2):
-        domain = UniformGridFcts(d_1, d_2)
-        codomain = UniformGridFcts(cd_1, cd_2)
-        super().__init__(domain=domain, codomain=codomain, linear=True)
-
-For a linear operator, you need to implement two methods:
-
-* ``_eval`` computes the action of the forward operator.
-* ``_adjoint`` computes the action of its adjoint.
-
-Example
-^^^^^^^
-
-Consider a two-dimensional Fourier transform on a centered square grid. Let
-``d = (-1, 1, 100)`` specify each domain axis. The dual grid spacing determines
-the codomain:
-
-.. code-block:: python
-
-    def __init__(self, d):
-        domain = UniformGridFcts(d, d, dtype=complex)
-        cd = (-1 / (2 * domain.spacing[0]),
-              1 / (2 * domain.spacing[0]),
-              domain.shape[0])
-        codomain = UniformGridFcts(cd, cd, dtype=complex)
-        super().__init__(
-            domain=domain,
-            codomain=codomain,
-            linear=True,
-        )
-
-
-The evaluation method
----------------------
-
-For a linear operator, ``_eval`` receives a single vector ``x``. Users invoke
-the public interface as ``op(x)``; :class:`regpy.operators.Operator` checks
-that ``x`` belongs to the domain and that the returned vector belongs to the
-codomain. An
-implementation of ``_eval`` may therefore assume a valid input, but it must
-return a freely modifiable codomain vector.
-
-Example
-^^^^^^^
-
-For the two-dimensional Fourier transform, the NumPy implementation is:
-
-.. code-block:: python
-
-    def _eval(self, x):
-        return np.fft.fftshift(np.fft.fftn(np.fft.ifftshift(x), norm='ortho'))
-
-The adjoint evaluation method
------------------------------
-
-The ``_adjoint`` method follows the same convention. Users call
-``op.adjoint(y)``; the public interface validates ``y`` against the codomain
-and validates the result against the domain. The adjoint is always taken with
-respect to the standard real pairings of the two vector spaces.
-
-As mentioned above, RegPy defines adjoints with respect to the standard real
-pairing. For vectors with complex coefficients, this pairing is
+**Example: summation with constant extrapolation.** Let :math:`1\le n\le m`
+and define :math:`T:\mathbb K^n\to\mathbb K^m`, for
+:math:`\mathbb K\in\{\mathbb R,\mathbb C\}`, by
 
 .. math::
-    \langle x,y\rangle_{\mathbb{R}}
-    = \operatorname{Re}(x^*y).
 
-If ``_eval`` is represented by a matrix :math:`\underline{T}`, the following
-cases are useful:
+   (Tf)_j=\sum_{k=1}^{j}\widetilde f_k,\qquad
+   \widetilde f_k=\begin{cases}
+     f_k & k\le n,\\
+     f_n & n<k\le m.
+   \end{cases}
 
-* If the domain and codomain have real coefficients, ``_adjoint`` implements
-  :math:`y\mapsto \underline{T}^{\top}y`.
-* If the domain and codomain have complex coefficients and ``_eval`` is
-  complex-linear, ``_adjoint`` implements
-  :math:`y\mapsto \underline{T}^{*}y`.
-* If the domain has real coefficients, the codomain has complex coefficients,
-  and ``_eval`` implements :math:`x\mapsto \underline{T}x`, then ``_adjoint``
-  implements :math:`y\mapsto \operatorname{Re}(\underline{T}^{*}y)`.
-* If the domain has complex coefficients, the codomain has real coefficients,
-  and ``_eval`` implements
-  :math:`x\mapsto \operatorname{Re}(\underline{T}x)`, then ``_adjoint``
-  implements :math:`y\mapsto \underline{T}^{*}y`.
-
-We recommend checking every new ``_adjoint`` implementation with
-:func:`regpy.util.operator_tests.test_adjoint`.
-
-For complex coefficient spaces, let :math:`\underline{T}` be the complex
-matrix of a complex-linear operator and let :math:`G_{\mathbb{X}}` and
-:math:`G_{\mathbb{Y}}` be Hermitian positive-definite Gram matrices. The
-Hilbert-space adjoint is then represented by
+Here indexing starts at one. Thus :math:`T(1,2,3)=(1,3,6,9,12)` for
+:math:`n=3,m=5`. The operator does not need an explicit dense matrix. Let
+:math:`s_k=\sum_{j=k}^{m}y_j`. Its standard adjoint is
 
 .. math::
-    T_{\mathbb{X},\mathbb{Y}}^{\ast}
-    = G_{\mathbb{X}}^{-1}\underline{T}^{*}G_{\mathbb{Y}}.
 
-This is consistent with the usual complex Hilbert-space adjoint and with
-RegPy's real-pairing convention.
+   (T^*y)_i=\begin{cases}
+       s_i & i<n,\\
+       \displaystyle\sum_{k=n}^{m}s_k & i=n.
+   \end{cases}
 
-Example
-^^^^^^^
-
-For the example above, the inverse Fourier transform defines the adjoint:
-
-.. code-block:: python
-
-    def _adjoint(self, y):
-        return np.fft.fftshift(np.fft.ifftn(np.fft.ifftshift(y), norm='ortho'))
-
-.. _in_place_variants:
-
-Allocating and in-place implementations
----------------------------------------
-
-Each fundamental operator action has an allocating and an in-place variant:
-
-* ``_eval(x, ...)`` and ``_ieval(x, out, ...)`` evaluate the operator;
-* ``_derivative(h, ...)`` and ``_iderivative(h, out, ...)`` apply the
-  derivative at the current linearization point;
-* ``_adjoint(y, ...)`` and ``_iadjoint(y, out, ...)`` apply the corresponding
-  adjoint.
-
-The leading ``i`` means that the result is written into the supplied ``out``
-vector. These are private implementation methods; callers continue to use the
-public operator interface and pass an output buffer with the ``out`` keyword:
+The following complete implementation uses
+:class:`regpy.vecsps.numpy.NumPyVectorSpace` for both spaces. The same code
+works with real or complex NumPy arrays; the complex case uses the standard
+real pairing, for which the formula above is also the adjoint.
 
 .. code-block:: python
 
-    y = op.codomain.empty()
-    op(x, out=y)
+   import numpy as np
+   from regpy.operators import Operator
+   from regpy.vecsps import NumPyVectorSpace
 
-    x_adjoint = op.domain.empty()
-    op.adjoint(y, out=x_adjoint)
+   class CumulativeSumExtrapolated(Operator):
+       """Cumulative sum with constant extension of the last entry."""
 
-For a nonlinear operator, the derivative returned by ``linearize`` has the
-same public interface:
+       def __init__(self, n, m, dtype=float):
+           if not (1 <= n <= m):
+               raise ValueError("Require 1 <= n <= m.")
+           self.n, self.m = n, m
+           domain = NumPyVectorSpace(n, dtype=dtype)
+           codomain = NumPyVectorSpace(m, dtype=dtype)
+           super().__init__(domain, codomain, linear=True)
 
-.. code-block:: python
+       def _eval(self, x):
+           extended = np.concatenate((
+               x, np.full(self.m - self.n, x[-1], dtype=x.dtype)
+           ))
+           return np.cumsum(extended)
 
-    value, derivative = op.linearize(x)
+       def _adjoint(self, y):
+           suffix = np.cumsum(y[::-1])[::-1]
+           result = self.domain.empty()
+           result[:-1] = suffix[:self.n - 1]
+           result[-1] = np.sum(suffix[self.n - 1:])
+           return result
 
-    derivative_value = op.codomain.empty()
-    derivative(h, out=derivative_value)
+   T = CumulativeSumExtrapolated(3, 5)
+   x = np.array([1., 2., 3.])
+   assert np.array_equal(T(x), [1., 3., 6., 9., 12.])
 
-    adjoint_value = op.domain.empty()
-    derivative.adjoint(y, out=adjoint_value)
+The forward and adjoint actions both require only :math:`O(m)` work.
+Different domain and codomain sizes also occur in discretizations using
+staggered grids; unlike this abstract array example, physical grids may
+require additional quadrature factors.
 
-An operator normally implements only one method from each allocating/in-place
-pair. The base class derives the other variant automatically. If only the
-in-place method is implemented, the allocating variant creates a vector in the
-appropriate output space and passes it as ``out``. If only the allocating
-method is implemented, the default in-place variant evaluates it and transfers
-the result into ``out`` using the output vector space's ``copyto`` method.
+Complex storage does not by itself force complex-scalar semantics: the
+``as_real_space`` argument of ``NumPyVectorSpace`` controls the scalar field
+and defaults to ``True``. Use ``as_real_space=False`` for a complex-scalar
+space if only one of the spaces :math:`X` and :math:`Y` is complex (otherwise 
+the notion of linearity is not defined) or if your operator is real-linear, 
+but not complex-linear.
 
-Implementing an in-place variant is useful when an algorithm can write directly
-to existing storage and thereby avoid an allocation or an additional copy. Its
-contract is:
+In-place implementations and buffers
+------------------------------------
 
-* ``out`` belongs to the method's output space: the codomain for ``_ieval`` and
-  ``_iderivative``, and the domain for ``_iadjoint``;
-* the method completely overwrites ``out`` and does not rely on its previous
-  contents;
-* it returns the exact same object supplied as ``out``.
-
-Whenever the domain and codomain are compatible, callers may supply the input
-itself as the output buffer. An implementation must therefore also be safe when
-``out is x`` or ``out is y``. If the underlying algorithm cannot naturally
-handle this aliasing, preserve the input through its vector space before
-overwriting ``out``:
-
-.. code-block:: python
-
-    def _ieval(self, x, out):
-        if out is x:
-            source = self.domain.empty()
-            self.domain.copyto(source, x)
-            x = source
-        evaluate_into(x, out)
-        return out
-
-This example uses only representation-independent storage operations. A
-specialized NumPy operator may instead use array assignment, while an NGSolve
-operator may use the corresponding NGSolve storage interface.
-
-Cached linearization data must remain valid if the caller subsequently reuses
-or modifies ``x`` or ``out``. 
-
-Defining the class
-------------------
-
-A custom linear operator typically has the following structure:
+For linear operators, RegPy supports pairs of implementation hooks:
+``_eval(x)`` / ``_ieval(x, out)`` and ``_adjoint(y)`` /
+``_iadjoint(y, out)``. Normally implementing one member of each pair is
+sufficient; the base class provides the other. For repeated evaluations,
+preallocated buffers can reduce allocation and copying:
 
 .. code-block:: python
 
-    from regpy.operators import Operator
+   out = T.codomain.empty()
+   T(x, out=out)
+   back = T.domain.empty()
+   T.adjoint(out, out=back)
 
-    class MyOperator(Operator):
-        def __init__(self, par_1, par_2):
-            # Compute the domain and codomain here if they are not parameters.
-            super().__init__(
-                domain=my_domain,
-                codomain=my_codomain,
-                linear=True,
-            )
+An in-place implementation must overwrite its entire output buffer and
+return **the same** ``out`` object. If domain and codomain permit aliasing,
+protect inputs when an output overlaps them. For specialized array operators,
+NumPy's ``out=`` support often makes this easy.
 
-        def _eval(self, x):
-            # Compute y = T(x).
-            return y
+.. _nonlinear_operator_tutorial:
 
-        def _adjoint(self, y):
-            # Compute x = T.adjoint(y) for the standard pairings.
-            return x
+Nonlinear operators and linearization
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-See the :doc:`Volterra example <notebooks/volterra_main_example>` for a compact
-application and the :doc:`traction-force microscopy example <notebooks/tfm>`
-for an NGSolve-based operator.
-
-Example
-^^^^^^^
-
-Combining the preceding snippets yields the following Fourier-transform
-operator:
+For a nonlinear :math:`F:X\to Y`, implement ``_eval(x,
+differentiate=False)``. If ``differentiate=True``, cache the quantities
+needed for the Fréchet derivative. Implement ``_derivative(h)`` and
+``_adjoint(y)`` to apply :math:`F'[x]` and its adjoint at the most recent
+linearization point. The corresponding in-place hooks are ``_ieval``,
+``_iderivative`` and ``_iadjoint``.
 
 .. code-block:: python
 
-    import numpy as np
-    from regpy.operators import Operator
-    from regpy.vecsps import UniformGridFcts
+   value, DF = F.linearize(x)
+   directional_change = DF(h)
+   backprojection = DF.adjoint(y)
 
-    class SimpleFFTOnSquare(Operator):
-        def __init__(self, d):
-            domain = UniformGridFcts(d, d, dtype=complex)
-            # Dual grid for the FFT approximation of the continuous transform.
-            cd = (-1 / (2 * domain.spacing[0]),
-                  1 / (2 * domain.spacing[0]),
-                  domain.shape[0])
-            codomain = UniformGridFcts(cd, cd, dtype=complex)
-            super().__init__(
-                domain=domain,
-                codomain=codomain,
-                linear=True,
-            )
+The derivative object is tied to the current linearization state. A later
+evaluation of the original nonlinear operator may invalidate it. If
+linearizations at distinct points must coexist, use independent operator
+instances or copies with independent state.
 
-        def _eval(self, x):
-            return np.fft.fftshift(np.fft.fftn(np.fft.ifftshift(x), norm='ortho'))
-
-        def _adjoint(self, y):
-            return np.fft.fftshift(np.fft.ifftn(np.fft.ifftshift(y), norm='ortho'))
-
-This is a simplified version of the Fourier-transform implementation in
-:mod:`regpy.operators`.
-
-.. _Non-linear_operators:
-
-Nonlinear operators
-~~~~~~~~~~~~~~~~~~~
-
-Nonlinear operators also define a domain, a codomain, and an ``_eval`` method.
-Regularization methods for inverse problems usually also need the FrÃ©chet derivative
-:math:`F'[x]` and its adjoint.
-
-RegPy deliberately couples a derivative to the evaluation at its linearization
-point. Calling ``op.linearize(x)`` evaluates :math:`F(x)`, permits ``_eval`` to
-cache data required at :math:`x`, and returns both the value and a linear
-operator representing :math:`F'[x]`. Evaluating the original operator again
-revokes the previous derivative, because its cached data may no longer be
-valid. If derivatives at several points must coexist, make independent copies
-of the nonlinear operator before linearizing them.
-
-The methods for evaluation, derivative and adjoint
---------------------------------------------------
-
-Implement the following methods:
-
-* ``_eval(x, differentiate=False)`` computes :math:`F(x)`. If
-  ``differentiate`` is true, it must also prepare any state needed by the next
-  two methods.
-* ``_derivative(h)`` computes :math:`F'[x]h` at the most recent linearization
-  point.
-* ``_adjoint(y)`` computes :math:`F'[x]^*y` at that same point.
-
-These private methods are called through ``op(x)``, ``op.linearize(x)``, and the
-linear operator returned by ``linearize``; users should not invoke them
-directly. The corresponding in-place methods are described in
-+:ref:`in_place_variants`
-
-.. _eval_nonlinear:
-
-The _eval method
-^^^^^^^^^^^^^^^^
-
-The ``differentiate`` flag avoids derivative-specific precomputation during an
-ordinary evaluation. A typical allocating implementation has the form:
+For example, the nonlinear mapping :math:`x\mapsto |\mathcal Fx|^2`
+(phase-retrieval data) already has an implementation using existing RegPy
+operators. There is no need to write its derivative or adjoint yourself:
 
 .. code-block:: python
 
-    def _eval(self, x, differentiate=False):
-        y = compute_value(x)
-        if differentiate:
-            self._linearization_data = prepare_derivative_data(x, y)
-        return y
+   from regpy.vecsps import UniformGridFcts
+   from regpy.operators import FourierTransform, SquaredModulus
 
-Store only the data needed by ``_derivative`` and ``_adjoint``. If a stored
-vector must remain independent of its input, copy it through the corresponding
-vector space rather than assuming that the vector provides ``copy()``.
+   grid = UniformGridFcts((-1, 1, 64), (-1, 1, 64), dtype=complex)
+   fft = FourierTransform(grid, centered=True)
+   intensity = SquaredModulus(fft.codomain) * fft
 
-The _derivative and _adjoint method
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RegPy applies the chain rule automatically when such a composition is
+linearized. See :doc:`notebooks/volterra_main_example` for another operator
+example and :doc:`notebooks/diffusion_coefficient` for a PDE-based inverse
+problem.
 
-After linearization, ``_derivative`` acts as the evaluation method of the
-linear operator :math:`F'[x]`, while ``_adjoint`` acts as its adjoint method.
-The returned derivative retains a revocable reference to the nonlinear
-operator and becomes invalid after that operator is evaluated again.
+.. _operator_tests_tutorial:
 
-.. _Linearization_Method:
-
-What happens when you linearize
--------------------------------
-
-When RegPy calls ``op.linearize(x)``, the following steps occur:
-
-1. The operator is evaluated with ``differentiate=True``.
-2. The operator stores any intermediate quantities needed to apply the
-   derivative and its adjoint.
-3. ``linearize`` returns the value and an :class:`regpy.operators.Operator`
-   representing the derivative.
-
-.. code-block:: python
-
-    y, derivative = my_op.linearize(x)
-
-For operators whose codomain vectors are too expensive to construct,
-``linearize(x, return_adjoint_eval=True)`` returns :math:`F'[x]^*F(x)` in
-place of :math:`F(x)`. The second return value is still the derivative.
-
-Thus a typical implementation would look like this:
-
-.. code-block:: python
-
-    from regpy.operators import Operator
-
-    class MyOperator(Operator):
-        def __init__(self, par_1, par_2):
-            # Compute the domain and codomain here if they are not parameters.
-            super().__init__(
-                domain=my_domain,
-                codomain=my_codomain,
-                linear=False,
-            )
-
-        def _eval(self, x, differentiate=False):
-            y = compute_value(x)
-            if differentiate:
-                self._linearization_data = prepare_derivative_data(x, y)
-            return y
-
-        def _derivative(self, h):
-            return apply_derivative(self._linearization_data, h)
-
-        def _adjoint(self, y):
-            return apply_adjoint(self._linearization_data, y)
-
-
-Example
--------
-
-As an example, consider the phase-retrieval observation operator obtained by
-composing a Fourier transform with the pointwise squared modulus,
-:math:`x\mapsto |\mathcal{F}(x)|^2`. Its domain is a centered complex uniform
-grid, and its codomain is the corresponding real Fourier grid.
-
-.. code-block:: python
-
-    def __init__(self, domain):
-        # Dual grid for the FFT approximation of the continuous transform.
-        cd = (-1 / (2 * domain.spacing[0]),
-              1 / (2 * domain.spacing[0]),
-              domain.shape[0])
-        codomain = UniformGridFcts(cd, cd)
-        super().__init__(
-            domain=domain,
-            codomain=codomain,
-            linear=False,
-        )
-
-The derivative of :math:`Sq\colon x\mapsto |x|^2` at :math:`f` is
-:math:`h\mapsto 2\operatorname{Re}(\overline{f}h)`. Since the Fourier
-transform is linear, the chain rule gives
-
-.. math::
-    (Sq\circ\mathcal{F})'[f]h=Sq'[\mathcal{F}(f)]\mathcal{F}'[f]h = Sq'[\mathcal{F}(f)]\mathcal{F}(h).
-
-Moreover, for the adjoint we obtain
-
-.. math::
-    (Sq\circ\mathcal{F})'[f]^\ast y= \mathcal{F}^\ast Sq'[\mathcal{F}(f)]^\ast y.
-
-
-Both the derivative and its adjoint require :math:`\mathcal{F}(f)`. The
-evaluation method therefore stores this value only when called with
-``differentiate=True``:
-
-.. code-block:: python
-
-    def _eval(self, x, differentiate=False):
-        y = np.fft.fftshift(np.fft.fftn(np.fft.ifftshift(x), norm='ortho'))
-        if differentiate:
-            self._factor = y
-        return y.real**2 + y.imag**2
-
-The ``_derivative`` method applies this derivative to a direction :math:`h`.
-Because :math:`\mathcal{F}(f)` is already cached, the implementation is:
-
-.. code-block:: python
-
-    def _derivative(self, h):
-        return 2*(self._factor.conj() * np.fft.fftshift(np.fft.fftn(np.fft.ifftshift(h), norm='ortho'))).real
-
-The adjoint maps :math:`y` to
-:math:`\mathcal{F}^\ast(2\mathcal{F}(f)y)` and reuses the same cached factor:
-
-.. code-block:: python
-
-    def _adjoint(self, y):
-        return np.fft.fftshift(np.fft.ifftn(np.fft.ifftshift(2*self._factor * y), norm='ortho'))
-
-Together, these methods define the phase-retrieval observation operator:
-
-.. code-block:: python
-
-    import numpy as np
-    from regpy.vecsps import UniformGridFcts
-    from regpy.operators import Operator
-
-    class Observation(Operator):
-
-        def __init__(self, domain):
-            # Dual grid for the FFT approximation of the continuous transform.
-            cd = (-1 / (2 * domain.spacing[0]),
-                  1 / (2 * domain.spacing[0]),
-                  domain.shape[0])
-            codomain = UniformGridFcts(cd, cd)
-            super().__init__(
-                domain=domain,
-                codomain=codomain,
-                linear=False,
-            )
-
-        def _eval(self, x, differentiate=False):
-            y = np.fft.fftshift(np.fft.fftn(np.fft.ifftshift(x), norm='ortho'))
-            if differentiate:
-                self._factor = y
-            return y.real**2 + y.imag**2
-
-        def _derivative(self, h):
-            return 2*(self._factor.conj() * np.fft.fftshift(np.fft.fftn(np.fft.ifftshift(h), norm='ortho'))).real
-
-        def _adjoint(self, y):
-            return np.fft.fftshift(np.fft.ifftn(np.fft.ifftshift(2*self._factor * y), norm='ortho'))
-
-In practice, this operator need not be implemented from scratch. RegPy can
-compose the existing Fourier-transform and squared-modulus operators:
-
-.. code-block:: python
-
-    from regpy.operators import SquaredModulus, FourierTransform
-    from regpy.vecsps import UniformGridFcts
-
-    domain = UniformGridFcts((-1, 1, 100), (-1, 1, 100), dtype=complex)
-
-    ft = FourierTransform(domain, centered=True)
-    sqm = SquaredModulus(ft.codomain)
-
-    observe = sqm * ft
-
-
-Further examples
-^^^^^^^^^^^^^^^^
-
-See the :doc:`Volterra example <notebooks/volterra_main_example>` for another
-nonlinear operator.
-
-
-NGSolve operators
+Testing operators
 ~~~~~~~~~~~~~~~~~
 
-RegPy integrates with NGSolve through :mod:`regpy.operators.ngsolve`,
-:mod:`regpy.hilbert.ngsolve`, and :mod:`regpy.functionals.ngsolve`.
+**Test every new operator.** For a linear :math:`T`, the first requirement
+is the standard adjoint identity
 
-As for every RegPy operator, adjoints are implemented with respect to the
-standard vector-space pairings, not a separately chosen Hilbert-space inner
-product.
+.. math::
 
-Use :class:`regpy.operators.ngsolve.NgsOperator` as the base class for custom
-NGSolve operators.
+   \operatorname{Re}\langle Tx,y\rangle
+     =\operatorname{Re}\langle x,T^*y\rangle.
 
-.. caution::
-    The NGSolve interface is still evolving and may change.
-
-For coefficient identification in second-order elliptic PDEs, RegPy provides
-:class:`regpy.operators.ngsolve.SecondOrderEllipticCoefficientPDE`. Subclasses
-specify the required bilinear and linear forms. See the
-:doc:`diffusion-coefficient example <notebooks/diffusion_coefficient>`.
-
-.. _Adjoint_Derivative:
-
-Combined adjoint and derivative
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Some operators admit a more efficient implementation of
-:math:`F'[x]^*F'[x]` than separate derivative and adjoint applications. This is
-particularly useful when codomain vectors would be too large to store. Such an
-operator may implement ``_adjoint_derivative`` directly:
+For the cumulative-sum example, a direct check also works over complex
+coefficients:
 
 .. code-block:: python
 
-    def _adjoint_derivative(self, h):
-        return apply_normal_operator(self._linearization_data, h)
+   Tc = CumulativeSumExtrapolated(3, 5, dtype=complex)
+   rng = np.random.default_rng(7)
+   x = rng.normal(size=3) + 1j * rng.normal(size=3)
+   y = rng.normal(size=5) + 1j * rng.normal(size=5)
+   assert np.allclose(
+       np.vdot(Tc(x), y).real,
+       np.vdot(x, Tc.adjoint(y)).real,
+   )
 
-.. warning::
-    Support for combined adjoint-derivative evaluations is specialized. Check
-    that the intended solver uses this interface before relying on it.
+RegPy contains the dedicated utilities
+:func:`regpy.util.operator_tests.test_adjoint` and
+:func:`regpy.util.operator_tests.test_derivative`:
+
+.. code-block:: python
+
+   from regpy.util.operator_tests import test_adjoint, test_derivative
+
+Use ``test_adjoint`` for **every newly implemented linear operator** and for
+the derivatives of nonlinear operators. Use ``test_derivative`` for **every
+new nonlinear operator**, preferably with several representative points and
+step sizes. Also check ``out=`` buffers and the behaviour
+at degenerate inputs. These tests check vector-space adjoints; Hilbert-space
+adjoints with nontrivial Gram operators should be checked separately.
+
+Existing operators in RegPy
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Before implementing a new operator, consult the
+:doc:`full API reference <autoapi/regpy/index>`. Examples include:
+
+* **Elementary linear operators:** :class:`regpy.operators.base.Identity`,
+  :class:`regpy.operators.base.PtwMultiplication`,
+  :class:`regpy.operators.base.CoordinateProjection` and
+  :class:`regpy.operators.base.CoordinateMask`.
+* **Linear observations of complex data:**
+  :class:`regpy.operators.base.RealPart` and
+  :class:`regpy.operators.base.ImaginaryPart`.
+* **Nonlinear pointwise maps:**
+  :class:`regpy.operators.base.SquaredModulus`,
+  :class:`regpy.operators.numpy.Exponential`, and
+  :class:`regpy.operators.numpy.NemytskiiOperator`. A Nemytskii
+  operator applies a supplied point function at each spatial location;
+  its constructor also takes the pointwise (real) Jacobian. The latter
+  requires a :class:`regpy.vecsps.numpy.MeasureSpaceFcts` domain.
+* **Linear algebra and transforms:**
+  :class:`regpy.operators.numpy.MatrixMultiplication`,
+  :class:`regpy.operators.numpy.FourierTransform`,
+  :class:`regpy.operators.numpy.ForwardFDGradient`.
+* **Convolution and differential operators:**
+  :class:`regpy.operators.convolution.ConvolutionOperator`,
+  :class:`regpy.operators.convolution.PaddingOperator`,
+  :class:`regpy.operators.convolution.TruncationOperator`,
+  :class:`regpy.operators.convolution.Derivative`, and
+  :class:`regpy.operators.convolution.Laplacian`.
+* **NGSolve integration:**
+  :class:`regpy.operators.ngsolve.NgsOperator` and
+  :class:`regpy.operators.ngsolve.SecondOrderEllipticCoefficientPDE`
+  (requires NGSolve).
+
+The classes above are imported through ``regpy.operators`` (subject to
+optional dependencies), even though their implementations are organized
+into submodules.
+
+.. _building_operators:
+
+Building complex operators from simple operators
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Combining existing, tested operators is usually preferable to repeating
+implementation and adjoint calculations. The operator algebra automatically
+manages compatible domain/codomain spaces and propagates derivatives through
+compositions.
+
+.. _operator_compositions_tutorial:
+
+Compositions
+------------
+
+If :math:`B:X\to Z` and :math:`A:Z\to Y`, then
+
+.. math::
+
+   (A\circ B)(x)=A(B(x)),\qquad (A\circ B)^*=B^*A^*.
+
+Write ``A * B`` or use
+:class:`regpy.operators.base.Composition` explicitly:
+
+.. code-block:: python
+
+   from regpy.operators import Composition
+
+   chain = A * B                 # B is evaluated first
+   chain = Composition(A, B, use_buffers=True)
+
+``Composition`` can reuse intermediate buffers (``use_buffers=True`` by
+default); set ``chain.use_buffers = False`` to disable this. Buffer reuse
+is especially useful when each operator acts on large arrays. Because
+buffers and nonlinear linearization caches are mutable, a buffered
+composition should not be evaluated concurrently in multiple threads
+without separate instances.
+
+Compositions can also explicitly represent a known singular-value
+decomposition :math:`T=V\Sigma U^*`. The method
+:meth:`regpy.operators.base.Composition.label_as_svd` marks and (partly) verifies
+such a decomposition using the position of the positive pointwise
+singular-value multiplier:
+
+.. code-block:: python
+
+   # If C = Composition(V, Sigma, U_adjoint) is a known SVD:
+   C.label_as_svd(l=2, G_X=1., G_Y=1.)
+   assert C.is_svd
+
+Here ``l`` is **one-based**; the method checks the isometry conditions on a
+sample before labeling the factorization. It does not compute the SVD of
+an arbitrary operator. When a composition is already labeled, its SVD
+information is available through ``C.svd_data``.
+
+.. _operator_vectors_tutorial:
+
+VectorOfOperators, operator matrices, and parallel execution
+------------------------------------------------------------
+
+If :math:`T_i:X\to Y_i`, the class
+:class:`regpy.operators.base.VectorOfOperators` forms
+
+.. math::
+
+   Vx=(T_1x,\ldots,T_px),\qquad
+   V:X\to\bigoplus_{i=1}^{p}Y_i.
+
+.. code-block:: python
+
+   from regpy.operators import VectorOfOperators
+
+   V = VectorOfOperators([T1, T2, T3])  # common input space
+   y = V(x)                             # direct-sum output
+
+The adjoint sums the contributions of all branches:
+:math:`V^*(y_1,\ldots,y_p)=\sum_iT_i^*y_i`.
+
+The class :class:`regpy.operators.base.MatrixOfOperators` handles block
+operator matrices. For :math:`M_{ij}:X_j\to Y_i`, its action is
+:math:`(Mx)_i=\sum_jM_{ij}x_j`; ``None`` denotes a zero block.
+**Important for this RegPy version:** ``MatrixOfOperators`` receives
+**columns as the outer sequence**, even though traditional mathematical
+notation is row-first. For example:
+
+.. code-block:: python
+
+   from regpy.operators import MatrixOfOperators
+
+   M = MatrixOfOperators([
+       [A11, A21],  # blocks from input X1 to outputs Y1 and Y2
+       [A12, A22],  # blocks from input X2 to outputs Y1 and Y2
+   ])
+
+For a block-diagonal mapping of independent input components, use
+:class:`regpy.operators.base.DirectSum`.
+
+**Actual parallel variants.** RegPy supplies the multiprocessing classes
+:class:`regpy.operators.parallel_operators.ParallelVectorOfOperators`
+and :class:`regpy.operators.parallel_operators.DistributedVectorOfOperators`.
+``ParallelVectorOfOperators`` has the same mathematical action as
+``VectorOfOperators`` but evaluates its components in separate worker
+processes. ``DistributedVectorOfOperators`` additionally selects different
+subsets of the inputs from a direct-sum domain, according to a
+``distribution_mat`` (pass a NumPy array; the implementation accesses its
+``shape``). Process resources should be managed using
+:class:`regpy.operators.parallel_operators.ParallelExecutionManager`:
+
+.. code-block:: python
+
+   from regpy.operators import (
+       ParallelVectorOfOperators, ParallelExecutionManager,
+   )
+
+   # In a normal Python script, inside if __name__ == "__main__":
+   with ParallelExecutionManager():
+       P = ParallelVectorOfOperators([T1, T2])
+       result = P(x)
+
+The operators must have the same domain; multiprocessing introduces
+interprocess communication, so it is most helpful when each application
+is computationally expensive. Use the usual multiprocessing main-module
+guard, especially on platforms using the ``spawn`` start method.
+
+One of the use cases of ``ParallelVectorOfOperators`` are forward operators 
+involving PDE solutions for several right-hand sides
+(e.g. incident waves in scattering). Another use case is the parallelization 
+of the forward operator in parallel magnetic resonance imaging. 
+
+.. _operator_graphs_tutorial:
+
+Operator graphs
+---------------
+
+Compositions describe chains; :class:`regpy.operators.graph_operator.OperatorGraph`
+represents a **directed acyclic graph** of operator instances. Its nodes
+are managed by :class:`regpy.operators.graph_operator.OperatorNode`, and
+:class:`regpy.operators.graph_operator.Edge` routes outputs to inputs.
+Unlike two independent compositions, a graph can compute a common
+intermediate value once and feed it to several branches. During adjoint
+evaluation, contributions from branches are accumulated.
+
+The constructor receives an operator list and an explicit edge list. Each
+edge has the form ``((source, [source_output_indices]), (target,
+target_input_index))``; ``None`` denotes the graph's external input or
+output. The example below uses **two** external inputs, :math:`f` and
+:math:`g`, and constructs
+
+.. math::
+
+   G(f,g)=\bigl(\operatorname{Re}(Tf),\,
+                   \operatorname{Im}(Tf),\,Tg\bigr).
+
+The first evaluation :math:`Tf` is shared by the real- and
+imaginary-part branches, rather than recomputed for each output.
+
+.. code-block:: python
+
+   from regpy.operators import OperatorGraph, RealPart, ImaginaryPart
+   from regpy.vecsps import DirectSum
+
+   first = CumulativeSumExtrapolated(3, 5, dtype=complex)
+   second = CumulativeSumExtrapolated(3, 5, dtype=complex)
+   take_real = RealPart(first.codomain)
+   take_imag = ImaginaryPart(first.codomain)
+
+   graph = OperatorGraph(
+       operators=[first, second, take_real, take_imag],
+       edges=[
+           ((None, [0]), (first, 0)),     # f -> first
+           ((None, [1]), (second, 0)),    # g -> second
+           ((first, [0]), (take_real, 0)),
+           ((first, [0]), (take_imag, 0)),
+           ((take_real, [0]), (None, 0)),
+           ((take_imag, [0]), (None, 0)),
+           ((second, [0]), (None, 0)),
+       ],
+   )
+
+   f = np.array([1 + 1j, 2 + 2j, 3 + 3j])
+   g = np.array([2 + 0j, 1 + 1j, 0 + 2j])
+   y_real, y_imag, y_second = graph(DirectSum(
+       first.domain, second.domain
+   ).join(f, g))
+
+   assert np.allclose(y_real, first(f).real)
+   assert np.allclose(y_imag, first(f).imag)
+   assert np.allclose(y_second, second(g))
+
+Each operator in ``operators`` is a *distinct instance*: nodes are keyed
+by operator identity, so adding the same instance twice does not create
+two different nodes. For this version of ``OperatorGraph``, make sure each
+external input is explicitly connected and the graph is acyclic.
+
+For nonlinear nodes, ``OperatorGraph`` propagates derivatives along its
+edges and adjoints in reverse order. As with all operator assemblies,
+verify the derivative and adjoint of the **whole graph**, not just those of
+its components. See the
+:doc:`operator graph API <autoapi/regpy/operators/graph_operator/index>`.
+
+.. _codomain_free_tutorial:
+
+Codomain-free operators and efficient normal actions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Many iterative regularization methods need normal-equation expressions
+without ever requiring an explicit forward vector in the codomain.
+There are two major motivations:
+
+* **Large codomain:** measurement vectors may be prohibitively large to
+  allocate or materialize (e.g. many measurement directions or a large
+  collection of PDE observations).
+* **Lower cost:** a direct normal action can eliminate redundant transforms
+  or PDE solves even when the codomain fits in memory.
+
+For a linear :math:`T:X\to Y`, the typical operations are :math:`T^*d`
+and :math:`T^*Tx`. For a nonlinear :math:`F`, one encounters
+:math:`F'[x]^*F(x)` and :math:`F'[x]^*F'[x]h`. RegPy provides the following
+interfaces:
+
+.. list-table:: Codomain-free operator methods
+   :header-rows: 1
+   :widths: 37 38 25
+
+   * - Public operation
+     - Computation
+     - Optional implementation hook
+   * - ``op.adjoint_data(data)``
+     - :math:`T^*d`; accepts specialized observation-data representations
+     - ``_adjoint_data`` / ``_iadjoint_data``
+   * - ``op.adjoint_eval(x)`` (linear operator)
+     - :math:`T^*Tx`
+     - ``_adjoint_eval`` / ``_iadjoint_eval``
+   * - ``F.linearize(x, return_adjoint_eval=True)``
+     - Returns :math:`F'[x]^*F(x)` and the derivative operator
+     - ``_adjoint_eval`` / ``_iadjoint_eval`` on ``F``
+   * - ``DF.adjoint_eval(h)`` for ``DF=F'[x]``
+     - :math:`F'[x]^*F'[x]h`
+     - ``_adjoint_derivative`` / ``_iadjoint_derivative`` on ``F``
+
+The name ``adjoint_eval`` is a property returning a callable operator for
+**linear** maps. The nonlinear combined action is obtained through the
+``return_adjoint_eval=True`` flag of ``linearize``. These methods use
+**vector-space adjoints**; a Hilbert-space normal operator may also include
+Gram factors. The fallback implementation constructs codomain vectors, so
+operators must implement optimized hooks if they want to avoid doing so.
+
+**Example: two FFTs rather than four.** For periodic convolution on a
+complex-valued uniform grid,
+
+.. math::
+
+   Tf=\mathcal F^{-1}\bigl(m\,\mathcal F f\bigr).
+
+Using ``T.adjoint(T(f))`` typically requires two FFTs for :math:`T` and
+two more for :math:`T^*`. When the Fourier transform is unitary in the
+relevant discrete pairing, the same normal action is
+
+.. math::
+
+   T^*Tf=\mathcal F^{-1}\bigl(|m|^2\,\mathcal F f\bigr),
+
+which requires just **one forward and one inverse FFT**. This is a
+natural use of ``_adjoint_eval``. If the convolution uses padding,
+Fourier resizing, or other nonunitary steps, the exact discrete normal
+map also contains the adjoints of those steps; blindly replacing the
+kernel multiplier by :math:`|m|^2` can give the wrong operator.
+
+When implementing specialized codomain-free operations, first check them
+against explicit ``adjoint(eval(...))`` and
+``derivative.adjoint(derivative(...))`` evaluations on a small test
+problem, including normalization and Gram conventions. The calling
+solver must also support codomain-free mode; providing a fast
+``_adjoint_eval`` alone does not automatically eliminate all codomain
+allocations.
+
+Further reading
+~~~~~~~~~~~~~~~
+
+* :doc:`Spaces` — vector-space representations and Hilbert structures.
+* :doc:`Functionals` — functionals and their derivatives.
+* :doc:`Solvers` — iterative regularization methods.
+* :doc:`notebooks/volterra_main_example` — operator example.
+* :doc:`notebooks/diffusion_coefficient` — PDE-based example.
+* :doc:`notebooks/parallel_mri` — parallel MRI example.
+* :doc:`full RegPy API <autoapi/regpy/index>` — complete class and method
+  documentation, including the operator algebra, operator graphs and
+  multiprocessing wrappers.
