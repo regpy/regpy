@@ -1608,18 +1608,31 @@ class Setting:
             self.evaluate_methods()
         return {name:method for name, method in self._methods.items() if method['applicable']}
         
-    def display_all_methods(self, full_names: bool = True) -> None:
-        r"""Display applicable, caveated, and non-applicable methods separately.
-        
+    def display_all_methods(
+        self,
+        full_names: bool = True,
+        only_applicable: bool = False,
+        only_applicable_without_caveats: bool = False,
+    ) -> None:
+        r"""Display methods grouped by applicability and caveats.
+
         Applicability checks may return a nonempty ``out['caveats']`` string
-        (or a list of strings). Caveats do not make a method inapplicable and
-        do not exclude it from automatic method selection.
-        
+        (or a list of strings). Caveats do not make a method inapplicable.
+
         Parameters
         ----------
         full_names: bool [default: True]
-            Full names.
+            Show full method names and explanations.
+        only_applicable: bool [default: False]
+            Hide inapplicable methods; retain applicable methods with caveats.
+        only_applicable_without_caveats: bool [default: False]
+            Show only applicable methods without caveats. Takes precedence
+            over ``only_applicable`` if both are True.
         """
+        if not isinstance(only_applicable, (bool, np.bool_)):
+            raise TypeError('only_applicable must be boolean.')
+        if not isinstance(only_applicable_without_caveats, (bool, np.bool_)):
+            raise TypeError('only_applicable_without_caveats must be boolean.')
         op_norm = self.evaluate_methods()
 
         def display(name: str, method: str, with_caveats: bool=False) -> None:
@@ -1666,14 +1679,15 @@ class Setting:
                 display(name, method)
         caveated = {name: method for name, method in self._methods.items()
                     if method['applicable'] and method.get('caveats')}
-        if caveated:
+        if caveated and not only_applicable_without_caveats:
             print('\nMethods applicable with caveats:\n')
             for name, method in caveated.items():
                 display(name, method, with_caveats=True)
-        print('\nNon-applicable methods:\n')
-        for name, method in self._methods.items():
-            if not method['applicable']:
-                display(name, method)
+        if not (only_applicable or only_applicable_without_caveats):
+            print('\nNon-applicable methods:\n')
+            for name, method in self._methods.items():
+                if not method['applicable']:
+                    display(name, method)
 
     def _get_configured_method(self, method_name: str) -> dict:
         r"""Resolve configuration, keeping inner convex solvers separate.
@@ -2212,10 +2226,10 @@ class Setting:
 def get_linear_reg_method_dictionary() -> dict:
     r"""Return regularization methods intended for linear operators.
     
-    ``FISTA`` is available without a regularization parameter when the
-    setting penalty is of squared-norm type or is a null functional. In that
-    mode the penalty determines the domain Hilbert geometry but is not part of
-    the minimized objective.
+    ``nFISTA`` and ``nFB`` are available without a regularization parameter
+    for supported convex penalties. Squared-norm terms are discarded, while
+    bound constraints from Quadratic integral penalties are retained, also
+    componentwise on direct sums.
     
     
     Returns
@@ -2226,6 +2240,7 @@ def get_linear_reg_method_dictionary() -> dict:
     from .linear import (
         CGNE,
         FISTA,
+        ForwardBackwardSplitting,
         Landweber as linLandweber,
         Bregman,
         RunOnAlphaGrid,
@@ -2238,7 +2253,11 @@ def get_linear_reg_method_dictionary() -> dict:
     return _with_stoprule_defaults({
             'nFISTA':   {'class': FISTA,
                         'primal': True,
-                        'full': 'Fast Iterative Thresholding for with no penalty'
+                        'full': 'Fast Iterative Shrinkage-Thresholding for unregularized linear problems, with optional box constraints'
+                        },
+            'nFB':      {'class': ForwardBackwardSplitting,
+                        'primal': True,
+                        'full': 'Forward-Backward Splitting for unregularized linear problems, with optional box constraints'
                         },
             'linLW':    {'class': linLandweber, 
                          'full': 'Landweber iteration for linear problems'
@@ -2431,6 +2450,49 @@ def get_non_convex_solver_dictionary() -> dict:
     }
     return _with_stoprule_defaults(method_dict, default_nonconvex_stoprule)
 
+def _quadratic_integral_obstruction(functional: Functional) -> str | None:
+    """Detect nonquadratic restrictions hidden by integral-functional flags.
+
+    An integral ``Quadratic`` can report ``is_quadratic=True`` even when
+    box constraints or linear Taylor tails make the *global* functional
+    nonquadratic.  A conjugate, shift, or direct sum can retain that flag;
+    inspect the wrapped components, not just the outermost property.
+
+    Quadratic Taylor continuations of a globally quadratic integrand are
+    intentionally allowed: they reproduce the same quadratic polynomial.
+    """
+    from regpy.functionals.integral_functionals import IntegralFunctionalBase
+
+    pending = [functional]
+    visited: set[int] = set()
+    while pending:
+        func = pending.pop()
+        if id(func) in visited:
+            continue
+        visited.add(id(func))
+        if isinstance(func, IntegralFunctionalBase):
+            if (func.constr_l is not None or func.constr_u is not None):
+                return 'an integral functional has an active bound constraint'
+            if (func.lin_taylor_l is not None or func.lin_taylor_u is not None):
+                return 'an integral functional has a linear Taylor continuation'
+        # Conjugate, Composed, HorizontalShiftDilation, and similar wrappers
+        # expose their source functional as ``func``. Direct sums and linear
+        # combinations expose their component functionals as ``funcs``.
+        wrapped = getattr(func, 'func', None)
+        if isinstance(wrapped, Functional):
+            pending.append(wrapped)
+        components = getattr(func, 'funcs', ())
+        pending.extend(part for part in components
+                       if isinstance(part, Functional))
+    return None
+
+
+def _is_globally_quadratic(functional: Functional) -> bool:
+    """Check both the quadraticity flag and active nonsmooth modifications."""
+    return (functional.is_quadratic
+            and _quadratic_integral_obstruction(functional) is None)
+
+
 def check_Hilbert_applicability(setting: Setting,
                                 user_data: ReadOnlyVector | ObsDataT | None = None,
                                 user_init: ReadOnlyVector | None = None,
@@ -2481,10 +2543,18 @@ def check_Hilbert_applicability(setting: Setting,
         if not (setting.codomain_free or setting.data_fid.is_norm_squared_type):
             out['info'] += 'Data fidelity functional is not of squared Hilbert-norm type. '
     else:
-        if not setting.penalty.is_quadratic:
-            out['info'] += 'Penalty functional is not quadratic. '
-        if not (setting.codomain_free or setting.data_fid.is_quadratic):
-            out['info'] += 'Data fidelity term is not quadratic. '
+        # Do not rely exclusively on ``is_quadratic``: constrained integral
+        # Quadratic functionals (and their conjugate views) may still report
+        # True, although CG requires *globally* quadratic functionals.
+        if not _is_globally_quadratic(setting.penalty):
+            reason = _quadratic_integral_obstruction(setting.penalty)
+            out['info'] += ('Penalty functional is not globally quadratic'
+                            + (f' ({reason})' if reason else '') + '. ')
+        if (not setting.codomain_free
+                and not _is_globally_quadratic(setting.data_fid)):
+            reason = _quadratic_integral_obstruction(setting.data_fid)
+            out['info'] += ('Data fidelity term is not globally quadratic'
+                            + (f' ({reason})' if reason else '') + '. ')
     if setting.is_tikhonov and (not regularization_parameter_required):
         out['info'] += 'Setting has a specified regularization parameter. '
     if (not setting.is_tikhonov) and regularization_parameter_required:
