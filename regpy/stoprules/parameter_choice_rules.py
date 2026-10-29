@@ -158,9 +158,10 @@ class Discrepancy(StopRule):
         # Report the physical residual and its absolute threshold, including
         # for non-triggering iterations. The stopping inequality is strict.
         self.log_info = (
+            f"it. {self.solver.iteration_step_nr}: "
             f"residual = {discrepancy:.3e}; "
-            f"stop if residual < {threshold:.3e} "
-            f"(tau={self.tau:g}, noiselevel={self.noiselevel:.3e})"
+            f"stop if  < {threshold:.3e} "
+            f"(tau={self.tau:g})"
         )
         # A parent CombineRules reports the successful stopping reason.
         # Avoid logging that same message twice for a triggering child rule.
