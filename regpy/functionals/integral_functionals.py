@@ -4013,11 +4013,9 @@ class QuadraticIntv(IntegralFunctionalBase):
     **kwargs: Any
         Additional keyword arguments forwarded to the underlying implementation.
     """
-    # Keep the historical constructor and attributes; use the integral
-    # functional's native constraints so SemiSmoothNewton can remove them
-    # on its private copy and evaluate the smooth quadratic everywhere.
 
     def  __init__(self, domain: MeasureSpaceFcts, as_primal: bool=True, sigma: float=1., eps: float=1e-10, **kwargs: Any) -> None:
+        self.log.warning('QuadraticIntv is deprecated. Use QuadraticBilateralConstraints instead.')
         if not isinstance(domain,MeasureSpaceFcts): 
             raise TypeError(Errors.not_instance(domain,MeasureSpaceFcts,"QuadraticIntv domain needs to be a MeasureSpaceFcts instance."))
         if not isinstance(sigma, (float,int)) and sigma not in domain:
@@ -4119,6 +4117,7 @@ class QuadraticNonneg(IntegralFunctionalBase):
     # on its private copy and evaluate the smooth quadratic everywhere.
 
     def  __init__(self, domain: MeasureSpaceFcts, **kwargs: Any) -> None:
+        self.log.warning('QuadraticNonneg is deprecated. Use QuadraticLowerBound instead.')
         super().__init__(domain,convexity_param = 1., nat_dom_l=0.,
                          methods =  {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'},
                          conj_methods =  {'eval', 'subgradient', 'hessian', 'proximal', 'dist_subdiff'},
