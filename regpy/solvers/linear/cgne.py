@@ -82,43 +82,53 @@ class CGNE(RegSolver):
             self.x = initial
         else:
             self.x = domain.empty()
+            """The current iterate."""
             domain.copyto(self.x, initial)
-        """The current iterate."""
+        
 
         self.y = codomain.empty()
-        self.op(self.x, out=self.y)
         """The image of the current iterate under the operator."""
+        self.op(self.x, out=self.y)
 
         # Persistent work vectors used by initialization and every CG step.
         self._residual = codomain.empty()
+        """residual in codomain"""
         self._g_residual = codomain.empty()
+        """Gram matrix applied to residual in codomain"""
         self._Tdir = codomain.empty()
+        """operator image of direction self._dir"""
         self._g_Tdir = codomain.empty()
+        """Gram matrix applied to self._Tdir"""
 
         self._domain_work = domain.empty()
         self._res = domain.empty()
+        r"""The normal-equation residual. :math:`G_X^{-1} {g_res}`
+        """
         self.g_res = domain.empty()
-        self.dir = domain.empty()
-        self.g_dir = domain.empty()
-
-        codomain.copyto(self._residual, data)
-        self._residual -= self.y
-        self.h_codomain.gram(self._residual, out=self._g_residual)
-        self.op.adjoint(self._g_residual, out=self.g_res)
         r"""The Gram matrix applied to the normal-equation residual.
 
         In each iteration,
         :math:`g_{res}=T^*G_Y(data-Tx)`.
-        """
+        """        
+        self.dir = domain.empty()
+        """The direction of descent."""        
+        self.g_dir = domain.empty()
+        """The domain Gram matrix applied to the search direction."""        
+
+        codomain.copyto(self._residual, data)
+        self._residual -= self.y
+        self.h_codomain.gram(self._residual, out=self._g_residual)
+        self.codom_res_init = sqrt(codomain.vdot(self._g_residual,self._residual).real)
+        """The norm of the initial codomain residual."""
+        self.op.adjoint(self._g_residual, out=self.g_res)
 
         self.h_domain.gram_inv(self.g_res, out=self._res)
         self.sq_norm_res = domain.vdot(self.g_res, self._res).real
         """The squared norm of the residual."""
-
+  
         domain.copyto(self.dir, self._res)
-        """The direction of descent."""
         domain.copyto(self.g_dir, self.g_res)
-        """The domain Gram matrix applied to the search direction."""
+        
 
     @staticmethod
     def check_applicability(
@@ -167,8 +177,8 @@ class CGNE(RegSolver):
         self.h_codomain.gram(self._Tdir, out=self._g_Tdir)
 
         denominator = codomain.vdot(self._g_Tdir, self._Tdir).real
-        if sqrt(denominator) <=1e-15:
-            self.log.info(f'CGNE: stopped at iteration {self.iteration_step_nr} as residual is 0 to machine precision.')
+        if sqrt(denominator) <= 1e-12 * self.codom_res_init:
+            self.log.info(f'CGNE: stopped at iteration {self.iteration_step_nr} as codomain residual 1e12 times smaller than initially.')
             self.converge()
         alpha = self.sq_norm_res / denominator
 

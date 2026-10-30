@@ -8,7 +8,7 @@ RegPy uses duck typing for vectors. A vector may be any object that implements
 vector addition and subtraction, scalar multiplication and division, unary
 negation, and the corresponding in-place operations. Generic algorithms must
 not assume that vectors are NumPy arrays or that they support indexing,
-componentwise operations, attributes such as ``shape`` or ``dtype``, or a
+componentwise operations such as ``.real``, attributes such as ``shape`` or ``dtype``, or a
 ``copy`` method.
 
 Every vector representation is accompanied by a subclass of
@@ -113,7 +113,7 @@ changing the vectors or their storage. If its Gram operator is denoted by
 
 .. math::
 
-   \langle x, y\rangle_X = \operatorname{Re}\langle G_X x, y\rangle,
+   \langle x, y\rangle_X = \langle G_X x, y\rangle,
 
 where the pairing on the right is supplied by the underlying vector space.
 This separates the vector representation from the geometry used by an inverse

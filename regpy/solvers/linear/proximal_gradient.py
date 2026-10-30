@@ -7,7 +7,8 @@ import math as ma
 import numpy as np
 from typing import Any
 
-from regpy.functionals.base import NullFunctional
+from regpy.functionals.base import NullFunctional, FunctionalOnDirectSum
+from regpy.functionals.integral_functionals import Quadratic
 from regpy.util import Errors
 from regpy.vecsps import Vector
 from regpy.operators import ObsDataT
@@ -17,13 +18,58 @@ from ..setting import Setting
 
 __all__ = ["ForwardBackwardSplitting","FISTA"]
 
+
+def _unregularized_penalty(penalty):
+    r"""Retain only admissible constraints when there is no regpar.
+
+    Unconstrained squared-norm penalties define the Hilbert geometry but do
+    not enter the unregularized objective. A Quadratic integral functional
+    contributes only its box indicator; its a, b, and c coefficients are all
+    discarded. Direct sums are handled recursively without changing the
+    original setting penalty or its Hilbert geometry.
+    """
+    if isinstance(penalty, FunctionalOnDirectSum):
+        return FunctionalOnDirectSum(
+            [_unregularized_penalty(func) for func in penalty.funcs],
+            domain=penalty.domain,
+        )
+    if isinstance(penalty, Quadratic):
+        # Taylor extensions modify the integrand outside prescribed regions;
+        # they are not box constraints, and must not be silently retained or
+        # discarded as though they were constraints.
+        if any(getattr(penalty, name) is not None for name in (
+            'lin_taylor_l', 'lin_taylor_u',
+            'quad_taylor_l', 'quad_taylor_u',
+        )):
+            raise ValueError(
+                'Unregularized Quadratic penalties may have bound constraints, '
+                'but not Taylor extensions.'
+            )
+        return Quadratic(
+            penalty.domain, a=0., b=0., c=0.,
+            constr_l=penalty.constr_l,
+            constr_u=penalty.constr_u,
+        )
+    if isinstance(penalty, NullFunctional) or penalty.is_norm_squared_type:
+        return NullFunctional(penalty.domain)
+    raise ValueError(
+        'Without a regularization parameter, the penalty must be a '
+        'NullFunctional, a squared-norm-type functional, a Quadratic '
+        'integral functional with optional bounds, or a direct sum of these.'
+    )
+
+
 class ForwardBackwardSplitting(RegSolver):
     r"""Minimizes 
     
     .. math::
         \mathcal{S}(Tf)+\alpha*\mathcal{R}(f)
     
-    by forward backward splitting. 
+    by forward-backward splitting. Without a regularization parameter,
+    minimizes the data fidelity subject to the bounds of any supported
+    Quadratic integral penalty. See :class:`FISTA` for the supported penalty
+    types and direct sums. The quadratic coefficients are discarded in this
+    mode; the setting's Hilbert geometry is unchanged.
     
     Parameters
     ----------
@@ -50,6 +96,9 @@ class ForwardBackwardSplitting(RegSolver):
         Whether iterates represent the original primal problem.
         Pass False when solving its dual. This labels coordinates and does not
         change the iteration formulas or construct a dual setting.
+    data: Vector | ObsDataT | None [default: None]
+        Observations used by ``op.adjoint_data`` in codomain-free mode. If
+        omitted, observations are taken from ``setting``.
     """
 
     def __init__(self, 
@@ -61,8 +110,20 @@ class ForwardBackwardSplitting(RegSolver):
                  op_norm: float | None = None, 
                  update_setting: bool = False,
                  is_primal: bool = True,
+                 data: Vector | ObsDataT | None = None,
                  ) -> None:
         super().__init__(setting, is_primal=is_primal)
+        if not self.op.linear:
+            raise ValueError(Errors.not_linear_op(
+                self.op, add_info='For nonlinear operators use the '
+                'nonlinear ForwardBackwardSplitting solver.'
+            ))
+        if setting.is_tikhonov:
+            self.regpar = setting.regpar
+        else:
+            self.regpar = 1.
+            self.penalty = _unregularized_penalty(setting.penalty)
+        self.codomain_free = setting.codomain_free
         if init is not None and init not in self.op.domain:
             raise ValueError(Errors.not_in_vecsp(init,self.op.domain,vec_name="initial guess",space_name="domain"))
         self.x = self.op.domain.empty()
@@ -81,69 +142,44 @@ class ForwardBackwardSplitting(RegSolver):
         self.proximal_pars = {} if proximal_pars is None else dict(proximal_pars)
         self.log.setLevel(logging_level)
 
-        self.y = self.op.codomain.empty()
-        self.p = self.op.codomain.zeros()
+        self.y = None if self.codomain_free else self.op.codomain.empty()
+        self.p = None if self.codomain_free else self.op.codomain.zeros()
         self.Tp = self.op.domain.zeros()
         self._domain_work = self.op.domain.empty()
-        self.op(self.x, out=self.y)
+        if self.codomain_free:
+            data = setting.get_or_update_data(
+                new_data=data, update=update_setting
+            )
+            self.backpropagated_data = self.op.adjoint_data(data)
+        else:
+            self.op(self.x, out=self.y)
         self._dual_variables_computed = False
 
     @staticmethod
-    def check_applicability(setting: Setting, op_norm: float | None=None, op_lower_bound: float=0.) -> tuple[dict[str, Any], dict[str, Any]]:
-        r"""Check the requirements of this solver for the supplied setting.
-        
-        Parameters
-        ----------
-        setting: Setting
-            Problem setting containing the operator, penalty, and data fidelity.
-        op_norm: float | None [default: None]
-            Operator-norm estimate. If None, use the originating primal
-            setting when called on a transformed dual setting.
-        op_lower_bound: float [default: 0.0]
-            Op lower bound.
-        
-        
-        Returns
-        -------
-        tuple[dict[str, Any], dict[str, Any]]
-            The first dictionary contains applicability information, the second a computed step size parameter.
-        """
-        out = {'info':''}; par={}
-        if not setting.is_tikhonov:
-            out['info'] += 'Setting has no regularization parameter. '
-        if not setting.is_convex:
-            out['info'] += 'Setting is not convex. '
-        if setting.codomain_free:
-            out['info'] += (
-                'FB requires codomain vectors. '
-            )
-        if 'proximal' not in setting.penalty.methods:
-            out['info']+='Missing prox of penalty functional. '
-        if not setting.codomain_free:
-            if 'subgradient' not in setting.data_fid.methods:
-                out['info']+='Missing gradient of data functional. '
-            if setting.data_fid.Lipschitz==np.inf:
-                out['info']+='Gradient of data functional not Lipschitz.'
-        out['applicable'] = out['info']==''
-        if out['applicable']: 
-            if op_norm is None:
-                # Use the original primal operator for a transformed dual
-                # setting: ||T*|| = ||T|| in the dual Hilbert geometries.
-                norm_setting = (setting._primal_setting
-                                if setting._primal_setting is not None
-                                else setting)
-                op_norm = norm_setting.op.norm(
-                    norm_setting.h_domain, norm_setting.h_codomain
-                )
-            par = {'tau':1/(op_norm**2 * setting.data_fid.Lipschitz)}
-            mu_penalty  = setting.regpar * setting.penalty.convexity_param
-            mu_data_fidelity = setting.data_fid.convexity_param * op_lower_bound**2 
-            out['rate'] = (1. - par['tau'] * mu_data_fidelity) / (1. + par['tau']*mu_penalty)
-            out['rate'] = -1. if out['rate'] == 1 else out['rate']
-            out['info'] = 'Dual ' if setting._primal_setting is not None else ''            
-            out['info'] += "FB used with step length tau={:.3e}.".format(par['tau'])
+    def check_applicability(
+        setting: Setting, op_norm: float | None = None,
+        op_lower_bound: float = 0.,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        r"""Check the same linear settings as :meth:`FISTA.check_applicability`.
 
-        return out, par
+        The unregularized penalty contributes only admissible box constraints.
+        Codomain-free normal-operator evaluation is supported.
+        """
+        out, fista_par = FISTA.check_applicability(
+            setting, op_lower_bound=op_lower_bound, op_norm=op_norm
+        )
+        if not out['applicable']:
+            return out, {}
+        tau = fista_par['tau']
+        mu_penalty = fista_par['mu_penalty']
+        mu_data = fista_par['mu_data_fidelity']
+        rate = (1. - tau * mu_data) / (1. + tau * mu_penalty)
+        out['rate'] = -1. if rate == 1. else rate
+        out['info'] = (
+            ('Dual ' if setting._primal_setting is not None else '')
+            + f'FB used with step length tau={tau:.3e}.'
+        )
+        return out, {'tau': tau}
 
     def primal(self) -> tuple[Vector | None, Vector | None]: 
         r"""Return the current primal iterate and operator image for stopping rules and monitoring.
@@ -166,6 +202,10 @@ class ForwardBackwardSplitting(RegSolver):
         tuple[Vector | None, Vector | None]
             Result described above.
         """
+        if self.codomain_free:
+            raise RuntimeError(Errors.runtime_error(
+                'Dual variables are unavailable in codomain-free FB.'
+            ))
         if self._dual_variables_computed==False:
             scale = -1./self.regpar
             self.p *= scale
@@ -176,8 +216,12 @@ class ForwardBackwardSplitting(RegSolver):
 
     def _next(self) -> None:
         self._dual_variables_computed = False
-        self.data_fid.subgradient(self.y, out=self.p)
-        self.op.adjoint(self.p, out=self.Tp)
+        if self.codomain_free:
+            self.op.adjoint_eval(self.x, out=self.Tp)
+            self.Tp -= self.backpropagated_data
+        else:
+            self.data_fid.subgradient(self.y, out=self.p)
+            self.op.adjoint(self.p, out=self.Tp)
         self.h_domain.gram_inv(self.Tp, out=self._domain_work)
         self._domain_work *= -self.tau
         self.x += self._domain_work
@@ -185,8 +229,9 @@ class ForwardBackwardSplitting(RegSolver):
             self.x, self.regpar*self.tau, out=self.x, **self.proximal_pars
         )
         """Note: If F = alpha G, then prox_{tau, F} = prox_{alpha * tau, G}"""
-        self.op(self.x, out=self.y)
- 
+        if not self.codomain_free:
+            self.op(self.x, out=self.y)
+
 class FISTA(RegSolver):
     r"""The generalized FISTA algorithm for minimization of Tikhonov functionals
     
@@ -195,19 +240,26 @@ class FISTA(RegSolver):
     
     Gradient steps are performed on the first term, and proximal steps on the
     second term. For a setting without a regularization parameter, FISTA
-    instead minimizes only the data-fidelity term. This is admissible when the
-    setting penalty is of squared-norm type (and therefore supplies the domain
-    Hilbert geometry) or is a :class:`~regpy.functionals.base.NullFunctional`.
-    The solver uses a null functional as its proximal term in this mode.
+    minimizes only the data-fidelity term, subject to any permitted box
+    constraints. The original penalty supplies the domain Hilbert geometry.
+    Unconstrained squared-norm penalties are replaced by a null functional.
+    For a Quadratic integral penalty only its box constraints remain: all
+    quadratic, linear, and constant coefficients are set to zero. This also
+    applies componentwise to FunctionalOnDirectSum penalties. The setting's
+    Hilbert geometry is not changed.
     
     Parameters
     ----------
     setting: Setting
         The setting of the forward problem. Includes the penalty and data
         fidelity functionals. If ``setting.regpar`` is ``None``, the setting
-        penalty must be of squared-norm type or a
-        :class:`~regpy.functionals.base.NullFunctional`; it then determines
-        ``setting.h_domain`` but is not part of the minimized objective.
+        penalty may be of squared-norm type, a
+        :class:`~regpy.functionals.base.NullFunctional`, a
+        :class:`~regpy.functionals.integral_functionals.Quadratic` with
+        optional bound constraints, or a
+        :class:`~regpy.functionals.base.FunctionalOnDirectSum` of these.
+        It still determines ``setting.h_domain``, but only bound constraints
+        remain active in the unregularized objective.
     init: ReadOnlyVector | None [default: None]
         The initial guess.
     tau: float | None [default: None]
@@ -245,13 +297,12 @@ class FISTA(RegSolver):
 
     Notes
     -----
-    In the unregularized mode, the iteration minimizes
-    
-    .. math::
-        \mathcal{S}_{g^{\delta}}(F(f)) + 0.
+    In the unregularized mode, the iteration minimizes the data fidelity
+    subject to any admissible box constraints from the penalty. No
+    quadratic penalty terms remain.
     
     This use as an iterative regularization method is exposed by
-    :class:`~regpy.solvers.Setting` under the short method name ``"FISTA"``
+    :class:`~regpy.solvers.Setting` under the short method name ``"nFISTA"``
     for applicable linear settings.
     """
     def __init__(
@@ -280,10 +331,10 @@ class FISTA(RegSolver):
             self.regpar = setting.regpar
             self.penalty = setting.penalty
         else:
-            # The setting penalty supplies the domain Hilbert geometry but is
-            # not part of the objective in iterative-regularization mode.
+            # Retain the original setting's Hilbert geometry, but only keep
+            # box constraints in the unregularized proximal term.
             self.regpar = 1.
-            self.penalty = NullFunctional(self.op.domain)
+            self.penalty = _unregularized_penalty(setting.penalty)
         self.x = setting.get_or_update_initial_guess(init, update_setting)
 
         self.log.setLevel(logging_level)
@@ -335,10 +386,11 @@ class FISTA(RegSolver):
     def check_applicability(setting: Setting, op_lower_bound: float=0., op_norm: float | None=None) -> tuple[dict[str, Any], dict[str, Any]]:
         r"""Check the requirements for either supported use of linear FISTA.
         
-        A Tikhonov setting must provide the proximal map of its penalty. A
-        setting without a regularization parameter is accepted only if its
-        penalty is of squared-norm type or is a :class:`NullFunctional`; the
-        solver substitutes a :class:`NullFunctional` in that case.
+        A Tikhonov setting must provide the proximal map of its penalty.
+        Without a regularization parameter, the allowed penalty types are
+        NullFunctional, squared-norm-type functionals, Quadratic integral
+        functionals with optional bounds, and direct sums of these.
+        Quadratic and affine coefficients are discarded, but bounds remain.
         
         Parameters
         ----------
@@ -359,17 +411,19 @@ class FISTA(RegSolver):
         """
         out = {'info':''}; par={}
         without_regpar = not setting.is_tikhonov
-        admissible_without_regpar = (
-            setting.penalty.is_norm_squared_type
-            or isinstance(setting.penalty, NullFunctional)
-        )
-        if without_regpar and not admissible_without_regpar:
-            out['info'] += (
-                'Without a regularization parameter, the penalty must be '
-                'of squared-norm type or a NullFunctional. '
-            )
+        if without_regpar:
+            try:
+                _unregularized_penalty(setting.penalty)
+            except ValueError as error:
+                out['info'] += str(error) + ' '
+        if not setting.op.linear:
+            out['info'] += 'The forward operator must be linear. '
+        if setting.is_tikhonov and not setting.is_convex:
+            out['info'] += 'Tikhonov setting must be convex. '
+        if without_regpar and not setting.codomain_free and not setting.data_fid.is_convex:
+            out['info'] += 'Data fidelity must be convex. '
         if not without_regpar and 'proximal' not in setting.penalty.methods:
-            out['info']+='Missing prox of penalty functional. '
+            out['info'] += 'Missing prox of penalty functional. '
         if not setting.codomain_free:
             if 'subgradient' not in setting.data_fid.methods:
                 out['info'] += 'Missing gradient of data functional. '

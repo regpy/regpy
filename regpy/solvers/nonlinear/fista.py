@@ -10,7 +10,7 @@ from typing import Any
 
 import numpy as np
 
-from regpy.functionals.base import NullFunctional
+from ..linear.proximal_gradient import _unregularized_penalty
 from regpy.vecsps import Vector
 from regpy.util import Errors
 from .. import RegSolver, Setting, Naturals
@@ -25,13 +25,17 @@ class FISTA(RegSolver):
         \mathcal{S}_{g^{\delta}}(F(f)) + \alpha \mathcal{R}(f).
     
     Gradient steps are performed on the first term, and proximal steps on the second term.
-    For a setting without a regularization parameter, FISTA instead minimizes
-    only the data-fidelity term. This is admissible when the setting's penalty
-    is of squared-norm type (and hence specifies the domain Hilbert geometry)
-    or is a :class:`~regpy.functionals.base.NullFunctional`; internally, the
-    penalty term :math:`\mathcal{R}` is then replaced by a null functional. This has been justified 
-    by Hubmer and Ramlau, Inverse Problems, 2017 where the regularizing property 
-    of this scheme is shown under the tangential cone condition. 
+    Without a regularization parameter, FISTA minimizes the data-fidelity
+    term subject to admissible box constraints. As in the linear FISTA,
+    the setting's penalty can be a NullFunctional, a squared-norm-type
+    functional, a Quadratic integral functional with optional lower/upper
+    bounds, or a FunctionalOnDirectSum of these. Unconstrained penalties
+    contribute only the domain Hilbert geometry; for a Quadratic only its
+    bounds remain active (the quadratic, linear and constant coefficients
+    are discarded). Taylor extensions are not supported in this mode.
+    This also covers unregularized problems without constraints. The
+    unconstrained case is a regularization method studied by Hubmer and
+    Ramlau, Inverse Problems, 2017, under the tangential cone condition.
     
     The step sizes for the gradient steps are determined using a backtracking method introduced in
     A. Beck and M. Teboulle. A fast iterative shrinkage-thresholding algorithm for
@@ -43,11 +47,13 @@ class FISTA(RegSolver):
         The setting of the forward problem. Includes the penalty and data
         fidelity functionals. If ``setting.regpar`` is not ``None``, FISTA
         minimizes the Tikhonov functional displayed above. If
-        ``setting.regpar`` is ``None``, the setting penalty must either be of
-        squared-norm type or be a
-        :class:`~regpy.functionals.base.NullFunctional`. In that case FISTA
-        minimizes the unregularized data-fidelity term and uses an internal
-        null functional for its proximal step.
+        ``setting.regpar`` is ``None``, the penalty may be a squared-norm-type
+        functional, :class:`~regpy.functionals.base.NullFunctional`, a
+        :class:`~regpy.functionals.integral_functionals.Quadratic` with
+        optional box constraints, or a
+        :class:`~regpy.functionals.base.FunctionalOnDirectSum` of these.
+        The unregularized objective retains only the box constraints; it
+        does not contain any quadratic, linear or constant penalty terms.
     data: Vector | Any | None [default: None]
         The data to be fitted. If None, the data is taken from the setting.
     init: ReadOnlyVector | None [default: None]
@@ -83,10 +89,10 @@ class FISTA(RegSolver):
     
     Notes
     -----
-    In the unregularized mode, a squared-norm setting penalty is not included
-    in the objective. Its Hilbert space is still used as
+    In the unregularized mode, the original setting penalty still defines
     ``setting.h_domain`` for gradients, norm estimates, and step-size
-    selection.
+    selection. The solver uses a separate constraint-only penalty for its
+    proximal step; the original setting penalty is not modified.
     
     Whenever norm estimation or backtracking changes the step size, the next
     accelerated step starts afresh from the accepted current iterate. In
@@ -137,10 +143,11 @@ class FISTA(RegSolver):
             self.regpar = self.setting.regpar
             self.penalty = self.setting.penalty
         else:
-            # The setting's penalty supplies the domain Hilbert geometry in
-            # this case, but is not part of the minimized objective.
+            # Use the same unregularized penalty conversion as linear FISTA:
+            # keep box constraints, but discard all other penalty terms.
+            # The setting's original penalty retains its Hilbert geometry.
             self.regpar = 1.
-            self.penalty = NullFunctional(self.op.domain)
+            self.penalty = _unregularized_penalty(self.setting.penalty)
         self.codomain_free = setting.codomain_free
         self.mu_penalty = self.regpar * self.penalty.convexity_param
         self.mu_data_fidelity = (
@@ -260,15 +267,13 @@ class FISTA(RegSolver):
         par = {}
 
         without_regpar = not setting.is_tikhonov
-        admissible_without_regpar = (
-            setting.penalty.is_norm_squared_type
-            or isinstance(setting.penalty, NullFunctional)
-        )
-        if without_regpar and not admissible_without_regpar:
-            out["info"] += (
-                "Without a regularization parameter, the penalty must be "
-                "of squared-norm type or a NullFunctional. "
-            )
+        if without_regpar:
+            try:
+                # Shared with linear FISTA, including direct sums and
+                # rejection of non-constraint Taylor extensions.
+                _unregularized_penalty(setting.penalty)
+            except ValueError as error:
+                out["info"] += str(error) + " "
         if not without_regpar and "proximal" not in setting.penalty.methods:
             out["info"] += "Missing prox of penalty functional. "
         if not setting.codomain_free:

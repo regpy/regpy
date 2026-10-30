@@ -313,8 +313,17 @@ class TikhonovCG(RegSolver):
             )
 
             if self.sq_norm_x == 0.:
-                valx = 2*self.tolexpr
-                self.log_info = 'rel X:--(x=0)!'
+                # The relative estimate divides by ||x_n - x_0||_R. At
+                # n=0 this denominator is zero, irrespective of x_0.
+                # A finite value depending on the requested tolerance is
+                # not an error estimate. Record infinity unless the normal
+                # residual already vanishes (the exact minimizer is x_0).
+                valx = np.inf if self.solver.sq_norm_res > 0 else 0.
+                self.log_info = (
+                    'rel X:inf (zero update from initial iterate)'
+                    if np.isinf(valx)
+                    else 'rel X:0 (normal equation already satisfied)'
+                )
             else:
                 valx = sqrt(
                     self.solver.sq_norm_res
@@ -417,8 +426,15 @@ class TikhonovCG(RegSolver):
                     ).real
 
             if self.norm_y == 0:
-                valy = 2*self.tolexpr
-                self.log_info = "rel Y:--(y=0) "
+                # The relative estimate divides by ||T(x_n-x_0)||_S.
+                # In particular it is undefined at the initial iterate;
+                # do not replace it with an arbitrary multiple of tol.
+                valy = np.inf if self.solver.sq_norm_res > 0 else 0.
+                self.log_info = (
+                    'rel Y:inf (zero data-space update)'
+                    if np.isinf(valy)
+                    else 'rel Y:0 (normal equation already satisfied)'
+                )
             else:
                 valy = sqrt(
                     self.solver.sq_norm_res
