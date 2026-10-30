@@ -22,23 +22,9 @@ from regpy.hilbert import L2
 
 from .setting import Setting
 
-__all__ = ['HilbertSetting', 'BoundConstrSetting', 'Huber_XSetting',
+__all__ = ['BoundConstrSetting', 'Huber_XSetting',
            'FISTA_SSNewton', 'dFISTA_SSNewton', 'TV_Setting', 'TVaug_Setting',
            'PDHGaug', 'TVaugFISTAGapStopping', 'TVaugPDHGGapStopping']
-
-"""
-Special settings are mainly convenience classes. 
-Their main purpose of specialized setting is to define default inner and outer solvers 
-that work "best" (or at least reasonably good) for certain combinations of data fidelity 
-and penalty term. This default solver can be employed by the specialized setting's run 
-method and allows to quickly get a solution to an inverse problem without having 
-to perform tests of all applicable solvers. This holds rue in particular to nonlinear 
-inverse problems where inner solvers are often needed. Specialized settings allow to 
-to set up such combined solvers in a simple way.
-
-Moreover, some specialized settings implement formulas for the duality gap that 
-avoid loss of accuracy by cancellation effects.
-"""
 
 from regpy.solvers.sequences import Naturals
 from regpy.solvers.solver import CombinedSolver
@@ -332,72 +318,6 @@ class dFISTA_SSNewton(_FISTA_SSNewtonBase):
         )))
         return {'applicable': bool(fista_out['applicable'] and ssn_out['applicable']),
                 'info': info}, {}
-
-class HilbertSetting(Setting):
-    r"""Class of settings in which both the penalty and the data fidelity functional are squared Hilbert norms.
-        
-    Parameters
-    ----------
-    op: Operator
-        Operator used by this construction.
-    penalty: Functional | HilbertSpace | Callable | None [default: None]
-        Penalty.
-    data_fid: Functional | HilbertSpace | Callable | None [default: None]
-        Data fid.
-    regpar: float | None [default: None]
-        Regularization parameter.
-    data: ReadOnlyVector | ObsDataT | None [default: None]
-        Observed data.
-    exact_data: ReadOnlyVector | None [default: None]
-        Input vector; its coefficients are only read.
-    init: ReadOnlyVector | None [default: None]
-        Initial iterate in the operator domain.
-    incorporate_init_in_penalty: bool [default: True]
-        Incorporate init in penalty.
-    codomain_free: bool [default: False]
-        Codomain free.
-    logging_level: int | str [default: 'INFO']
-        Logging level for this object.
-    explicitDataWarning: bool [default: True]
-        Explicitdatawarning.
-    _primal_setting: Setting | None [default: None]
-         primal setting.
-    """
-    def  __init__(self,
-            op: Operator, 
-            penalty: Functional|HilbertSpace|Callable|None = None, 
-            data_fid:Functional|HilbertSpace|Callable|None = None,
-            regpar: float|None =None,
-            data: ReadOnlyVector | ObsDataT | None = None, 
-            exact_data: ReadOnlyVector | None = None, 
-            init: ReadOnlyVector | None = None,
-            incorporate_init_in_penalty: bool = True,
-            codomain_free: bool = False,
-            logging_level: int | str = "INFO",
-            explicitDataWarning:bool = True,                 
-            _primal_setting:Setting | None =None # intended only for internal use in get_dual_setting()
-             )->None:
-              
-        penalty = L2(op.domain) if penalty is None else penalty
-        data_fid = L2(op.codomain) if data_fid is None else data_fid
-        super().__init__(op, penalty, data_fid, 
-                              regpar = regpar, 
-                              data = data, 
-                              exact_data = exact_data, 
-                              init=init, 
-                              incorporate_init_in_penalty=incorporate_init_in_penalty,
-                              codomain_free=codomain_free, 
-                              logging_level=logging_level, 
-                              explicitDataWarning=explicitDataWarning, 
-                              _primal_setting=_primal_setting,
-                              default_linear_regmethod = 'CGNE',
-                              default_nonlinear_regmethod = 'NewtonCG',
-                              default_inner_solver = 'TikhCG'
-                              )
-        if not self.penalty.is_norm_squared_type:
-            raise RuntimeError(Errors.runtime_error('Penalty of HilbertSetting must be of squared norm type.',self.penalty))
-        if not self.data_fid.is_norm_squared_type:
-            raise RuntimeError(Errors.runtime_error('Data fidelity term of HilbertSetting must be of squared norm type.',self.data_fid))
 
 class BoundConstrSetting(Setting):
     r"""Settings with smooth convex penalty and data fidelity functionals, separable penalty, 
