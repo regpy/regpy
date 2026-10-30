@@ -1,5 +1,5 @@
-Functionals in RegPy
-====================
+Functionals
+===========
 
 A :class:`regpy.functionals.base.Functional` maps vectors to extended real
 values. Typical examples are data-fidelity terms, constraints and
