@@ -1536,7 +1536,8 @@ class Setting:
         _with_stoprule_defaults({method_abbrv: method}, factory)
         self._methods[method_abbrv] = method
 
-    def evaluate_methods(self, method_names: list[str] | None = None)->float|None:
+    def evaluate_methods(self, method_names: list[str] | None = None,
+                         op_norm: float | None = None)->float|None:
         r"""Evaluates which methods are applicable to the current setting. 
         This is achieved by calling method.check_applicability(self), which also provide information on guaranteed rates.
         
@@ -1544,6 +1545,11 @@ class Setting:
         ----------
         method_names: list[str] | None [default: None]
             List of names of methods to be evaluated. If None, all methods are evaluated.
+        op_norm: float | None [default: None]
+            Optional precomputed operator norm in the setting's Hilbert
+            geometries. Reuse this value instead of re-estimating the norm.
+            Useful for successive Tikhonov inner settings with the same
+            forward operator and Hilbert geometries.
         
         Returns
         -----------
@@ -1559,8 +1565,8 @@ class Setting:
                     raise ValueError(f'Unknown method name {method_name}. Known methods are {self._methods.keys()}.')
         # Only convex Tikhonov solvers use the global operator norm for their
         # convergence-rate estimates. It may not exist for nonlinear methods.
-        op_norm = (self.op.norm(codomain_free=self.codomain_free)
-                   if method_names and self.is_tikhonov and self.is_convex else None)
+        if op_norm is None and method_names and self.is_tikhonov and self.is_convex:
+            op_norm = self.op.norm(codomain_free=self.codomain_free)
         for method_name in method_names:
             method = self._methods[method_name]
             if self.is_tikhonov:
@@ -1576,7 +1582,7 @@ class Setting:
             check_params = {key: value for key, value in
                             method.get('method_params', {}).items()
                             if key in accepted and key not in ('setting', 'op_norm')}
-            if op_norm is not None:
+            if op_norm is not None and 'op_norm' in accepted:
                 check_params['op_norm'] = op_norm
             out, _ = check(target_setting, **check_params)
             method.pop('caveats', None)

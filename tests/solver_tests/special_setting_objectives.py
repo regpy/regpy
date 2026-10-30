@@ -27,3 +27,5 @@ def test_huber_x_setting_has_expected_data_fidelity(sigma):
     expected = raw.as_data_func(observed)(trial)
     np.testing.assert_allclose(setting.data_fid(trial), expected,
                                rtol=1e-10, atol=1e-10)
+
+

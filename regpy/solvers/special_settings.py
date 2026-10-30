@@ -964,20 +964,39 @@ class TVaug_Setting(Setting):
 class PDHGaug(PDHG):
     r"""Solve a standard :class:`TV_Setting` through its augmented TV setting.
 
-    The solver iterates over the *augmented* saddle system.  It returns the
-    physical pair ``(x, T(x))`` to :meth:`TV_Setting.run`, not the augmented
-    observation ``(c*T(x), grad(x))``.  Its internal ``primal`` and ``dual``
-    accessors remain in augmented coordinates for stopping rules.
+    With ``A = (c*T, grad)``, PDHG by default uses the blockwise upper bound
+
+    .. math::
+        L_A = \sqrt{c^2 L_T^2 + L_{\nabla}^2}
+
+    for its step-size selection. Here the component norms use the augmented
+    setting's **domain Hilbert geometry** and the appropriate component
+    codomain geometries. This bound is at most a factor ``sqrt(2)`` above
+    the true augmented norm, provided the component norms are accurate.
+
+    ``op_norm`` (or the explicit alias ``norm_op``) is the norm of the
+    *physical* operator ``T``, **not** the norm of ``(c*T, grad)``. If supplied,
+    it is used rather than estimating ``T.norm()``. ``norm_grad`` similarly
+    supplies the norm of the gradient. ``norm_op`` has precedence over
+    ``op_norm`` when both are passed (e.g. when ``Setting.evaluate_methods``
+    supplies its generic ``op_norm`` but the method configuration specifies
+    ``norm_op``). If neither is given, each block norm is estimated separately.
+
+    Set ``exact_augmented_norm=True`` to estimate the augmented norm directly,
+    in the same way as ordinary PDHG. An explicit ``augmented_op_norm`` can
+    also be supplied to use an independently known augmented norm; it takes
+    precedence over all other norm options. These options affect automatic
+    step-size selection, not the iteration formulas. Supplying all of
+    ``tau``, ``sigma``, and ``theta`` bypasses automatic norm estimation.
+
+    The solver returns the physical pair ``(x, T(x))`` from :meth:`run`;
+    its ``primal`` and ``dual`` methods remain in augmented coordinates for
+    the stopping rule. Evaluation counters are never reset here.
     """
 
     @staticmethod
     def _augmented_setting(setting: Setting):
-        """Resolve the saddle formulation, including alpha-grid inner settings.
-
-        Alpha-grid regularization creates ordinary inner ``Setting`` objects
-        with an explicit TV penalty.  The parent TV_Setting annotates such
-        objects with the decomposition of TV and any additional penalty.
-        """
+        """Resolve the saddle formulation, including alpha-grid inner settings."""
         augmented = getattr(setting, 'tvaug_setting', None)
         if augmented is not None:
             return augmented
@@ -998,15 +1017,96 @@ class PDHGaug(PDHG):
         setting._tvaug_pdhg_cache = augmented
         return augmented
 
-    def __init__(self, setting: Setting, **kwargs) -> None:
+    @staticmethod
+    def _validate_norm(value, name: str) -> float | None:
+        """Reject invalid estimates rather than passing them to PDHG."""
+        if value is None:
+            return None
+        if (isinstance(value, (bool, np.bool_))
+                or not isinstance(value, (int, float, np.integer, np.floating))
+                or not np.isfinite(value) or value < 0):
+            raise ValueError(f'{name} must be a finite nonnegative real number.')
+        return float(value)
+
+    @staticmethod
+    def _norm_for_pdhg(
+        augmented: TVaug_Setting, *,
+        op_norm: float | None = None,
+        norm_op: float | None = None,
+        norm_grad: float | None = None,
+        exact_augmented_norm: bool = False,
+        augmented_op_norm: float | None = None,
+    ) -> float:
+        """Get the PDHG norm bound in the augmented Hilbert geometries.
+
+        The codomain geometry of the scaled data term is the geometry of its
+        original data fidelity: horizontal dilation preserves ``h_domain``.
+        The TV coefficient likewise preserves the gradient-block geometry.
+        """
+        if not isinstance(exact_augmented_norm, (bool, np.bool_)):
+            raise TypeError('exact_augmented_norm must be a bool.')
+        op_norm = PDHGaug._validate_norm(op_norm, 'op_norm')
+        norm_op = PDHGaug._validate_norm(norm_op, 'norm_op')
+        norm_grad = PDHGaug._validate_norm(norm_grad, 'norm_grad')
+        augmented_op_norm = PDHGaug._validate_norm(
+            augmented_op_norm, 'augmented_op_norm')
+        if augmented_op_norm is not None:
+            bound = augmented_op_norm
+        elif exact_augmented_norm:
+            bound = float(augmented.op.norm(
+                augmented.h_domain, augmented.h_codomain))
+        else:
+            if norm_op is None:
+                norm_op = op_norm
+            if norm_op is None:
+                norm_op = float(augmented.forward_op.norm(
+                    augmented.h_domain, augmented.data_term.h_domain))
+            if norm_grad is None:
+                norm_grad = float(augmented.grad.norm(
+                    augmented.h_domain, augmented.tv_func.h_domain))
+            bound = ma.hypot(augmented.data_operator_scale * norm_op,
+                             norm_grad)
+        if not np.isfinite(bound) or bound <= 0.:
+            raise ValueError('The augmented operator norm bound must be '
+                             'finite and strictly positive for automatic PDHG steps.')
+        return bound
+
+    def __init__(
+        self, setting: Setting, *,
+        op_norm: float | None = None,
+        norm_op: float | None = None,
+        norm_grad: float | None = None,
+        exact_augmented_norm: bool = False,
+        augmented_op_norm: float | None = None,
+        **kwargs,
+    ) -> None:
         augmented = self._augmented_setting(setting)
         if augmented is None:
             raise ValueError('PDHGaug requires a convex TV Tikhonov setting.')
-        super().__init__(augmented, **kwargs)
+        # When all three PDHG step parameters are given, the base solver does
+        # not evaluate an operator norm at all.
+        prescribed_steps = (kwargs.get('tau', 0.) > 0
+                            and kwargs.get('sigma', 0.) > 0
+                            and kwargs.get('theta', -1.) >= 0)
+        bound = None if prescribed_steps else self._norm_for_pdhg(
+            augmented, op_norm=op_norm, norm_op=norm_op,
+            norm_grad=norm_grad, exact_augmented_norm=exact_augmented_norm,
+            augmented_op_norm=augmented_op_norm)
+        super().__init__(augmented, op_norm=bound, **kwargs)
         self._physical_tv_setting = setting
+        self.augmented_op_norm_bound = bound
 
     @staticmethod
-    def check_applicability(setting: Setting, **kwargs):
+    def check_applicability(
+        setting: Setting,
+        op_norm: float | None = None,
+        norm_op: float | None = None,
+        norm_grad: float | None = None,
+        exact_augmented_norm: bool = False,
+        augmented_op_norm: float | None = None,
+        tau: float = 0., sigma: float = 0., theta: float = -1.,
+        **kwargs,
+    ):
         if not setting.is_tikhonov or not setting.is_convex:
             return {'applicable': False, 'info':
                     'PDHGaug requires a convex TV Tikhonov setting.'}, {}
@@ -1014,11 +1114,16 @@ class PDHGaug(PDHG):
         if augmented is None:
             return {'applicable': False, 'info':
                     'PDHGaug requires a TV_Setting or TV alpha-grid inner setting.'}, {}
-        from regpy.solvers.linear import PDHG
-        # Norms of the original T and the augmented (cT, grad) differ.
-        # Never reuse op_norm from Setting.evaluate_methods on T here.
-        kwargs.pop('op_norm', None)
-        return PDHG.check_applicability(augmented, **kwargs)
+        prescribed_steps = tau > 0 and sigma > 0 and theta >= 0
+        bound = None if prescribed_steps else PDHGaug._norm_for_pdhg(
+            augmented, op_norm=op_norm, norm_op=norm_op,
+            norm_grad=norm_grad, exact_augmented_norm=exact_augmented_norm,
+            augmented_op_norm=augmented_op_norm)
+        # PDHG.check_applicability always interprets op_norm as the norm of
+        # the operator in *its* setting: here that is the augmented operator.
+        return PDHG.check_applicability(
+            augmented, op_norm=bound, tau=tau, sigma=sigma,
+            theta=theta, **kwargs)
 
     def run(self, stoprule):
         x, _ = super().run(stoprule)

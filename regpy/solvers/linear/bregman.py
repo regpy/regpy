@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 from collections.abc import Callable, Iterable
 from copy import deepcopy
 from itertools import repeat
+from inspect import signature
 from math import isfinite
 from logging import Logger
 from numbers import Integral, Real
@@ -56,6 +57,33 @@ def _log_inner_summary(log: Logger, method_name: str, rule: StopRule) -> None:
     else:
         log.info('%s stopped after %s its (op-evals not recorded).',
                  method_name, iterations)
+
+
+def _same_hilbert_geometry(left: object, right: object) -> bool:
+    """Hilbert spaces may be copied when constructing successive inner settings.
+
+    Do not reuse a norm just because the vector spaces agree: changing the
+    Gram matrices changes the operator norm. RegPy Hilbert spaces implement
+    equality under deepcopy; treat unknown equality as a cache miss.
+    """
+    if left is right:
+        return True
+    try:
+        result = left == right
+        return result is True or (hasattr(result, 'item') and result.item() is True)
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
+def _validate_op_norm(op_norm: float | None) -> float | None:
+    if op_norm is None:
+        return None
+    if isinstance(op_norm, bool) or not isinstance(op_norm, Real):
+        raise TypeError('op_norm must be a finite, positive real number or None.')
+    op_norm = float(op_norm)
+    if not isfinite(op_norm) or op_norm <= 0.:
+        raise ValueError('op_norm must be finite and strictly positive.')
+    return op_norm
 
 
 class Bregman(RegSolver):
@@ -139,6 +167,11 @@ class Bregman(RegSolver):
         CountIterations is present. Inner solver and stopping-rule logging
         default independently to WARNING. Configure them through the inner
         method's method_params and stoprule_params, respectively.
+    op_norm: float | None [default: None]
+        Optional physical forward-operator norm in the inner Hilbert
+        geometries. If omitted, estimate once and cache across inner solves;
+        a changed Hilbert geometry invalidates that cache. It is passed only
+        to inner solvers whose constructors explicitly accept ``op_norm``.
     is_primal: bool [default: True]
         Coordinate label for compatibility with RegSolver.
         This does not change which inner problem is solved.
@@ -192,6 +225,7 @@ class Bregman(RegSolver):
         select_subgradient: Callable[[Setting, ReadOnlyVector], Vector] | None = None,
         logging_level: int | str = 'INFO',
         is_primal: bool = True,
+        op_norm: float | None = None,
     ) -> None:
         if select_subgradient is not None and not callable(select_subgradient):
             raise TypeError('select_subgradient must be callable or None.')
@@ -218,6 +252,10 @@ class Bregman(RegSolver):
         initial = setting.init if init is None else init
         if initial not in setting.op.domain:
             raise ValueError('init must belong to the operator domain.')
+        # The cache belongs to this outer run, not to the shared Operator.
+        # It is reused across alpha values only for equal Hilbert geometries.
+        self._supplied_op_norm = _validate_op_norm(op_norm)
+        self._op_norm_cache: tuple[object, object | None, float] | None = None
         super().__init__(setting, is_primal=is_primal)
         self.log.setLevel(logging_level)
         self.regpar = alpha
@@ -336,6 +374,26 @@ class Bregman(RegSolver):
             self._bregman_penalty = self._make_bregman_penalty(self.regpar)
         self._run_inner(alpha, self._bregman_penalty, self.x)
 
+    def _cached_inner_op_norm(self, inner: Setting) -> float:
+        """Norm for the *inner* Hilbert geometry, evaluated at most once per
+        unchanged geometry. No shared operator counters are reset.
+
+        An explicitly supplied norm is assumed valid for all inner problems.
+        """
+        if self._supplied_op_norm is not None:
+            return self._supplied_op_norm
+        domain = inner.h_domain
+        codomain = None if inner.codomain_free else inner.h_codomain
+        cached = self._op_norm_cache
+        if (cached is not None
+                and _same_hilbert_geometry(domain, cached[0])
+                and _same_hilbert_geometry(codomain, cached[1])):
+            return cached[2]
+        norm = _validate_op_norm(inner.op.norm(
+            domain, codomain, codomain_free=inner.codomain_free))
+        self._op_norm_cache = (domain, codomain, norm)
+        return norm
+
     def _run_inner(self, alpha: float, penalty: Functional, init: ReadOnlyVector) -> None:
         r"""Solve at the zero linearization point and advance the alpha iterator.
 
@@ -373,6 +431,24 @@ class Bregman(RegSolver):
         self.inner_setting = inner
         entry['stoprule_params'].setdefault('logging_level', 'WARNING')
         level = entry['method_params'].get('logging_level', 'WARNING')
+
+        # All convex inner solvers can *be checked* with a common norm, but
+        # not every constructor accepts op_norm (e.g. TikhonovCG or ADMM).
+        # Supplying it to evaluate_methods avoids that method's unconditional
+        # fresh estimation for every alpha. Pass it to the constructor only
+        # when the constructor explicitly declares the parameter.
+        configured_norm = entry['method_params'].get('op_norm')
+        if configured_norm is not None:
+            norm = _validate_op_norm(configured_norm)
+        else:
+            norm = self._cached_inner_op_norm(inner)
+        inner.evaluate_methods([name], op_norm=norm)
+        if 'op_norm' in signature(template['class'].__init__).parameters:
+            entry['method_params'].setdefault('op_norm', norm)
+        else:
+            # Still use the norm for applicability/rates; never forward an
+            # unsupported keyword to the solver constructor.
+            entry['method_params'].pop('op_norm', None)
         x, y = inner.run(name, logging_level=level)
         _log_inner_summary(self.log, template['class'].__name__, inner.get_stoprule(name))
         if x not in self.op.domain:
@@ -473,6 +549,9 @@ class RunOnAlphaGrid(RegSolver):
         Outer logging level, including an INFO summary of each inner run when
         CountIterations is present. Inner solver and stopping-rule logging
         default to WARNING; explicit inner configuration takes precedence.
+    op_norm: float | None [default: None]
+        Optional physical operator norm, cached as in :class:`Bregman`.
+        An inner method's configured ``op_norm`` takes precedence.
     is_primal: bool [default: True]
         Coordinate label for RegSolver.
     
@@ -486,6 +565,7 @@ class RunOnAlphaGrid(RegSolver):
 
     _validate_alpha = staticmethod(Bregman._validate_alpha)
     _method_template = staticmethod(Bregman._method_template)
+    _cached_inner_op_norm = Bregman._cached_inner_op_norm
     _run_inner = Bregman._run_inner
     primal = Bregman.primal
 
@@ -498,6 +578,7 @@ class RunOnAlphaGrid(RegSolver):
         init: ReadOnlyVector | None = None,
         logging_level: int | str = 'INFO',
         is_primal: bool = True,
+        op_norm: float | None = None,
     ) -> None:
         out, _ = self.check_applicability(setting)
         if not out['applicable']:
@@ -513,6 +594,10 @@ class RunOnAlphaGrid(RegSolver):
         initial = setting.init if init is None else init
         if initial not in setting.op.domain:
             raise ValueError('init must belong to the operator domain.')
+        # The cache belongs to this outer run, not to the shared Operator.
+        # It is reused across alpha values only for equal Hilbert geometries.
+        self._supplied_op_norm = _validate_op_norm(op_norm)
+        self._op_norm_cache: tuple[object, object | None, float] | None = None
         super().__init__(setting, is_primal=is_primal)
         self.log.setLevel(logging_level)
         self.regpar = alpha
