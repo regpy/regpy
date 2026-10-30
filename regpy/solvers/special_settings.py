@@ -23,7 +23,8 @@ from regpy.hilbert import L2
 from .setting import Setting
 
 __all__ = ['HilbertSetting', 'BoundConstrSetting', 'Huber_XSetting',
-           'FISTA_SSNewton', 'dFISTA_SSNewton', 'TV_Setting']
+           'FISTA_SSNewton', 'dFISTA_SSNewton', 'TV_Setting', 'TVaug_Setting',
+           'PDHGaug', 'TVaugFISTAGapStopping', 'TVaugPDHGGapStopping']
 
 """
 Special settings are mainly convenience classes. 
@@ -41,7 +42,7 @@ avoid loss of accuracy by cancellation effects.
 
 from regpy.solvers.sequences import Naturals
 from regpy.solvers.solver import CombinedSolver
-from regpy.solvers.linear import FISTA, SemiSmoothNewton
+from regpy.solvers.linear import FISTA, SemiSmoothNewton, PDHG
 
 def _fista_gap_switch_rule(reltol: float, logging_level: int | str) -> DualityGapStopping:
     """Stop FISTA only when the relative primal duality-gap bound holds.
@@ -606,7 +607,7 @@ class Huber_XSetting(Setting):
 
   
 
-class TV_Setting(Setting):
+class TVaug_Setting(Setting):
     r"""Rockafellar--Fenchel setting for (Huber-smoothed) isotropic TV.
 
     The minimized functional is
@@ -684,16 +685,14 @@ class TV_Setting(Setting):
       ``T.codomain`` or scaled augmented data in the direct-sum codomain
       updates *only* the first fidelity component. This preserves KL semantics.
     * ``codomain_free=True`` is not supported for this explicit formulation.
-    * The default solver is PDHG. If ``R=0``, the conjugate of the penalty
-      is an indicator of zero, so the full duality gap is generally infinite
-      at intermediate iterates. PDHG therefore defaults to
-      ``DualityGapStopping(gap_part='data_fid')`` for primal PDHG and
-      ``gap_part='penalty'`` for dPDHG. The latter evaluates the Bregman gap
-      of the *dual setting's penalty*, which is the conjugated original data
-      fidelity. It does not require recovering an original primal iterate
-      through the (non-single-valued) subgradient of R*. Both partial-gap
-      thresholds are heuristics and record ``converged=False`` on acceptance.
-      The full gap remains available by overriding the stopping rule.
+    * With ``R=0``, the primal penalty's conjugate is the indicator of zero,
+      so the *full* Fenchel gap generally remains infinite at intermediate
+      PDHG iterates. The default primal PDHG rule therefore measures the
+      **data-fidelity contribution** to the Fenchel--Young gap using
+      :class:`TVaugPDHGGapStopping`. This is a useful residual, **not** a
+      certificate of minimization; an iteration cap is always present.
+      An ordinary full-gap rule can be supplied explicitly if its
+      (possibly infinite) values are desired.
     """
 
     def __init__(
@@ -721,7 +720,7 @@ class TV_Setting(Setting):
         from regpy.vecsps import UniformGridFcts
 
         if not isinstance(op, Operator) or not op.linear:
-            raise ValueError("TV_Setting requires a linear data-forward operator.")
+            raise ValueError("TVaug_Setting requires a linear data-forward operator.")
         if isinstance(beta, (bool, np.bool_)) or not isinstance(
             beta, (int, float, np.floating)
         ) or not np.isfinite(beta) or beta < 0:
@@ -807,7 +806,7 @@ class TV_Setting(Setting):
             L2(op.codomain) if data_fid is None else data_fid, op.codomain
         )
         if not self._tv_base_data_term.is_convex:
-            raise ValueError("A Rockafellar--Fenchel TV_Setting requires convex data fidelity.")
+            raise ValueError("A Rockafellar--Fenchel TVaug_Setting requires convex data fidelity.")
         if data is not None and data not in op.codomain:
             raise ValueError("data must belong to T.codomain.")
         self.data_term = self._tv_base_data_term
@@ -826,7 +825,7 @@ class TV_Setting(Setting):
         additional_penalty = as_functional(additional_penalty, op.domain)
         self._tv_null_penalty = isinstance(additional_penalty, NullFunctional)
         if not additional_penalty.is_convex:
-            raise ValueError("A Rockafellar--Fenchel TV_Setting requires convex penalty.")
+            raise ValueError("A Rockafellar--Fenchel TVaug_Setting requires convex penalty.")
 
         # If the supplied fidelity already embeds observations, retain them
         # in the Setting.data metadata as well (when they are domain vectors).
@@ -881,15 +880,22 @@ class TV_Setting(Setting):
         # original NullFunctional.conj subgradient and does not require
         # reconstructing the original primal iterate. Neither partial gap
         # certifies convergence; the iteration cap remains in place.
-        params = {
+        # The stock DualityGapStopping has no ``gap_part`` option: the old
+        # configuration passed it through the factory, where it was silently
+        # ignored. Use a real partial-gap evaluator for primal PDHG instead.
+        self.set_stoprule_params("PDHG", {
+            "factory": _tvaug_pdhg_gap_factory,
+            "tol": 1e-5,
+            "schedule": None,
+        })
+        # On a dual setting, keep the usual full-gap check (which can be
+        # nonfinite) and the safety cap. Do not claim an ignored gap_part.
+        self.set_stoprule_params("dPDHG", {
             "factory": "DualityGapStopping",
             "stop_at_infty": False,
-            "reltol": 1e-3,
-            "tol": 1e-12,
-            "rpow": 1    # actually the two components of the data term may have different rpow's, but 1 dominates.
-        }
-        self.set_stoprule_params("PDHG", {**params, "gap_part": "data_fid"})
-        self.set_stoprule_params("dPDHG", {**params, "gap_part": "penalty"})
+            "reltol": 0.,
+            "schedule": None,
+        })
 
     @staticmethod
     def _augmented_observations(data, op, scale: float = 1.):
@@ -919,7 +925,7 @@ class TV_Setting(Setting):
         if (isinstance(new_regpar, (bool, np.bool_))
                 or not isinstance(new_regpar, (int, float, np.floating))
                 or not np.isfinite(new_regpar) or new_regpar <= 0):
-            raise ValueError("TV_Setting.regpar must be finite and positive.")
+            raise ValueError("TVaug_Setting.regpar must be finite and positive.")
         alpha = float(new_regpar)
         if getattr(self, "_tv_registered", False):
             # The measured-data dependence is contained *inside* the first
@@ -953,3 +959,516 @@ class TV_Setting(Setting):
         self._data_fid = self._tv_data_fidelity(self.regpar)
         self._data = self._augmented_observations(
             raw_data, self.op, self.data_operator_scale)
+
+
+class PDHGaug(PDHG):
+    r"""Solve a standard :class:`TV_Setting` through its augmented TV setting.
+
+    The solver iterates over the *augmented* saddle system.  It returns the
+    physical pair ``(x, T(x))`` to :meth:`TV_Setting.run`, not the augmented
+    observation ``(c*T(x), grad(x))``.  Its internal ``primal`` and ``dual``
+    accessors remain in augmented coordinates for stopping rules.
+    """
+
+    @staticmethod
+    def _augmented_setting(setting: Setting):
+        """Resolve the saddle formulation, including alpha-grid inner settings.
+
+        Alpha-grid regularization creates ordinary inner ``Setting`` objects
+        with an explicit TV penalty.  The parent TV_Setting annotates such
+        objects with the decomposition of TV and any additional penalty.
+        """
+        augmented = getattr(setting, 'tvaug_setting', None)
+        if augmented is not None:
+            return augmented
+        cached = getattr(setting, '_tvaug_pdhg_cache', None)
+        if cached is not None and cached.regpar == setting.regpar:
+            return cached
+        options = getattr(setting, '_tvaug_constructor', None)
+        if options is None:
+            return None
+        augmented = TVaug_Setting(
+            op=setting.op, data_fid=setting.data_fid,
+            penalty=options['additional_penalty'], regpar=setting.regpar,
+            beta=options['beta'], data=setting.data,
+            grad=options['grad'], data_operator_scale=options['scale'],
+            init=setting.init, incorporate_init_in_penalty=False,
+            explicitDataWarning=False,
+        )
+        setting._tvaug_pdhg_cache = augmented
+        return augmented
+
+    def __init__(self, setting: Setting, **kwargs) -> None:
+        augmented = self._augmented_setting(setting)
+        if augmented is None:
+            raise ValueError('PDHGaug requires a convex TV Tikhonov setting.')
+        super().__init__(augmented, **kwargs)
+        self._physical_tv_setting = setting
+
+    @staticmethod
+    def check_applicability(setting: Setting, **kwargs):
+        if not setting.is_tikhonov or not setting.is_convex:
+            return {'applicable': False, 'info':
+                    'PDHGaug requires a convex TV Tikhonov setting.'}, {}
+        augmented = PDHGaug._augmented_setting(setting)
+        if augmented is None:
+            return {'applicable': False, 'info':
+                    'PDHGaug requires a TV_Setting or TV alpha-grid inner setting.'}, {}
+        from regpy.solvers.linear import PDHG
+        # Norms of the original T and the augmented (cT, grad) differ.
+        # Never reuse op_norm from Setting.evaluate_methods on T here.
+        kwargs.pop('op_norm', None)
+        return PDHG.check_applicability(augmented, **kwargs)
+
+    def run(self, stoprule):
+        x, _ = super().run(stoprule)
+        return x, self._physical_tv_setting.op(x)
+
+
+class _TVaugFidelityGapSetting:
+    """Expose the data-fidelity Fenchel--Young term of the augmented gap.
+
+    The full gap includes ``R*(A* p)``. For the usual null additional
+    penalty, this is infinite until ``A* p == 0``. The fidelity contribution
+    is nonnegative and informative but **is not a full convergence bound**.
+    """
+
+    def __init__(self, augmented: TVaug_Setting) -> None:
+        self._augmented = augmented
+
+    def __getattr__(self, name):
+        return getattr(self._augmented, name)
+
+    def duality_gap(self, *, primal=None, dual=None):
+        if primal is None or dual is None:
+            raise ValueError('Partial TVaug gap needs primal and dual iterates.')
+        x, y = primal
+        p, _ = dual
+        if y is None:
+            y = self._augmented.op(x)
+        if p is None:
+            raise ValueError('Partial TVaug gap needs a dual variable.')
+        alpha = self._augmented.regpar
+        dual_density = -alpha * p
+        fidelity = self._augmented.data_fid
+        # Fenchel--Young: (S(y) + S*(q) - <q,y>) / alpha, q=-alpha*p.
+        # Unlike the Bregman formula, no subgradient of S* is necessary.
+        gap = (fidelity(y) + fidelity.conj(dual_density)
+               - self._augmented.op.codomain.vdot(dual_density, y).real) / alpha
+        # Small negative values can occur from floating-point cancellation.
+        return max(0., float(gap)) if np.isfinite(gap) else float(gap)
+
+
+class _TVaugPDHGSolverView:
+    """Keep PDHG's genuine saddle iterates, changing only the gap setting."""
+
+    def __init__(self, solver):
+        self._solver = solver
+        self.setting = _TVaugFidelityGapSetting(solver.setting)
+
+    def __getattr__(self, name):
+        return getattr(self._solver, name)
+
+
+class TVaugPDHGGapStopping(DualityGapStopping):
+    """Measure the augmented fidelity's Fenchel--Young gap every iteration.
+
+    This is a *partial* duality gap; when the augmented primal penalty is
+    zero it cannot certify primal optimality. It is nonetheless preferable
+    to the default RelativeChangeSol test, which can accept the first
+    zero-valued step without measuring any data discrepancy. An independent
+    CountIterations rule must also be installed for the outer run.
+    """
+
+    def __init__(self, tol: float = 1e-5,
+                 schedule=None, logging_level: int | str = 'INFO') -> None:
+        super().__init__(tol=tol, reltol=0., stop_at_infty=False,
+                         schedule=schedule, logging_level=logging_level)
+
+    def _complete_init_with_solver(self, solver) -> None:
+        if not isinstance(solver.setting, TVaug_Setting):
+            raise ValueError('TVaugPDHGGapStopping requires TVaug_Setting.')
+        super()._complete_init_with_solver(_TVaugPDHGSolverView(solver))
+
+    def _stop(self) -> bool:
+        triggered = super()._stop()
+        # Never label a vanishing *partial* gap as certified convergence:
+        # the omitted penalty/adjoint-feasibility term may still be positive
+        # (or infinite). In CombineRules this produces converged=False.
+        self.log_info = self.log_info.replace(
+            'Duality gap', 'Augmented fidelity gap (partial)').replace(
+            'duality gap', 'augmented fidelity gap (partial)')
+        if triggered and not self._stop_failure:
+            self._set_stop_status(False, self.log_info)
+        return triggered
+
+
+def _tvaug_pdhg_gap_factory(setting: Setting, params: dict) -> StopRule:
+    """Use the true augmented fidelity residual, together with a hard cap."""
+    from regpy.stoprules.general import CountIterations_factory
+    opts = dict(params.get('rule_params', {}))
+    for key in ('tol', 'schedule', 'logging_level'):
+        if key in params:
+            opts.setdefault(key, params[key])
+    opts.setdefault('tol', 1e-5)
+    opts.setdefault('schedule', None)
+    return TVaugPDHGGapStopping(**opts) + CountIterations_factory(setting, params)
+
+
+class _TVaugFenchelGapSetting:
+    """Expose the exact Fenchel gap (not its Bregman/subgradient form).
+
+    The true dual zero vector is always feasible with respect to the
+    conjugate of a null primal penalty.  A Bregman implementation may instead
+    require unavailable subgradients at the boundary of a dual constraint.
+    """
+
+    def __init__(self, augmented: TVaug_Setting) -> None:
+        self._augmented = augmented
+
+    def __getattr__(self, key):
+        return getattr(self._augmented, key)
+
+    def duality_gap(self, *, primal=None, dual=None):
+        return self._augmented.duality_gap(
+            primal=primal, dual=dual, use_bregman_formula=False)
+
+
+class _TVaugFISTASolverView:
+    """Adapt an ordinary FISTA iterate to the augmented gap interface."""
+
+    def __init__(self, solver, augmented: TVaug_Setting, dual_candidate=None):
+        self._solver = solver
+        self._augmented = augmented
+        self._dual_candidate = dual_candidate
+        self.setting = _TVaugFenchelGapSetting(augmented)
+        self.op = augmented.op
+        self._dual_zero = augmented.op.codomain.zeros()
+        self._adjoint_zero = augmented.op.domain.zeros()
+
+    @property
+    def x(self):
+        return self._solver.x
+
+    @property
+    def y(self):
+        # FISTA's y is optional, and in physical rather than augmented coords.
+        return self._solver.y
+
+    @property
+    def iteration_step_nr(self):
+        return self._solver.iteration_step_nr
+
+    def is_converged(self):
+        return self._solver.is_converged()
+
+    def primal(self):
+        return self._solver.x, None
+
+    def dual(self):
+        # A valid, if conservative, Fenchel dual point.  In particular,
+        # (A_aug)^* 0 = 0, so NullFunctional.conj(0) is finite.
+        if self._dual_candidate is None:
+            return self._dual_zero, self._adjoint_zero
+        candidate = self._dual_candidate(self._solver.x, self._augmented)
+        if candidate not in self._augmented.op.codomain:
+            raise ValueError('dual_candidate must return a TVaug codomain vector.')
+        # Derive the adjoint from the candidate; never trust an external
+        # pair with an inconsistent A* p.
+        return candidate, self._augmented.op.adjoint(candidate)
+
+
+class TVaugFISTAGapStopping(DualityGapStopping):
+    r"""Certify FISTA iterates using :class:`DualityGapStopping` on TVaug.
+
+    The default dual candidate is zero, which is *feasible* but can produce
+    a loose bound.  Unlike deriving a dual point from the fidelity gradient,
+    this does not produce the misleading zero fidelity gap or an infinite
+    null-penalty conjugate at nonstationary iterates.  An absolute tolerance
+    is therefore used, with ``reltol=0``. The rule is supplemented by an
+    iteration cap when registered as FISTA's default factory.
+    """
+
+    def __init__(self, tol: float = 1e-5,
+                 schedule=None, logging_level: int | str = 'INFO',
+                 dual_candidate=None) -> None:
+        if dual_candidate is not None and not callable(dual_candidate):
+            raise TypeError('dual_candidate must be callable or None.')
+        self.dual_candidate = dual_candidate
+        super().__init__(tol=tol, reltol=0., stop_at_infty=False,
+                         schedule=schedule, logging_level=logging_level)
+        self._fista_solver = None
+
+    def _complete_init_with_solver(self, solver) -> None:
+        tvaug = getattr(solver.setting, 'tvaug_setting', None)
+        if tvaug is None:
+            raise ValueError('TVaugFISTAGapStopping requires a TV_Setting with TVaug.')
+        self._fista_solver = solver
+        super()._complete_init_with_solver(
+            _TVaugFISTASolverView(solver, tvaug, self.dual_candidate))
+
+    def reset(self):
+        super().reset()
+        self._fista_solver = None
+
+
+def _tvaug_fista_gap_factory(setting: Setting, params: dict) -> StopRule:
+    """Create the augmented FISTA gap criterion plus the standard safety cap."""
+    from regpy.stoprules.general import CountIterations_factory
+    rules = dict(params.get('rule_params', {}))
+    for key in ('tol', 'schedule', 'logging_level', 'dual_candidate'):
+        if key in params:
+            rules.setdefault(key, params[key])
+    rules.setdefault('tol', 1e-5)
+    # Check every outer FISTA iterate, including iteration zero. Never
+    # inherit the stock duality-gap rule's every-tenth-iteration schedule.
+    rules['schedule'] = None
+    rule = TVaugFISTAGapStopping(**rules)
+    return rule + CountIterations_factory(setting, params)
+
+
+class TV_Setting(Setting):
+    r"""Ordinary TV-penalized setting with the original forward operator.
+
+    The primal problem (when ``regpar`` is positive) is
+
+    .. math::
+       S_{data}(T x)/\alpha + TV_\beta(x) + R(x).
+
+    ``R`` is an optional additional convex penalty; by default it is zero.
+    Passing ``penalty=TV`` or a concrete ``TVUniformGridFcts`` supplies the
+    TV penalty itself (without a second copy of TV). Other ``penalty`` values
+    are interpreted as an *additional* functional R.
+    Unlike :class:`TVaug_Setting`, ``op`` is the *physical* forward operator
+    ``T`` and ``penalty`` contains TV explicitly.  The augmented
+    :class:`TVaug_Setting` is created only for convex, linear Tikhonov
+    settings and stored in :attr:`tvaug_setting`. Its saddle solver is
+    registered here as ``PDHGaug`` and selected as the default minimizer
+    (also the default inner minimizer).
+
+    The optional ``exact_data`` is retained for synthetic data generation.
+    Data updates on the regular setting also update the augmented setting.
+
+    A standard FISTA solve is supported whenever the TV penalty exposes an
+    applicable proximal operator. The installed default FISTA stopping rule
+    monitors the **full augmented Fenchel gap on every outer iterate**,
+    starting with the feasible
+    zero dual vector. For tighter certificates, provide a feasible augmented
+    dual vector through the ``dual_candidate(x, tvaug_setting)`` callback
+    configured in the FISTA stop-rule parameters. The zero-dual bound is
+    safe but possibly very conservative;
+    reaching the iteration cap is not a convergence certificate.
+
+    To ensure that the two formulations have the same objective, the default
+    ``incorporate_init_in_penalty`` is False: changing an initial guess must
+    not shift the TV seminorm. A nonzero additional penalty R can prevent
+    FISTA from having a simple proximal operator; ``PDHGaug`` remains usable
+    provided R has a proximal operator.
+    """
+
+    def __init__(self,
+                 op: Operator,
+                 data_fid: Functional | HilbertSpace | Callable | None = None,
+                 penalty: Functional | HilbertSpace | Callable | None = None,
+                 regpar: float | None = None,
+                 beta: float = 0.,
+                 data: ReadOnlyVector | None = None,
+                 exact_data: ReadOnlyVector | None = None,
+                 grad: Operator | None = None,
+                 boundary_condition: str = 'Neum',
+                 data_operator_scale: float | str = 'auto',
+                 init: ReadOnlyVector | None = None,
+                 incorporate_init_in_penalty: bool = False,
+                 logging_level: int | str = 'INFO',
+                 explicitDataWarning: bool = True) -> None:
+        from regpy.functionals import TV
+        from regpy.functionals.base import NullFunctional, as_functional
+        from regpy.functionals.vector_integral_functionals import TVUniformGridFcts
+        from regpy.vecsps import UniformGridFcts
+
+        if not isinstance(op.domain, UniformGridFcts):
+            raise TypeError('TV_Setting requires a UniformGridFcts domain.')
+        if (isinstance(beta, (bool, np.bool_))
+                or not isinstance(beta, (int, float, np.floating))
+                or not np.isfinite(beta) or beta < 0):
+            raise ValueError('beta must be finite and nonnegative.')
+        if incorporate_init_in_penalty:
+            raise ValueError('TV_Setting requires incorporate_init_in_penalty=False '
+                             'to keep TV(x) unchanged by the starting point.')
+        if grad is not None:
+            raise ValueError("TV_Setting uses the TV functional's own gradient; "
+                             'for custom gradient operators use TVaug_Setting.')
+        self.data_operator_scale = data_operator_scale
+        # ``penalty=TV`` or a concrete TVUniformGridFcts denotes *the* TV
+        # functional.  Other supplied penalties retain the older augmented
+        # TV interface's meaning: an additional regularizer R.
+        if penalty is TV or isinstance(penalty, TVUniformGridFcts):
+            self.tv = (TV(op.domain, beta=float(beta),
+                          boundary_condition=boundary_condition)
+                       if penalty is TV else penalty)
+            self._tv_additional_penalty = NullFunctional(op.domain)
+            standard_penalty = self.tv
+            self.beta = float(self.tv.beta)
+        else:
+            self.beta = float(beta)
+            self.tv = TV(op.domain, beta=self.beta,
+                         boundary_condition=boundary_condition)
+            self._tv_additional_penalty = (
+                NullFunctional(op.domain) if penalty is None
+                else as_functional(penalty, op.domain))
+            standard_penalty = (
+                self.tv if penalty is None
+                else self.tv + self._tv_additional_penalty)
+        self.boundary_condition = boundary_condition
+        self._tv_ready = False
+        self.tvaug_setting: TVaug_Setting | None = None
+        super().__init__(
+            op=op, penalty=standard_penalty,
+            data_fid=L2(op.codomain) if data_fid is None else data_fid,
+            # TV.reference_vector() falls back to TV.proximal(0), whose
+            # default implementation runs *dual FISTA*. The zero image is
+            # already a feasible TV minimizer. Supply it explicitly to
+            # avoid running a full inner solver just to construct a Setting.
+            regpar=regpar, data=data,
+            init=(op.domain.zeros() if init is None else init),
+            incorporate_init_in_penalty=False,
+            logging_level=logging_level,
+            explicitDataWarning=explicitDataWarning,
+            exact_data = exact_data,
+            default_linear_regmethod='alGr',
+            default_nonlinear_regmethod='IRN',
+            default_inner_solver='PDHGaug',
+        )
+        self._tv_ready = True
+        self._sync_tvaug_setting()
+
+    def _sync_tvaug_setting(self) -> None:
+        """Build, update, or remove the optional convex saddle-point form."""
+        if not self.is_tikhonov or not self.is_convex:
+            self.tvaug_setting = None
+            # An unregularized TV_Setting uses an alpha-grid regularizer.
+            # Its inner method is carried into a fresh generic Tikhonov
+            # Setting via RunOnAlphaGrid/Bregman; the wrapper rebuilds the
+            # augmented saddle formulation for that inner problem.
+            if not self.is_tikhonov:
+                from regpy.solvers.setting import get_convex_solver_dictionary
+                self._convex_solvers = getattr(self, '_convex_solvers', {})
+                if 'PDHGaug' not in self._convex_solvers:
+                    template = deepcopy(get_convex_solver_dictionary()['PDHG'])
+                    template['class'] = PDHGaug
+                    template['full'] = 'PDHG on the augmented TV inner setting'
+                    # Inner alpha-grid settings are ordinary Setting instances;
+                    # they must not fall back to RelativeChangeSol either.
+                    template['stoprule_params'].update({
+                        'factory': _tvaug_pdhg_gap_factory,
+                        'tol': 1e-5,
+                        'schedule': None,
+                    })
+                    self._convex_solvers['PDHGaug'] = template
+            return
+        if self.tvaug_setting is None:
+            self.tvaug_setting = TVaug_Setting(
+                op=self.op,
+                data_fid=self.data_fid,
+                penalty=self._tv_additional_penalty,
+                regpar=self.regpar,
+                beta=self.beta,
+                data=self.data,
+                grad=self.tv.grad,
+                boundary_condition=self.boundary_condition,
+                data_operator_scale=self.data_operator_scale,
+                init=self.init,
+                incorporate_init_in_penalty=False,
+                logging_level=self.log.level,
+                explicitDataWarning=False,
+            )
+        else:
+            self.tvaug_setting.regpar = self.regpar
+
+        # Only Tikhonov convex settings have a method registry containing
+        # PDHG and FISTA.  Running PDHGaug is a call to PDHG on TVaug.
+        self.add_method('PDHGaug', PDHGaug, primal=True,
+                        full_method_name='PDHG on the augmented TV setting')
+        self._default_inner_solver = 'PDHGaug'
+        # A custom registered solver receives the *original* setting's
+        # default rule, not the rule configured on tvaug_setting['PDHG'].
+        # Install the augmented gap rule explicitly on PDHGaug.
+        # For R=0 the full gap is typically infinite until exact dual
+        # feasibility. A fidelity partial gap is useful, but not a global
+        # certificate. With an additional R, prefer the complete gap.
+        if self.tvaug_setting._tv_null_penalty:
+            pdhg_gap_factory = _tvaug_pdhg_gap_factory
+        else:
+            pdhg_gap_factory = 'DualityGapStopping'
+        self.set_stoprule_params('PDHGaug', {
+            'factory': pdhg_gap_factory,
+            'max_it': 1000,
+            'tol': 1e-5,
+            'reltol': 0.,
+            'stop_at_infty': False,
+            'schedule': None,
+        })
+        if 'FISTA' in self._methods:
+            self.set_stoprule_params('FISTA', {
+                'factory': _tvaug_fista_gap_factory,
+                'max_it': 1000,
+                'schedule': None,
+            })
+
+    @Setting.regpar.setter
+    def regpar(self, new_regpar: float | None) -> None:
+        Setting.regpar.fset(self, new_regpar)
+        if getattr(self, '_tv_ready', False):
+            self._sync_tvaug_setting()
+
+    @regpar.deleter
+    def regpar(self) -> None:
+        Setting.regpar.fdel(self)
+        if getattr(self, '_tv_ready', False):
+            self._sync_tvaug_setting()
+
+    def get_linearized_tikh_setting(self, *args, **kwargs):
+        """Retain the TV split for alpha-grid inner Tikhonov problems.
+
+        Other linearization points (and explicitly different Bregman or
+        shifted penalties) are delegated unchanged to the base class.
+        """
+        inner_penalty = kwargs.get('inner_penalty', False)
+        inner = super().get_linearized_tikh_setting(*args, **kwargs)
+        point = kwargs.get('x0', args[0] if args else None)
+        if (inner_penalty is self.penalty and point is not None
+                and np.all(np.asarray(point) == 0.)
+                and inner.op.linear and inner.is_convex):
+            inner._tvaug_constructor = {
+                'grad': self.tv.grad, 'beta': self.beta,
+                'additional_penalty': self._tv_additional_penalty,
+                'scale': self.data_operator_scale,
+            }
+        return inner
+
+    def set_data_fid(self, data_fid) -> None:
+        """Refresh the augmented representation when fidelity is replaced."""
+        super().set_data_fid(data_fid)
+        if getattr(self, '_tv_ready', False):
+            self.tvaug_setting = None
+            self._sync_tvaug_setting()
+
+    def set_penalty(self, penalty) -> None:
+        """Keep the explicit TV decomposition immutable after construction."""
+        if getattr(self, '_tv_ready', False):
+            raise RuntimeError(
+                'TV_Setting has a fixed TV penalty decomposition; create a '
+                'new TV_Setting to replace TV or the additional penalty.')
+        super().set_penalty(penalty)
+
+    def change_data(self, new_data) -> None:
+        """Update the physical observations and the augmented data term."""
+        super().change_data(new_data)
+        if getattr(self, '_tv_ready', False) and self.tvaug_setting is not None:
+            self.tvaug_setting.change_data(new_data)
+
+    def change_init(self, new_init) -> None:
+        """Keep both starting points equal without translating the TV penalty."""
+        super().change_init(new_init)
+        if getattr(self, '_tv_ready', False) and self.tvaug_setting is not None:
+            self.tvaug_setting.change_init(new_init)
