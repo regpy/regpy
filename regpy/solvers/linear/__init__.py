@@ -53,5 +53,3 @@ from .bregman import __all__ as mod_all
 __all__ += mod_all
 from .ss_newton import __all__ as mod_all
 __all__ += mod_all
-from .semismoothNewton import __all__ as mod_all
-__all__ += mod_all

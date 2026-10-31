@@ -34,7 +34,7 @@ from scipy.sparse.linalg import spsolve
 from scipy.sparse import csc_matrix, diags
 from pyngcore.pyngcore import BitArray
 
-from regpy.util import is_complex_dtype, Errors, ClassLogger
+from regpy.util import Errors, ClassLogger
 
 from .base import ReadOnlyVector, Scalar, VectorSpaceBase
 from .maskable import MaskableVectorSpace
@@ -351,21 +351,9 @@ class NgsBaseVector:
                 yield v
             v[i] = 0                
 
-    def __and__(self,x: ReadOnlyVector,y: ReadOnlyVector) -> Iterator[bool]:
-        if not isinstance(y,NgsBaseVector) or y.size != x.size:
-            raise ValueError(Errors.value_error("Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
-        return (x_i == y_i for x_i,y_i in zip(x,y))
-    
-    def __or__(self,x: ReadOnlyVector,y: ReadOnlyVector) -> Iterator[bool]:
-        if not isinstance(y,NgsBaseVector) or y.size != x.size:
-            raise ValueError(Errors.value_error("Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
-        return (x_i != y_i for x_i,y_i in zip(x,y))
+    # Bitwise operators are deliberately not defined for NGSolve vectors.
+    # Use the NgsVectorSpace/MaskableVectorSpace mask API instead.
 
-    def __xor__(self,x: ReadOnlyVector,y: ReadOnlyVector) -> Iterator[bool]:
-        if not isinstance(y,NgsBaseVector) or y.size != x.size:
-            raise ValueError(Errors.value_error("Comparing NgsBaseVector only supported for NgsBaseVector of identical size!"))
-        return (x_i != y_i for x_i,y_i in zip(x,y))
-    
     def __copy__(self) -> Self:
         if self.is_dynamic:
             self.log.debug("To copy the DynamicVectorExpression it has to be evaluated")
@@ -549,122 +537,114 @@ class NgsVectorSpace(MaskableVectorSpace):
         """
         return self.zeros()
     
-    def rand(self,distribution: str = "uniform", use_space_sampling: bool = False, mass_matrix_weighting: bool = True, **kwargs: Any) -> Vector:
-        r"""Rand.
-        
-        Parameters
-        ----------
-        distribution: str [default: 'uniform']
-            Distribution.
-        use_space_sampling: bool [default: False]
-            Use space sampling.
-        mass_matrix_weighting: bool [default: True]
-            Mass matrix weighting.
-        **kwargs: Any
-            Additional keyword arguments forwarded to the underlying implementation.
-        
-        
-        Returns
-        -------
-        Vector
-            Writable result vector.
-        """
-        if use_space_sampling:
-            # Computes random samples in the fes via
-            # mass matrix half power scaling
-            # This is based on the isometric isomorphism
-            # M^{-1/2}: R^n (Euclidean space) -> FEM (n dofs)
-            # Can be disabled by setting mass_matrix_weighting to False,
-            # but this does not create e.g. correct normal distributions
-            
-            def draw() -> None:
-                samp = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-                if self.is_complex and not is_complex_dtype(samp.dtype):
-                    samp = samp + 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-                if mass_matrix_weighting:
-                    self.create_mass_matrix_cholesky()
-                    samp = spsolve(self.mass_matrix_cholesky, samp)
+    def rand(self, distribution: str = "uniform", use_space_sampling: bool = False,
+             mass_matrix_weighting: bool = True, seed: int | None = None,
+             **kwargs: Any) -> Vector:
+        r"""Sample a random finite-element vector.
 
-            if self.codim == 1:
-                self._gfu_fes.vec.FV().NumPy()[:] = draw()
-            elif self.product_space:
-                for gfu_i in self._gfu_fes.components:
-                    self._gfu_i.vec.FV().NumPy()[:] = draw()
-            else:
-                v = [self._gfu,]
-                for _ in range(self.codim-1):
-                    gf = copy(self._gfu)
-                    gf.vec.FV().NumPy()[:] = draw()
-                    v.append(gf)
-                self._gfu_fes.Set(tuple(v))
-            self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
-            return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
+        ``use_space_sampling=True`` samples native finite-element degrees of
+        freedom. When ``mass_matrix_weighting=True`` the samples are multiplied
+        by the inverse *adjoint* of the mass-matrix Cholesky factor, so normal
+        samples have covariance M^{-1} before any boundary projection.
+        ``use_space_sampling=False`` retains sampling on the auxiliary L2
+        finite-element space, followed by interpolation into ``self.fes``.
+
+        Complex coefficients are sampled using independent real and imaginary
+        draws. A supplied seed initializes the RNG only once (not once for
+        each component). Poisson sampling is handled by :meth:`poisson` and
+        is unavailable for complex-valued spaces.
+        """
+        if distribution == "poisson" and self.is_complex:
+            raise TypeError("Poisson sampling requires a real NgsVectorSpace.")
+        if seed is not None:
+            self.set_rng_seed(seed)
+
+        def draw(size: int) -> np.ndarray:
+            values = np.asarray(self._draw_sample(
+                distribution=distribution, size=int(size), **kwargs))
+            if self.is_complex and not np.iscomplexobj(values):
+                values = values + 1j * self._draw_sample(
+                    distribution=distribution, size=int(size), **kwargs)
+            return values
+
+        if use_space_sampling:
+            if mass_matrix_weighting:
+                if distribution == "poisson":
+                    raise ValueError("Mass-matrix weighting does not preserve Poisson counts.")
+                self.create_mass_matrix_cholesky()
+            coefficients = draw(self.fes.ndof)
+            if mass_matrix_weighting:
+                # If M = L L*, then L^{- *} z has covariance M^{-1}.
+                # Solving with L (rather than L*) produces the wrong covariance.
+                coefficients = spsolve(
+                    self.mass_matrix_cholesky.conjugate().transpose(),
+                    coefficients)
+            result = self.zeros()
+            self._set_native_coefficients(result, coefficients)
         else:
             if self._fes_util is None:
-                raise RuntimeError(Errors.runtime_error("the utility fes was not created random vector generation is not available!"))
-            r = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-            if self.is_complex and not is_complex_dtype(r.dtype):
-                c = 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-                c.real = r
-                self._gfu_util.vec.FV().NumPy()[:] = c            
-            else:
-                self._gfu_util.vec.FV().NumPy()[:] = r
+                raise RuntimeError(Errors.runtime_error(
+                    "Auxiliary finite-element space is unavailable for random sampling."))
+            self._gfu_util.vec.FV().NumPy()[:] = draw(self._fes_util.ndof)
             if self.codim == 1:
                 self._gfu_fes.Set(self._gfu_util)
             elif self.product_space:
-                for gfu_i,gfu_util_i in zip(self._gfu_fes.components,self._gfu_util.components):
-                    gfu_i.Set(gfu_util_i)
+                # The old implementation wrote through the nonexistent _gfu_i.
+                for target, source in zip(self._gfu_fes.components,
+                                          self._gfu_util.components, strict=True):
+                    target.Set(source)
             else:
-                v = [self._gfu_util,]
-                for _ in range(self.codim-1):
-                    gf = copy(self._gfu_util)
-                    r = self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-                    if self.is_complex and not is_complex_dtype(r.dtype):
-                        c = 1j*self._draw_sample(distribution=distribution, size = self._fes_util.ndof)
-                        c.real = r
-                        gf.vec.FV().NumPy()[:] = c            
-                    else:
-                        gf.vec.FV().NumPy()[:] = r
-                    v.append(gf)
-                self._gfu_fes.Set(tuple(v))
-            self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
-            return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
+                # Each vector-valued component needs an independent L2 draw.
+                components = [self._gfu_util]
+                for _ in range(1, self.codim):
+                    component = ngs.GridFunction(self._fes_util)
+                    component.vec.FV().NumPy()[:] = draw(self._fes_util.ndof)
+                    components.append(component)
+                self._gfu_fes.Set(tuple(components))
+            result = NgsBaseVector(self._gfu_fes.vec, make_copy=True)
+
+        # Respect constrained degrees of freedom in either sampling mode.
+        result.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(result.vec)
+        return result
 
     
-    def poisson(self,x: ReadOnlyVector, n: int = 1, tol: float = 3e-15) -> Vector:
-        r"""Poisson.
-        
-        Parameters
-        ----------
-        x: ReadOnlyVector
-            Input vector; its coefficients are only read.
-        n: int [default: 1]
-            N.
-        tol: float [default: 3e-15]
-            Tolerance for the stopping or comparison criterion.
-        
-        
-        Returns
-        -------
-        Vector
-            Writable result vector.
+    def poisson(self, x: ReadOnlyVector, n: int = 1,
+                tol: float = 3e-15, seed: int | None = None) -> Vector:
+        r"""Draw coefficient-wise Poisson counts for a real FE vector.
+
+        The samples have the supplied *native FE coefficients* as rates.
+        This avoids interpolating rates onto an auxiliary space and back,
+        which can change the expectation and fails on product spaces.
+        ``n`` independent draws are averaged when ``n > 1``.
+
+        Complex FE spaces are rejected even when ``as_real_space=True``.
+        The rate vector is never modified, including when negative rounding
+        errors of magnitude at most ``tol`` are clipped to zero.
         """
-        if x.is_complex:
-            raise NotImplemented(Errors.generic_message(f"Poisson sampling for the NgsVectorSpace {self} is not defined since it is complex."))
-        if self.is_complex:
-            vs = self.real_space()
-            return vs.poisson(x,n=n,tol=tol)
-        else:
-            self._gfu_util.Set(self.to_gf(x))
-            np_util = self._gfu_util.vec.FV().NumPy()
-            m = np.logical_and(-tol<np_util,np_util<0)
-            np_util[m] = 0
-            if np.any(np_util<0):
-                raise ValueError(Errors.value_error(f"Not all values in {np_util} are positive. Cannot compute poisson vector!"))
-            np_util[:] =  np.sum(self._draw_sample(distribution="poisson",lam = np_util, size = (n,self._fes_util.ndof)),axis = 0)/n
-            self._gfu_fes.Set(self._gfu_util)
-            self._gfu_fes.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(self._gfu_fes.vec)
-            return NgsBaseVector(self._gfu_fes.vec, make_copy = True)
+        if self.is_complex or (isinstance(x, NgsBaseVector) and x.is_complex):
+            raise TypeError("Poisson sampling requires a real NgsVectorSpace and real rates.")
+        if x not in self:
+            raise ValueError(Errors.not_in_vecsp(
+                x, self, add_info="Poisson rates must belong to the vector space."))
+        if isinstance(n, (bool, np.bool_)) or not isinstance(n, (int, np.integer)) or n < 1:
+            raise ValueError("n must be a positive integer.")
+        if (isinstance(tol, (bool, np.bool_))
+                or not isinstance(tol, (int, float, np.integer, np.floating))
+                or not np.isfinite(tol) or tol < 0):
+            raise ValueError("tol must be finite and nonnegative.")
+        rates = np.asarray(self.flatten(x))
+        if np.iscomplexobj(rates):
+            raise TypeError("Poisson rates must have real storage.")
+        if np.any(~np.isfinite(rates)) or np.any(rates < -tol):
+            raise ValueError("Poisson rates must be finite and nonnegative.")
+        rates = np.maximum(rates, 0.)
+        shape = rates.size if n == 1 else (int(n), rates.size)
+        samples = self._draw_sample(
+            distribution="poisson", lam=rates, size=shape, seed=seed)
+        values = np.asarray(samples, dtype=float)
+        if n > 1:
+            values = values.mean(axis=0)
+        return self.fromflat(values)
 
     def __contains__(self,x: ReadOnlyVector) -> bool:
         if not isinstance(x,NgsBaseVector):
@@ -692,7 +672,18 @@ class NgsVectorSpace(MaskableVectorSpace):
         Scalar
             Computed scalar value.
         """
-        return ngs.InnerProduct(y.vec,x.vec)
+        # DynamicVectorExpression is not a concrete NGSolve BaseVector and
+        # can select the real-valued InnerProductD overload even when the
+        # underlying coefficients are complex. Keep expressions and read-only
+        # wrappers unchanged; materialize only temporary native vectors.
+        x_native = x.vec.Evaluate() if x.is_dynamic else x.vec
+        y_native = y.vec.Evaluate() if y.is_dynamic else y.vec
+        if x_native.is_complex or y_native.is_complex:
+            # Avoid the real-only InnerProductD overload seen with complex
+            # lazy expressions. The native scalar product conjugates x.
+            # This is independent of the as_real_space coordinate setting.
+            return np.vdot(x_native.FV().NumPy(), y_native.FV().NumPy())
+        return ngs.InnerProduct(y_native, x_native)
 
     def copyto(self, x: Vector, y: ReadOnlyVector, where: Mask | None=None) -> None:
         r"""Copy coefficients into an existing writable vector.
@@ -1044,7 +1035,7 @@ class NgsVectorSpace(MaskableVectorSpace):
             
     def create_mass_matrix_cholesky(self) -> None:
         # Builds the cholesky decomposition
-        # mass = LL^T
+        # mass = L L* (conjugate transpose for complex coefficients)
         # The output factor self.mass_matrix_cholesky corresponds to L (not L^T)
         # Warning: Current method is a hack based on scipy spLU. However,
         # correct implementation would require access to scikit.sparse.cholmod.
@@ -1083,7 +1074,8 @@ class NgsVectorSpace(MaskableVectorSpace):
         # splu returns L with unit diagonal. The actual pivots are on U's diagonal.
         d = lu.U.diagonal()
         
-        if np.any(d <= 0):
+        d = np.real_if_close(d, tol=1000)
+        if (np.iscomplexobj(d) or np.any(~np.isfinite(d)) or np.any(d <= 0)):
             raise ValueError("Matrix is not positive definite (negative or zero pivot found).")
             
         # Scale columns of L by sqrt(d)
@@ -1105,11 +1097,14 @@ class NgsVectorSpaceWithInnerProduct(NgsVectorSpace):
         Additional keyword arguments forwarded to the underlying implementation.
     """
 
-    def __init__(self, fes: ngs.FESpace, bdr: str | None=None, **kwargs: Any) -> None:
+    def __init__(self, fes: ngs.FESpace, bdr: str | None=None,
+                 as_real_space: bool=True, **kwargs: Any) -> None:
         if not isinstance(fes, (ngs.L2,ngs.H1,ngs.VectorH1)):
             raise ValueError("The given FES is neither an H1 nor VectorH1 space of ngsolve")
-        
-        super().__init__(fes,bdr=bdr)
+
+        # Preserve the scalar-field choice of the underlying NgsVectorSpace.
+        # Previously this keyword was silently swallowed by **kwargs.
+        super().__init__(fes, bdr=bdr, as_real_space=as_real_space)
         if "definedon" in kwargs:
             self._definedon = kwargs["definedon"]
         else:
@@ -1140,8 +1135,15 @@ class NgsVectorSpaceWithInnerProduct(NgsVectorSpace):
         Scalar
             Computed scalar value.
         """
-        self.mass_vec.data = self.mass * x.vec
-        return ngs.InnerProduct(y.vec,self.mass_vec)
+        x_native = x.vec.Evaluate() if x.is_dynamic else x.vec
+        y_native = y.vec.Evaluate() if y.is_dynamic else y.vec
+        # Cache the output storage, but never modify either input. This also
+        # avoids passing a lazy input to the mass-matrix multiplication.
+        self.mass_vec.data = self.mass * x_native
+        if self.mass_vec.is_complex or y_native.is_complex:
+            return np.vdot(self.mass_vec.FV().NumPy(),
+                           y_native.FV().NumPy())
+        return ngs.InnerProduct(y_native, self.mass_vec)
     
     @property
     def bonus_intorder(self) -> int:

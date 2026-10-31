@@ -23,7 +23,7 @@ from .sequences import (
 from . import linear
 from . import nonlinear
 
-__all__ = ["Solver", "Setting", "RegSolver", "linear", "nonlinear", "HilbertSetting",
+__all__ = ["Solver", "Setting", "RegSolver", "linear", "nonlinear", 
            "BoundConstrSetting",
            "check_Hilbert_applicability", "check_Hilbert_applicability_linear",
            "Sequence", "Naturals", "MappedSequence", "EffectiveAlpha", "effective_alpha"]
