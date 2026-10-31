@@ -7,6 +7,8 @@ from scipy.sparse.linalg import LinearOperator
 
 from regpy.hilbert import GramHilbertSpace, L2
 from regpy.vecsps import NumPyVectorSpace, TupleVector
+from regpy.operators import PtwMultiplication
+from regpy.vecsps import NumPyVectorSpace
 import regpy.operators.base as op_base
 from regpy.operators.graph_operator import OperatorGraph
 import regpy.util.operator_tests as ot
@@ -745,6 +747,74 @@ class TestDirectSum():
         res[1] = np.array([3*i for i in range(4,28)]).reshape(shape2)
 
         op_evaluation_and_ot(op,x=x,res=res)
+
+@pytest.mark.parametrize('factor, expected', [
+    ([2., -3., 1e-2], True),
+    ([2., 0., 3.], False),
+    ([0., 2., 3.], False),
+    ([2., np.nan, 3.], False),
+    ([2., np.inf, 3.], False),
+    ([2., -np.inf, 3.], False),
+])
+def test_real_multiplier_is_invertible_iff_finite_and_nonzero(factor, expected):
+    op = PtwMultiplication(NumPyVectorSpace(3), np.asarray(factor))
+    assert op.invertible is expected
+    if not expected:
+        with pytest.raises(NotImplementedError, match='inverse'):
+            _ = op.inverse
+
+
+@pytest.mark.parametrize('factor, expected', [
+    ([1 + 1j, 3 - 2j], True),
+    ([1 + 1j, 0j], False),
+    ([1 + 1j, np.nan + 0j], False),
+    ([1 + 1j, np.inf + 1j], False),
+])
+def test_complex_multiplier(factor, expected):
+    op = PtwMultiplication(NumPyVectorSpace(2, dtype=complex),
+                           np.asarray(factor, dtype=complex))
+    assert op.invertible is expected
+
+
+@pytest.mark.parametrize('complex_dtype', [False, True])
+def test_inverse_round_trip(complex_dtype):
+    dtype = complex if complex_dtype else float
+    space = NumPyVectorSpace(3, dtype=dtype)
+    factor = np.array([1, -2, 3j if complex_dtype else 3], dtype=dtype)
+    op = PtwMultiplication(space, factor)
+    assert op.invertible
+    x = np.array([0.3, 4., -0.25], dtype=dtype)
+    np.testing.assert_allclose(op.inverse(op(x)), x)
+
+
+def test_invertibility_tracks_mutations_of_factor():
+    space = NumPyVectorSpace(3)
+    op = PtwMultiplication(space, [1., 2., 3.])
+    assert op.invertible
+    op.factor[1] = 0.
+    assert not op.invertible
+    with pytest.raises(NotImplementedError):
+        _ = op.inverse
+    op.factor[1] = 2.
+    assert op.invertible
+
+
+def test_scalar_broadcast_is_checked_entrywise():
+    space = NumPyVectorSpace((2, 3))
+    assert PtwMultiplication(space, -0.25).invertible
+    assert not PtwMultiplication(space, 0.).invertible
+
+
+def test_non_numpy_backend_uses_native_coefficient_protocol():
+    # A direct sum isn't itself a NumPyVectorSpace. Its native-coefficient
+    # iterator traverses both summands without treating complex entries as
+    # separate real and imaginary coordinates.
+    domain = NumPyVectorSpace(2) + NumPyVectorSpace(3)
+    factor = domain.ones()
+    op = PtwMultiplication(domain, factor)
+    assert op.invertible
+    op.factor[1][2] = 0.
+    assert not op.invertible
 
 class TestPartOfOperator():
     @pytest.mark.parametrize("vs, index, mask,",

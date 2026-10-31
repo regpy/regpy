@@ -3993,16 +3993,22 @@ class PtwMultiplication(Operator):
 
     @property
     def invertible(self) -> bool:
-        # TODO: check if multiplier has zeros!
-        r"""Invertible.
-        
-        
+        r"""Whether every pointwise multiplier is finite and nonzero.
+
+        This is checked on access, since ``factor`` may be modified after
+        construction. Non-NumPy backends use the native-coefficient protocol.
+
         Returns
         -------
         bool
-            Whether the stated condition is satisfied.
+            True if the multiplication has a well-defined pointwise inverse.
         """
-        return True
+        if isinstance(self.domain, vecsps.NumPyVectorSpace):
+            return bool(np.all(np.isfinite(self.factor) & (self.factor != 0)))
+        return all(
+            np.isfinite(coefficient) and coefficient != 0
+            for coefficient in self.domain._iter_native_coefficients(self.factor)
+        )
 
     @Operator.inverse.getter
     def inverse(self) -> Operator:
@@ -4016,6 +4022,12 @@ class PtwMultiplication(Operator):
         """
         if self._inverse is not None:
             return self._inverse
+        if not self.invertible:
+            raise NotImplementedError(util.Errors._compose_message(
+                "NONINVERTIBLE OPERATOR",
+                "PtwMultiplication has zero or non-finite coefficients; "
+                "a pointwise inverse does not exist.",
+            ))
         sav = np.seterr(divide='raise')
         try:
             try:

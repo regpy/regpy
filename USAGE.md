@@ -1,6 +1,6 @@
 # Usage of `RegPy`
 
-`RegPy` is a library to solve inverse and ill-posed problems using regularisation methods. That is for a given forward operator
+`RegPy` is a library to solve inverse and ill-posed problems using regularization methods. That is for a given forward operator
 
 $$
     F\colon X\to Y
@@ -12,21 +12,23 @@ $$
     F(f) = g
 $$
 
-given some observation data $g^{obs}=g+\eta$. This would require the inverse $F^{-1}$, which in most cases is not continuous. Hence small perturbations by noise $\eta$ can make the inverse unstable. Such problems occur in many applications in imaging methods in physics, biology, medicine and more. For examples checkout the [examples](https://num.math.uni-goettingen.de/regpy/examples.html).
+given some observation data $g^{obs}=g+\eta$. This would require the inverse $F^{-1}$, which in most cases is not continuous. Hence small perturbations by noise $\eta$ can make the inverse unstable. Such problems occur in many applications in imaging methods in physics, biology, medicine and more. For examples checkout the [examples](https://num.math.uni-goettingen.de/regpy/examples.html). 
+
+For more detailed tutorials we refer to [tutorials](https://num.math.uni-goettingen.de/regpy/)
 
 `RegPy` can be divided into three parts:
 
 * modelling the forward operator: with `regpy.operators` and `regpy.vecsps`
-* modelling space structure, data-fidelity and regularisation functional: with `regpy.hilbert` and `regpy.functionals`
-* regularisation solvers: with `regpy.solvers` and `regpy.stoprules`
+* modelling space structure, data-fidelity and regularization functional: with `regpy.hilbert` and `regpy.functionals`
+* regularization solvers: with `regpy.solvers` and `regpy.stoprules`
 
 ---
 
 ## Forward operator
 
-For modelling forward operator we need two subpackges `regpy.operators` for the operator structure and `regpy.vecsps` for the vector space structure.
+For implementing a forward operator we need two subpackges `regpy.operators` for the operator structure and `regpy.vecsps` for the vector space structure.
 
-### Vector Spaces
+### Vector spaces
 
 The spaces $X$ and $Y$ have to be given as discrete vector spaces as provided in `regpy.vecsps`. The base class for any vector space is `VectorSpace`, which represents any vector as plain numpy array of some shape and dtype. The vectors have to be `numpy.ndarrays`, which for example in the `ngsolve` extesion is done by conversion.
 
@@ -35,13 +37,11 @@ The spaces $X$ and $Y$ have to be given as discrete vector spaces as provided in
 * Providing methods for generating elements of the proper shape and dtype, like:
   * zero arrays `VectorSpaces.zeros()`
   * random arrays `VectorSpaces.rand()`
-  * iterators over the basis
+  * iterators over the basis and the coefficients
 * consistency checks
   * providing a control routine whether a given element is an element of the vector space: simply used by `x in VectorSpaces`
   * test of equality of two vector spaces
 * Derived classes can contain additional data like grid coordinates or measures, bundling metadata in one place.
-
-All vector spaces are considered as **real vector spaces**, even if the dtype is complex.
 
 More complicated vector spaces can be constructed from others by
 
@@ -64,7 +64,7 @@ These methods are not intended for external use. The idea is that whenever you h
 * evaluate $F(x)$ for $x\in X$ and
 * linearize $F(x+h) = F(x)+F'[x]h$.
 
-Since the linearization is always bound to some point $x$ and its value $y=F(x)$ the implementation binds the linearization to an evaluation. That is linearizing by `Operator.linearize` will call the operator and evaluate `_eval` with the flag `differentiate=True` (to separate precomputations for the derivative) and returns a linear `Operator` i.e. $F'[x]$ that will call `_derivative` for evaluation and `_adjoint` for $F'[x]^\ast$. **Attention:** Since the linearization is bound to the location the implementation prevents the use of the derivate after a reevaluation of the operator. That is whenever you evaluate an operator after a linearization it will revoke the derivative automatically!
+Since the linearization is always linked to some point $x$ and its value $y=F(x)$ the implementation binds the linearization to an evaluation. That is linearizing by `Operator.linearize` will call the operator and evaluate `_eval` with the flag `differentiate=True` (to separate precomputations for the derivative) and returns a linear `Operator` i.e. $F'[x]$ that will call `_derivative` for evaluation and `_adjoint` for $F'[x]^\ast$. **Attention:** Since the linearization is bound to the location the implementation prevents the use of the derivate after a reevaluation of the operator. That is whenever you evaluate an operator after a linearization it will revoke the derivative automatically!
 
 #### Minimal example of non-linear operator
 
@@ -142,7 +142,7 @@ One of the main features of `Operator` are the basic operator algebra that is su
 
 ---
 
-## Space structure, data-fidelity and regularisation functional
+## Space structure, data-fidelity and regularization functional
 
 ### Hilbert spaces
 
@@ -214,9 +214,9 @@ One of the important feature is that new functionals can be constructed by nativ
 * `f * op` composition with operators, i.e. $F\circ Op$ for $F\colon X\to \to \mathbb{R}\cup\{\infty\}$ and $Op\colon Y\to X$
 * `f * a` inner multiplication $F(a \cdot)$ for $F\colon X\to \to \mathbb{R}\cup\{\infty\}$ and scalar $a$ or $a \in X$
 
-## Regularisation and Solvers
+## Regularization and Solvers
 
-Using the structure of operators, Hilbert spaces and functionals the problem of finding a solution to $F(x) = y$ given data $y^{obs}$ it remains to introduce how to regularize using solvers. Recall a regularisation method describes a family $R_\alpha\colon Y \to X$ and a parameter choice $\hat{\alpha}(g^{obs},\delta)$. Here $\delta$ describes the noise level corresponding with respect to some data fidelity functional $S_{g^{obs}}$. It is a regularization method if for the regularized solution $\hat{x}^{\alpha}:=R_{\hat{\alpha}}(g^{obs})$ holds
+Using the structure of operators, Hilbert spaces and functionals the problem of finding a solution to $F(x) = y$ given data $y^{obs}$ it remains to introduce how to regularize using solvers. Recall a regularization method describes a family $R_\alpha\colon Y \to X$ and a parameter choice $\hat{\alpha}(g^{obs},\delta)$. Here $\delta$ describes the noise level corresponding with respect to some data fidelity functional $S_{g^{obs}}$. It is a regularization method if for the regularized solution $\hat{x}^{\alpha}:=R_{\hat{\alpha}}(g^{obs})$ holds
 
 $$
     \Vert x - \hat{x}^{\alpha} \Vert_X \to 0 \quad if\quad  \delta \to 0.
@@ -260,7 +260,7 @@ from regpy.solvers.linear import TikhonovCG
 solver = TikhonovCG(
     setting, # A Regularization setting 
     data = y_obs, # The data, optional if not given the library tries to extract from the data fidelity
-    regpar = 0.1, # The regularization parameter, if the setting is a Tikhonov setting then the regularisation parameter defined there is used
+    regpar = 0.1, # The regularization parameter, if the setting is a Tikhonov setting then the regularization parameter defined there is used
 )
 ```
 
@@ -322,6 +322,6 @@ x,y = solver.runWithDP(
 )
 ```
 
-### Stopping Rules
+### Stoprules
 
-As seen above stopping rules are used to stop the iteration of an `Solver`. These stoprules are suppossed to choose the $\hat{\alpha}$ so that the reconstruction stays stable. Stopping rules can be combined with standard summation of two stoping prules as illustrated above. Note that a stopping rule has be reinitated for any other running solver.
+As seen above stopping rules are used to stop the iteration of an `Solver`. These stoprules are suppossed to choose the $\hat{\alpha}$ so that the reconstruction stays stable. Stopping rules can be combined with standard summation of two stopping rules as illustrated above. Note that a stopping rule has be reinitated for any other running solver.

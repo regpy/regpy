@@ -3,6 +3,7 @@
 examples/data/
 examples/PINEM/data
 regpy/*/private
+/private
 
 # Distribution / packaging
 .Python

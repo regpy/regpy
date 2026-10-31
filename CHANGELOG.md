@@ -110,6 +110,7 @@ as_real_space indicates if a vector space with a complex data type is treated as
 ### Deprecated
 - attribute size of VectorSpaceBase (use dimension instead!)
 - Setting.set_method_parameters. Use set_method_params instead! (for consistency of names)
+- QuadradticIntv and QuadraticNonneg in functionals/integral_functionals (use QuadraticBilateralConstraints and QuadraticLowerBound instead!)
 
 ### Removed
 - shape and ndim as attributes of VectorSpaceBase
