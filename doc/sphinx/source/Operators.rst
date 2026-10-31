@@ -1,10 +1,10 @@
-Operators in RegPy
-==================
+Operators
+=========
 
 An :class:`regpy.operators.Operator` represents a possibly nonlinear map
 :math:`F:X\to Y` between RegPy vector spaces. Both real- and complex-valued
 vectors occur in practice. In particular, an operator between complex array
-spaces need not be complex-linear: differentiation and adjoints use the
+spaces does not need to be complex-linear: differentiation and adjoints use the
 underlying real duality whenever appropriate. See :doc:`Spaces` for vector
 storage, scalar fields and Hilbert-space structures.
 

@@ -150,9 +150,9 @@ Adjoints and dual Hilbert spaces
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 An operator's ``adjoint`` is always defined with respect to the standard
-pairings of its vector spaces. If an operator :math:`T\colon :mathbb{X}\to \mathbb{Y}` is viewed
-between Hilbert spaces with Gram operators :math:`G_X:\mathbb{X}\to \mathbb{X}'` 
-and :math:`G_Y:\mathbb{Y}\to\mathbb{Y}'`, its
+pairings of its vector spaces. If an operator :math:`T\colon :X\to Y` is viewed
+between Hilbert spaces with Gram operators :math:`G_X:X\to X'` 
+and :math:`G_Y:Y\to Y'`, its
 Hilbert-space adjoint is obtained by
 
 .. math::
