@@ -1,5 +1,6 @@
 *.pyc
 /doc/sphinx/source/autoapi/*
+/doc/sphinx/source/private
 examples/data/
 examples/PINEM/data
 regpy/*/private
