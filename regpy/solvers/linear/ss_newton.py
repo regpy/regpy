@@ -195,7 +195,7 @@ class SemiSmoothNewton(RegSolver):
 
         out, _ = SemiSmoothNewton.check_applicability(self.setting)
         if not out['applicable']:
-            raise RuntimeError('SemismoothNewton_bilateral not applicable to this setting. '+out['info'])
+            raise RuntimeError('SemismoothNewton not applicable to this setting. '+out['info'])
         self.S = self.setting.data_fid
         original_penalty = self.setting.penalty
         self.psi_plus = self._constraint_vector(

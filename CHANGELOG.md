@@ -116,7 +116,8 @@ as_real_space indicates if a vector space with a complex data type is treated as
 - shape and ndim as attributes of VectorSpaceBase
 - Old interface of Discrepancy
 - ApproximateHessian
-- IrgnmSemiSmooth (available as IRN with SSN as inner solver)
+- SemismoothNewton_nonneg, SemismoothNewton_bilateral and SemismoothNewtonAlphaGrid (now available as SemismoothNewton, for the latter in combination with RunOnAlphaGrid)
+- IrgnmSemiSmooth (now available as IRN with SSN as inner solver)
 
 ## [1.1.0]
 
