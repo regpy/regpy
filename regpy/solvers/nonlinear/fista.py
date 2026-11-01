@@ -374,7 +374,8 @@ class FISTA(RegSolver):
         r"""Write ``prox(h - tau * gradient)`` into ``x_old``.
         """
         self.op.domain.copyto(self.x_old, self._h)
-        np.multiply(self._gradient, self.tau, out=self._domain_work)
+        self.op.domain.copyto(self._domain_work,self._gradient)
+        self._domain_work *= self.tau
         self.x_old -= self._domain_work
         self.penalty.proximal(
             self.x_old, self.tau * self.regpar, out=self.x_old,

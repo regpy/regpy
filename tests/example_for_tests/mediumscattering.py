@@ -22,11 +22,7 @@ from mediumscattering import MediumScatteringFixed
 
 
 def test_mediumscattering():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s %(levelname)s %(name)-20s :: %(message)s'
-    )
-
+ 
     radius = 1
     scattering = MediumScatteringFixed(
         gridshape=(64, 64),
@@ -42,8 +38,6 @@ def test_mediumscattering():
 
     exact_solution = contrast
     exact_data = scattering(exact_solution)
-   
-    init = scattering.domain.zeros()
 
     myh_domain = Hm(mask = scattering.support,dtype=complex,index=2)
     setting = Setting(
@@ -52,22 +46,16 @@ def test_mediumscattering():
         #h_domain=HilbertPullBack(Sobolev(index=2), embedding, inverse='cholesky'),
         penalty = myh_domain, 
         data_fid =L2, 
-        exact_data=exact_data
+        exact_data=exact_data, 
+        init = scattering.domain.zeros()
     )
-    setting.add_Gaussian_noise(relative_noise_level=0.1,white_noise=False)
+    setting.add_Gaussian_noise(relative_noise_level=0.1,
+                               white_noise=False,
+                               seed = 42)
 
-    solver = IrgnmCG(setting, 
-        regpar=0.0001, regpar_step=0.8,
-        init=init,
-        cg_pars=dict(
-            tol=1e-8,
-            reltolx=1e-8
-        )
-    )
-    stoprule = rules.Discrepancy()
+    setting.set_method_params('IRGN_CG',{'regpar':1e-4, 'regpar_step':2/3})
+    _, _ =  setting.run('IRGN_CG', max_it = 30)
 
-    _, _ =  solver.run(stoprule, max_it = 100)
-
-    assert stoprule.main_rule.converged
+    assert setting.get_stoprule('IRGN_CG').main_rule.converged
 
 sys.path.pop(0)
