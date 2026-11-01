@@ -43,6 +43,7 @@ Moreover, starting with version 0.3 we adhere to [Semantic Versioning](https://s
 - Bregman distances and Bregman functionals
 - wrapper class Gradient_as_operator
 - Quadratic(IntegralFunctionalBase)
+- reference_vector which is a minimizer of the functional (if existent and easily computable), otherwise at least a feasible vector. Reference vectors of penalties are the default starting points of iterative method. 
 - properties is_norm_squared_type, separable, and strictly_convex
 - NullFunctional
 
