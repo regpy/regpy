@@ -743,9 +743,16 @@ class Setting:
             raise RuntimeError(f"Unknown noise model: {model['model_name']}")
 
         if model['model_name'] == 'Gaussian':
-            self.add_Gaussian_noise(relative_noise_level=model['relative_noise_level'],
-                                    absolute_noise_level=model['absolute_noise_level'],
-                                    white_noise=model['white_noise'])
+            # absolute_noise_level is the *effective absolute noise estimate*
+            # used by the discrepancy principle, even when the original input
+            # was relative. Pass only the originally selected kind of level to
+            # add_Gaussian_noise, which requires exactly one of the two.
+            relative_level = model['relative_noise_level']
+            self.add_Gaussian_noise(
+                relative_noise_level=relative_level,
+                absolute_noise_level=(None if relative_level is not None
+                                      else model['absolute_noise_level']),
+                white_noise=model['white_noise'])
         elif model['model_name'] == 'Poisson':
             self.generate_Poisson_data(expected_nr_counts=model['expected_nr_counts'])
 
@@ -803,11 +810,13 @@ class Setting:
             noise *= magnitude / norm
 
         self.data = self._exact_data + noise
-        # Keep the model parameters usable for another generate_synthetic_data().
+        # The discrepancy rule reads absolute_noise_level. Store the
+        # *effective absolute* estimate there also when the caller supplied a
+        # relative level; keep the relative input for regeneration above.
         self._noise_model_param = {
             'model_name': 'Gaussian',
             'relative_noise_level': relative_noise_level,
-            'absolute_noise_level': absolute_noise_level,
+            'absolute_noise_level': magnitude,
             'white_noise': white_noise,
             'estimated_absolute_noise_level': magnitude,
         }
@@ -816,7 +825,6 @@ class Setting:
                               seed: int | None = None) -> None:
         r"""Generate Poisson data using the codomain's sampling implementation.
 
-        
         Rates are real, nonnegative and finite. Complex *storage* is rejected
         even if the space is configured with ``as_real_space=True``.
         ``expected_nr_counts`` rescales the mean of the coefficient-wise

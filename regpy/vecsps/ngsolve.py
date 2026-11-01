@@ -539,21 +539,29 @@ class NgsVectorSpace(MaskableVectorSpace):
     
     def rand(self, distribution: str = "uniform", use_space_sampling: bool = False,
              mass_matrix_weighting: bool = True, seed: int | None = None,
-             **kwargs: Any) -> Vector:
+             project_free_dofs: bool = False, **kwargs: Any) -> Vector:
         r"""Sample a random finite-element vector.
 
-        ``use_space_sampling=True`` samples native finite-element degrees of
-        freedom. When ``mass_matrix_weighting=True`` the samples are multiplied
-        by the inverse *adjoint* of the mass-matrix Cholesky factor, so normal
-        samples have covariance M^{-1} before any boundary projection.
-        ``use_space_sampling=False`` retains sampling on the auxiliary L2
-        finite-element space, followed by interpolation into ``self.fes``.
+        By default, retain *all* finite-element coefficients, including those
+        marked as Dirichlet-constrained by ``fes.FreeDofs()``. This matches the
+        full ``ndof``-dimensional coefficient space represented by ``flatten``
+        and ``fromflat`` and is essential for generating boundary observations.
+        Set ``project_free_dofs=True`` when sampling an admissible homogeneous
+        Dirichlet field for a PDE solve; that option zeros constrained DOFs.
 
-        Complex coefficients are sampled using independent real and imaginary
-        draws. A supplied seed initializes the RNG only once (not once for
-        each component). Poisson sampling is handled by :meth:`poisson` and
-        is unavailable for complex-valued spaces.
+        ``use_space_sampling=True`` samples native finite-element degrees of
+        freedom. With ``mass_matrix_weighting=True``, the samples are
+        multiplied by the inverse *adjoint* of the mass-matrix Cholesky factor,
+        so standard-normal samples have covariance M^{-1} before projection.
+        ``use_space_sampling=False`` samples the auxiliary L2 finite-element
+        space, then interpolates into ``self.fes``.
+
+        Real and imaginary coefficients are drawn independently for complex
+        storage. ``seed`` initializes the random generator only once. Poisson
+        sampling is handled by :meth:`poisson` and requires real storage.
         """
+        if not isinstance(project_free_dofs, (bool, np.bool_)):
+            raise TypeError("project_free_dofs must be a boolean.")
         if distribution == "poisson" and self.is_complex:
             raise TypeError("Poisson sampling requires a real NgsVectorSpace.")
         if seed is not None:
@@ -603,8 +611,11 @@ class NgsVectorSpace(MaskableVectorSpace):
                 self._gfu_fes.Set(tuple(components))
             result = NgsBaseVector(self._gfu_fes.vec, make_copy=True)
 
-        # Respect constrained degrees of freedom in either sampling mode.
-        result.vec.data = ngs.Projector(self.fes.FreeDofs(), range=True).Project(result.vec)
+        # Dirichlet constraints belong to the PDE solve, not automatically to
+        # the vector-space representation: boundary data need those DOFs.
+        if project_free_dofs:
+            result.vec.data = ngs.Projector(
+                self.fes.FreeDofs(), range=True).Project(result.vec)
         return result
 
     
