@@ -1335,7 +1335,14 @@ class DirectSum(VectorSpaceBase):
         TupleVector
             Result described above.
         """
-        return TupleVector([s.rand(distribution=distribution, **kwargs) for s in self.summands])
+        options = dict(kwargs)
+        seed = options.pop("seed", None)
+        if seed is not None:
+            self.set_rng_seed(seed)
+        return TupleVector([
+            s.rand(distribution=distribution, **options)
+            for s in self.summands
+        ])
     
     def poisson(self, x: TupleVector) -> TupleVector:
         r"""Poisson.
