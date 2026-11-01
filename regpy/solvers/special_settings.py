@@ -24,7 +24,8 @@ from .setting import Setting
 
 __all__ = ['BoundConstrSetting', 'Huber_XSetting',
            'FISTA_SSNewton', 'dFISTA_SSNewton', 'TV_Setting', 'TVaug_Setting',
-           'PDHGaug', 'TVaugFISTAGapStopping', 'TVaugPDHGGapStopping']
+           'PDHGaug', 'TVaugOptimalityStopping',
+           'TVaugFISTAGapStopping', 'TVaugPDHGGapStopping']
 
 from regpy.solvers.sequences import Naturals
 from regpy.solvers.solver import CombinedSolver
@@ -606,13 +607,13 @@ class TVaug_Setting(Setting):
       updates *only* the first fidelity component. This preserves KL semantics.
     * ``codomain_free=True`` is not supported for this explicit formulation.
     * With ``R=0``, the primal penalty's conjugate is the indicator of zero,
-      so the *full* Fenchel gap generally remains infinite at intermediate
-      PDHG iterates. The default primal PDHG rule therefore measures the
-      **data-fidelity contribution** to the Fenchel--Young gap using
-      :class:`TVaugPDHGGapStopping`. This is a useful residual, **not** a
-      certificate of minimization; an iteration cap is always present.
-      An ordinary full-gap rule can be supplied explicitly if its
-      (possibly infinite) values are desired.
+      so the usual Fenchel duality gap is infinite unless the saddle dual
+      variable is exactly adjoint-feasible. The default stopping rule uses
+      :class:`TVaugOptimalityStopping`: the nonnegative fidelity Fenchel--Young
+      gap plus the squared dual domain norm of ``(c*T, grad).adjoint(p)``.
+      Both terms are recorded separately and a hard iteration cap remains.
+      The new sum is an optimality residual, not a standard duality gap.
+      With nonzero additional ``R`` the usual full-gap rule is retained.
     """
 
     def __init__(
@@ -793,27 +794,25 @@ class TVaug_Setting(Setting):
         return self.forward_op
 
     def _protect_pdhg_from_infinite_gaps(self) -> None:
-        # R=0 entails R* = indicator_{0}. The full gap is typically
-        # infinite because T* p != 0. For primal PDHG monitor the fidelity
-        # contribution on this setting. For dual PDHG use the *penalty*
-        # contribution on the transformed dual setting. This avoids the
-        # original NullFunctional.conj subgradient and does not require
-        # reconstructing the original primal iterate. Neither partial gap
-        # certifies convergence; the iteration cap remains in place.
-        # The stock DualityGapStopping has no ``gap_part`` option: the old
-        # configuration passed it through the factory, where it was silently
-        # ignored. Use a real partial-gap evaluator for primal PDHG instead.
-        self.set_stoprule_params("PDHG", {
-            "factory": _tvaug_pdhg_gap_factory,
+        """Install the two-term optimality test when the extra penalty is zero.
+
+        R*=indicator_{0} makes the ordinary full gap infinite at generic
+        saddle iterates. The new criterion instead combines the fidelity's
+        Fenchel--Young gap with the squared adjoint-feasibility residual.
+        The dual PDHG method is interpreted in the original augmented
+        primal/dual coordinates by TVaugOptimalityStopping.
+        """
+        for name in ("PDHG", "dPDHG"):
+            self.set_stoprule_params(name, {
+                "factory": _tvaug_pdhg_gap_factory,
+                "tol": 1e-5,
+                "schedule": None,
+            })
+        # FISTA may run directly on the augmented setting when the TV block
+        # has a Lipschitz subgradient (e.g. Huber smoothing).
+        self.set_stoprule_params("FISTA", {
+            "factory": _tvaug_fista_gap_factory,
             "tol": 1e-5,
-            "schedule": None,
-        })
-        # On a dual setting, keep the usual full-gap check (which can be
-        # nonfinite) and the safety cap. Do not claim an ignored gap_part.
-        self.set_stoprule_params("dPDHG", {
-            "factory": "DualityGapStopping",
-            "stop_at_infty": False,
-            "reltol": 0.,
             "schedule": None,
         })
 
@@ -1050,89 +1049,205 @@ class PDHGaug(PDHG):
         return x, self._physical_tv_setting.op(x)
 
 
-class _TVaugFidelityGapSetting:
-    """Expose the data-fidelity Fenchel--Young term of the augmented gap.
+class TVaugOptimalityStopping(DualityGapStopping):
+    r"""Two-term optimality residual for augmented TV with zero extra penalty.
 
-    The full gap includes ``R*(A* p)``. For the usual null additional
-    penalty, this is infinite until ``A* p == 0``. The fidelity contribution
-    is nonnegative and informative but **is not a full convergence bound**.
+    Write ``A=(cT, grad)``, ``S=setting.data_fid``, and let ``alpha`` be the
+    regularization parameter. For a primal/dual pair ``(x,p)``, this evaluates
+
+    ``gap_S = (S(Ax) + S.conj(-alpha*p) + alpha*<p,Ax>) / alpha``
+
+    and
+
+    ``feasibility = <A.adjoint(p), G_X^{-1} A.adjoint(p)>``.
+
+    ``gap_S`` is the nonnegative Fenchel--Young gap of the *entire augmented*
+    data fidelity (including the TV term). The second term is the squared
+    dual Hilbert norm on the original domain. Both vanish exactly at the
+    first-order optimality conditions when the additional penalty is zero.
+    Their **sum** is tested against ``tol``. It is an optimality residual,
+    not a conventional Fenchel duality gap or a calibrated error estimate.
+
+    A primal PDHG solver provides its saddle variable ``p`` directly. For a
+    standard FISTA run on TV_Setting, ``p`` is computed *at the current
+    iterate* using ``-S.subgradient(Ax)/alpha``; the physical FISTA dual
+    buffers are not in augmented coordinates. A dual PDHG solver is mapped
+    back from the transformed setting using its primal and dual saddle
+    variables. All three routes use the same two numerical criteria.
+
+    History keys:
+        - ``'fidelity gap'`` (first term),
+        - ``'adjoint feasibility squared'`` (second term),
+        - ``'augmented optimality residual'`` (their sum),
+        - ``'duality gap'`` (compatibility alias of their sum for plotting;
+          it is NOT the usual Fenchel duality gap).
+
+    ``dual_candidate`` may override the FISTA dual choice; by default the
+    requested augmented data-functional subgradient is always used.
     """
 
-    def __init__(self, augmented: TVaug_Setting) -> None:
-        self._augmented = augmented
+    def __init__(self, tol: float = 1e-5, schedule=None,
+                 logging_level: int | str = 'INFO',
+                 dual_candidate=None, stop_at_infty: bool = False) -> None:
+        if (isinstance(tol, (bool, np.bool_)) or
+                not isinstance(tol, (int, float, np.integer, np.floating))
+                or not np.isfinite(tol) or tol < 0):
+            raise ValueError('tol must be finite and nonnegative.')
+        if dual_candidate is not None and not callable(dual_candidate):
+            raise TypeError('dual_candidate must be callable or None.')
+        if not isinstance(stop_at_infty, (bool, np.bool_)):
+            raise TypeError('stop_at_infty must be boolean.')
+        # Subclass DualityGapStopping for existing convergence_plots() support.
+        # Never invoke its full-duality-gap _stop() or its reference-vector
+        # setup: NullFunctional.conj is an indicator with infinite values.
+        super().__init__(tol=float(tol), reltol=0., schedule=schedule,
+                         logging_level=logging_level,
+                         stop_at_infty=bool(stop_at_infty))
+        self.dual_candidate = dual_candidate
+        self._augmented: TVaug_Setting | None = None
+        self._tv_source: str | None = None
+        self.additional_gap_keys = ('fidelity gap',
+                                    'adjoint feasibility squared')
+        for key in (*self.additional_gap_keys, 'augmented optimality residual'):
+            self.history_dict[key] = []
 
-    def __getattr__(self, name):
-        return getattr(self._augmented, name)
-
-    def duality_gap(self, *, primal=None, dual=None):
-        if primal is None or dual is None:
-            raise ValueError('Partial TVaug gap needs primal and dual iterates.')
-        x, y = primal
-        p, _ = dual
-        if y is None:
-            y = self._augmented.op(x)
-        if p is None:
-            raise ValueError('Partial TVaug gap needs a dual variable.')
-        alpha = self._augmented.regpar
-        dual_density = -alpha * p
-        fidelity = self._augmented.data_fid
-        # Fenchel--Young: (S(y) + S*(q) - <q,y>) / alpha, q=-alpha*p.
-        # Unlike the Bregman formula, no subgradient of S* is necessary.
-        gap = (fidelity(y) + fidelity.conj(dual_density)
-               - self._augmented.op.codomain.vdot(dual_density, y).real) / alpha
-        # Small negative values can occur from floating-point cancellation.
-        return max(0., float(gap)) if np.isfinite(gap) else float(gap)
-
-
-class _TVaugPDHGSolverView:
-    """Keep PDHG's genuine saddle iterates, changing only the gap setting."""
-
-    def __init__(self, solver):
-        self._solver = solver
-        self.setting = _TVaugFidelityGapSetting(solver.setting)
-
-    def __getattr__(self, name):
-        return getattr(self._solver, name)
-
-
-class TVaugPDHGGapStopping(DualityGapStopping):
-    """Measure the augmented fidelity's Fenchel--Young gap every iteration.
-
-    This is a *partial* duality gap; when the augmented primal penalty is
-    zero it cannot certify primal optimality. It is nonetheless preferable
-    to the default RelativeChangeSol test, which can accept the first
-    zero-valued step without measuring any data discrepancy. An independent
-    CountIterations rule must also be installed for the outer run.
-    """
-
-    def __init__(self, tol: float = 1e-5,
-                 schedule=None, logging_level: int | str = 'INFO') -> None:
-        super().__init__(tol=tol, reltol=0., stop_at_infty=False,
-                         schedule=schedule, logging_level=logging_level)
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}(tol={self.tol})'
 
     def _complete_init_with_solver(self, solver) -> None:
-        if not isinstance(solver.setting, TVaug_Setting):
-            raise ValueError('TVaugPDHGGapStopping requires TVaug_Setting.')
-        super()._complete_init_with_solver(_TVaugPDHGSolverView(solver))
+        setting = solver.setting
+        original = getattr(setting, '_primal_setting', None)
+        if isinstance(original, TVaug_Setting):
+            augmented, source = original, 'dual-pdhg'
+        elif isinstance(setting, TVaug_Setting):
+            augmented, source = setting, 'pdhg'
+        else:
+            augmented = getattr(setting, 'tvaug_setting', None)
+            source = 'fista'
+        if not isinstance(augmented, TVaug_Setting):
+            raise ValueError('TVaugOptimalityStopping requires an augmented TV setting.')
+        if not augmented._tv_null_penalty:
+            raise ValueError('This two-term criterion requires a null additional penalty. '
+                             'Use the full duality gap for nonzero R.')
+        self._augmented = augmented
+        self._tv_source = source
+        # Skip DualityGapStopping._complete_init_with_solver(): it attempts
+        # the full R*-based dual gap and computes a penalty reference value.
+        StopRule._complete_init_with_solver(self, solver)
+
+    def reset(self) -> None:
+        super().reset()
+        self._augmented = None
+        self._tv_source = None
+
+    def _current_pair(self):
+        """Return x, A(x), and p in the *original* augmented coordinates."""
+        solver = self.solver
+        augmented = self._augmented
+        if solver is None or augmented is None:
+            raise RuntimeError('The TVaug stopping rule has not been attached.')
+        if self._tv_source == 'fista':
+            x = solver.x
+            y = augmented.op(x)
+            if self.dual_candidate is None:
+                # In particular, the TV-block subgradient must come from
+                # alpha*H_beta(grad(x)), not from physical FISTA's dual.
+                q = augmented.data_fid.subgradient(y)
+                p = (-1. / augmented.regpar) * q
+            else:
+                p = self.dual_candidate(x, augmented)
+        elif self._tv_source == 'dual-pdhg':
+            # On the dual Setting, solver.primal()[0] is original p, while
+            # solver.dual()[0] = -x / alpha (see Setting.get_dual_setting).
+            p, _ = solver.primal()
+            pstar, _ = solver.dual()
+            if p is None or pstar is None:
+                raise ValueError('Dual PDHG must provide both saddle variables.')
+            x = -pstar / augmented.regpar
+            y = augmented.op(x)
+        else:
+            (x, y), (p, _) = solver.primal(), solver.dual()
+            if y is None and x is not None:
+                y = augmented.op(x)
+        if x is None or y is None or p is None:
+            raise ValueError('TVaug optimality requires primal and dual iterates.')
+        if x not in augmented.op.domain or p not in augmented.op.codomain:
+            raise ValueError('TVaug saddle vectors belong to the wrong spaces.')
+        return x, y, p
+
+    def _error_terms(self):
+        """Evaluate the two mathematical terms without changing solver state."""
+        augmented = self._augmented
+        if augmented is None:
+            raise RuntimeError('The TVaug stopping rule has not been attached.')
+        _, y, p = self._current_pair()
+        alpha = augmented.regpar
+        q = -alpha * p
+        fidelity = augmented.data_fid
+        # <q,y> uses the canonical duality pairing of the augmented codomain.
+        fy = (fidelity(y) + fidelity.conj(q)
+              - augmented.op.codomain.vdot(q, y).real) / alpha
+        adj = augmented.op.adjoint(p)
+        riesz = augmented.h_domain.gram_inv(adj)
+        feas = augmented.op.domain.vdot(adj, riesz).real
+        if np.isfinite(fy):
+            fy = max(0., float(fy))  # suppress tiny negative cancellation
+        if np.isfinite(feas):
+            feas = max(0., float(feas))
+        return float(fy), float(feas)
 
     def _stop(self) -> bool:
-        triggered = super()._stop()
-        # Never label a vanishing *partial* gap as certified convergence:
-        # the omitted penalty/adjoint-feasibility term may still be positive
-        # (or infinite). In CombineRules this produces converged=False.
-        self.log_info = self.log_info.replace(
-            'Duality gap', 'Augmented fidelity gap (partial)').replace(
-            'duality gap', 'augmented fidelity gap (partial)')
-        if triggered and not self._stop_failure:
-            self._set_stop_status(False, self.log_info)
-        return triggered
+        fidelity, feasibility = self._error_terms()
+        total = fidelity + feasibility
+        self.history_dict['fidelity gap'].append(fidelity)
+        self.history_dict['adjoint feasibility squared'].append(feasibility)
+        self.history_dict['augmented optimality residual'].append(total)
+        self.history_dict['duality gap'].append(total)
+        self.log_info = ('Augmented TV: fidelity gap={:.3e}, '
+                         'adjoint feasibility squared={:.3e}, sum={:.3e} '
+                         '(tol={:.3e})').format(
+                             fidelity, feasibility, total, self.tol)
+        if np.isnan(total) or (np.isinf(total) and self.stop_at_infty):
+            return self._set_stop_status(False, self.log_info, failure=True)
+        if np.isfinite(total) and total <= self.tol:
+            if self.is_main_rule:
+                self.log.info(self.log_info)
+            return self._set_stop_status(True, self.log_info)
+        if self.is_main_rule:
+            self.log.debug(self.log_info)
+        return False
+
+
+class TVaugPDHGGapStopping(TVaugOptimalityStopping):
+    """Default two-term TVaug optimality monitor for primal or dual PDHG.
+
+    The public name is retained for compatibility with previous TV settings.
+    """
+
+
+class TVaugFISTAGapStopping(TVaugOptimalityStopping):
+    """Default TVaug optimality monitor for standard TV_Setting FISTA.
+
+    Its dual variable is reconstructed from the subgradient of the *augmented*
+    data functional at the current primal FISTA iterate, even when the
+    physical FISTA dual buffers are stale or initialized to zero.
+    """
+
+    def _complete_init_with_solver(self, solver) -> None:
+        super()._complete_init_with_solver(solver)
+        # Direct FISTA on TVaug_Setting uses the same augmented subgradient
+        # reconstruction as FISTA on the physical TV_Setting.
+        if self._tv_source == 'pdhg':
+            self._tv_source = 'fista'
+        if self._tv_source != 'fista':
+            raise ValueError('TVaugFISTAGapStopping requires a primal TV FISTA solver.')
 
 
 def _tvaug_pdhg_gap_factory(setting: Setting, params: dict) -> StopRule:
-    """Use the true augmented fidelity residual, together with a hard cap."""
+    """TVaug optimality residual and an independent hard iteration cap."""
     from regpy.stoprules.general import CountIterations_factory
     opts = dict(params.get('rule_params', {}))
-    for key in ('tol', 'schedule', 'logging_level'):
+    for key in ('tol', 'schedule', 'logging_level', 'stop_at_infty'):
         if key in params:
             opts.setdefault(key, params[key])
     opts.setdefault('tol', 1e-5)
@@ -1140,116 +1255,18 @@ def _tvaug_pdhg_gap_factory(setting: Setting, params: dict) -> StopRule:
     return TVaugPDHGGapStopping(**opts) + CountIterations_factory(setting, params)
 
 
-class _TVaugFenchelGapSetting:
-    """Expose the exact Fenchel gap (not its Bregman/subgradient form).
-
-    The true dual zero vector is always feasible with respect to the
-    conjugate of a null primal penalty.  A Bregman implementation may instead
-    require unavailable subgradients at the boundary of a dual constraint.
-    """
-
-    def __init__(self, augmented: TVaug_Setting) -> None:
-        self._augmented = augmented
-
-    def __getattr__(self, key):
-        return getattr(self._augmented, key)
-
-    def duality_gap(self, *, primal=None, dual=None):
-        return self._augmented.duality_gap(
-            primal=primal, dual=dual, use_bregman_formula=False)
-
-
-class _TVaugFISTASolverView:
-    """Adapt an ordinary FISTA iterate to the augmented gap interface."""
-
-    def __init__(self, solver, augmented: TVaug_Setting, dual_candidate=None):
-        self._solver = solver
-        self._augmented = augmented
-        self._dual_candidate = dual_candidate
-        self.setting = _TVaugFenchelGapSetting(augmented)
-        self.op = augmented.op
-        self._dual_zero = augmented.op.codomain.zeros()
-        self._adjoint_zero = augmented.op.domain.zeros()
-
-    @property
-    def x(self):
-        return self._solver.x
-
-    @property
-    def y(self):
-        # FISTA's y is optional, and in physical rather than augmented coords.
-        return self._solver.y
-
-    @property
-    def iteration_step_nr(self):
-        return self._solver.iteration_step_nr
-
-    def is_converged(self):
-        return self._solver.is_converged()
-
-    def primal(self):
-        return self._solver.x, None
-
-    def dual(self):
-        # A valid, if conservative, Fenchel dual point.  In particular,
-        # (A_aug)^* 0 = 0, so NullFunctional.conj(0) is finite.
-        if self._dual_candidate is None:
-            return self._dual_zero, self._adjoint_zero
-        candidate = self._dual_candidate(self._solver.x, self._augmented)
-        if candidate not in self._augmented.op.codomain:
-            raise ValueError('dual_candidate must return a TVaug codomain vector.')
-        # Derive the adjoint from the candidate; never trust an external
-        # pair with an inconsistent A* p.
-        return candidate, self._augmented.op.adjoint(candidate)
-
-
-class TVaugFISTAGapStopping(DualityGapStopping):
-    r"""Certify FISTA iterates using :class:`DualityGapStopping` on TVaug.
-
-    The default dual candidate is zero, which is *feasible* but can produce
-    a loose bound.  Unlike deriving a dual point from the fidelity gradient,
-    this does not produce the misleading zero fidelity gap or an infinite
-    null-penalty conjugate at nonstationary iterates.  An absolute tolerance
-    is therefore used, with ``reltol=0``. The rule is supplemented by an
-    iteration cap when registered as FISTA's default factory.
-    """
-
-    def __init__(self, tol: float = 1e-5,
-                 schedule=None, logging_level: int | str = 'INFO',
-                 dual_candidate=None) -> None:
-        if dual_candidate is not None and not callable(dual_candidate):
-            raise TypeError('dual_candidate must be callable or None.')
-        self.dual_candidate = dual_candidate
-        super().__init__(tol=tol, reltol=0., stop_at_infty=False,
-                         schedule=schedule, logging_level=logging_level)
-        self._fista_solver = None
-
-    def _complete_init_with_solver(self, solver) -> None:
-        tvaug = getattr(solver.setting, 'tvaug_setting', None)
-        if tvaug is None:
-            raise ValueError('TVaugFISTAGapStopping requires a TV_Setting with TVaug.')
-        self._fista_solver = solver
-        super()._complete_init_with_solver(
-            _TVaugFISTASolverView(solver, tvaug, self.dual_candidate))
-
-    def reset(self):
-        super().reset()
-        self._fista_solver = None
-
-
 def _tvaug_fista_gap_factory(setting: Setting, params: dict) -> StopRule:
-    """Create the augmented FISTA gap criterion plus the standard safety cap."""
+    """The same two-term criterion, using the augmented FISTA subgradient."""
     from regpy.stoprules.general import CountIterations_factory
-    rules = dict(params.get('rule_params', {}))
-    for key in ('tol', 'schedule', 'logging_level', 'dual_candidate'):
+    opts = dict(params.get('rule_params', {}))
+    for key in ('tol', 'schedule', 'logging_level', 'dual_candidate',
+                'stop_at_infty'):
         if key in params:
-            rules.setdefault(key, params[key])
-    rules.setdefault('tol', 1e-5)
-    # Check every outer FISTA iterate, including iteration zero. Never
-    # inherit the stock duality-gap rule's every-tenth-iteration schedule.
-    rules['schedule'] = None
-    rule = TVaugFISTAGapStopping(**rules)
-    return rule + CountIterations_factory(setting, params)
+            opts.setdefault(key, params[key])
+    opts.setdefault('tol', 1e-5)
+    # Evaluate every FISTA iterate, including iteration zero.
+    opts['schedule'] = None
+    return TVaugFISTAGapStopping(**opts) + CountIterations_factory(setting, params)
 
 
 class TV_Setting(Setting):
@@ -1275,14 +1292,15 @@ class TV_Setting(Setting):
     Data updates on the regular setting also update the augmented setting.
 
     A standard FISTA solve is supported whenever the TV penalty exposes an
-    applicable proximal operator. The installed default FISTA stopping rule
-    monitors the **full augmented Fenchel gap on every outer iterate**,
-    starting with the feasible
-    zero dual vector. For tighter certificates, provide a feasible augmented
-    dual vector through the ``dual_candidate(x, tvaug_setting)`` callback
-    configured in the FISTA stop-rule parameters. The zero-dual bound is
-    safe but possibly very conservative;
-    reaching the iteration cap is not a convergence certificate.
+    applicable proximal operator. For zero additional R, its default rule
+    evaluates the **augmented fidelity Fenchel--Young gap plus the squared
+    adjoint-feasibility residual** on every outer iterate. The saddle dual
+    variable is reconstructed as ``p=-S_aug.subgradient(Ax)/alpha`` at each
+    FISTA iterate; it is not the physical FISTA solver's stored dual vector.
+    The two terms have separate histories. A nonzero additional penalty
+    retains the ordinary full-gap rule. The iteration cap is always present.
+    A chosen TV subgradient at a nondifferentiable point may be conservative
+    even when another subgradient would satisfy the stationarity equation.
 
     To ensure that the two formulations have the same objective, the default
     ``incorporate_init_in_penalty`` is False: changing an initial guess must
@@ -1384,11 +1402,12 @@ class TV_Setting(Setting):
                     template['full'] = 'PDHG on the augmented TV inner setting'
                     # Inner alpha-grid settings are ordinary Setting instances;
                     # they must not fall back to RelativeChangeSol either.
-                    template['stoprule_params'].update({
-                        'factory': _tvaug_pdhg_gap_factory,
-                        'tol': 1e-5,
-                        'schedule': None,
-                    })
+                    if isinstance(self._tv_additional_penalty, NullFunctional):
+                        template['stoprule_params'].update({
+                            'factory': _tvaug_pdhg_gap_factory,
+                            'tol': 1e-5,
+                            'schedule': None,
+                        })
                     self._convex_solvers['PDHGaug'] = template
             return
         if self.tvaug_setting is None:
@@ -1415,12 +1434,9 @@ class TV_Setting(Setting):
         self.add_method('PDHGaug', PDHGaug, primal=True,
                         full_method_name='PDHG on the augmented TV setting')
         self._default_inner_solver = 'PDHGaug'
-        # A custom registered solver receives the *original* setting's
-        # default rule, not the rule configured on tvaug_setting['PDHG'].
-        # Install the augmented gap rule explicitly on PDHGaug.
-        # For R=0 the full gap is typically infinite until exact dual
-        # feasibility. A fidelity partial gap is useful, but not a global
-        # certificate. With an additional R, prefer the complete gap.
+        # The outer PDHGaug solver is registered on TV_Setting but executes
+        # on TVaug_Setting. Install the two-term optimality monitor on the
+        # outer registry as well. With nonzero R, retain the full gap.
         if self.tvaug_setting._tv_null_penalty:
             pdhg_gap_factory = _tvaug_pdhg_gap_factory
         else:
@@ -1433,7 +1449,7 @@ class TV_Setting(Setting):
             'stop_at_infty': False,
             'schedule': None,
         })
-        if 'FISTA' in self._methods:
+        if 'FISTA' in self._methods and self.tvaug_setting._tv_null_penalty:
             self.set_stoprule_params('FISTA', {
                 'factory': _tvaug_fista_gap_factory,
                 'max_it': 1000,
