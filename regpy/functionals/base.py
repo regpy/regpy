@@ -2997,6 +2997,11 @@ class SquaredNorm(Functional):
             data=data,
         )
 
+    def _reference_vector(self, out=None):
+        if self.a > 0:
+            return self._copy_vector((-1./ self.a) * self.b, out=out)
+        return super()._reference_vector(out=out)    
+
     def __add__(self, other: object) -> Functional | NotImplementedType:
         if isinstance(other, SquaredNorm) and other.h_domain==self.h_domain:
             return SquaredNorm(self.h_domain,
