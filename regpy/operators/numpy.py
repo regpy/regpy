@@ -293,7 +293,9 @@ class Complex2Real(Operator):
     domain: NumPyVectorSpace
         Complex NumPy vector space to be realified.
     axis: int [default: -1]
-        Position of the new real/imaginary axis in the codomain.
+        Position of the new real/imaginary axis in the full output array.
+        For MeasureSpaceFcts, the normalized position must be at least
+        domain.ndim_domain, so it belongs to the point-value dimensions.
     """
 
     def __init__(self, domain: NumPyVectorSpace, axis: int = -1) -> None:
@@ -322,10 +324,22 @@ class Complex2Real(Operator):
                 f"Got {axis}."
             ))
 
-        shape = list(domain.shape)
-        shape.insert(axis, 2)
-        real_dtype = np.empty((), dtype=domain.dtype).real.dtype
-        codomain = NumPyVectorSpace(tuple(shape), dtype=real_dtype)
+        if isinstance(domain, MeasureSpaceFcts):
+            if axis < domain.ndim_domain:
+                raise ValueError(Errors.value_error(
+                    "For MeasureSpaceFcts, axis must insert the real/imaginary "
+                    "dimension among the point-value axes."
+                ))
+            shape_codomain = list(domain.shape_codomain)
+            shape_codomain.insert(axis - domain.ndim_domain, 2)
+            codomain = domain.real_space().vector_valued_space(
+                tuple(shape_codomain)
+            )
+        else:
+            shape = list(domain.shape)
+            shape.insert(axis, 2)
+            real_dtype = np.empty((), dtype=domain.dtype).real.dtype
+            codomain = NumPyVectorSpace(tuple(shape), dtype=real_dtype)
         self.axis = axis
         super().__init__(domain, codomain, linear=True)
 
