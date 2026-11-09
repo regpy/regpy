@@ -13,7 +13,7 @@ from regpy.util import ClassLogger, Errors
 from regpy.vecsps import Vector, ReadOnlyVector
 from regpy.operators import Operator, ObsDataT
 from regpy.hilbert import HilbertSpace
-from regpy.functionals.base import  as_functional, Composed
+from regpy.functionals.base import NullFunctional, as_functional, Composed
 from regpy.functionals import Functional
 from regpy.stoprules import (
     StopRule, DualityGapStopping, ErrorMonitor,
