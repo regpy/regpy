@@ -355,14 +355,45 @@ def test_ngs_native_mass_weighted_gaussian_uses_adjoint_cholesky():
                          ids=["unweighted", "mass-weighted"])
 def test_ngs_gaussian_noise_respects_constrained_dofs(mass_weighted):
     space = _noise_space(constrained=True)
+    # Enforcing homogeneous Dirichlet constraints is now explicitly opt-in.
     sampled = space.randn(seed=38, use_space_sampling=True,
-                          mass_matrix_weighting=mass_weighted)
+                          mass_matrix_weighting=mass_weighted,
+                          project_free_dofs=True)
     freedofs = space.fes.FreeDofs()
     free = np.fromiter((bool(freedofs[i]) for i in range(space.fes.ndof)),
                        dtype=bool, count=space.fes.ndof)
     assert np.any(~free)  # A non-vacuous boundary-projection check.
     np.testing.assert_array_equal(_native_coefficients(space, sampled)[~free],
                                   np.zeros(np.count_nonzero(~free)))
+
+
+@pytest.mark.parametrize("use_space_sampling", [False, True],
+                         ids=["auxiliary-L2", "native-FE"])
+def test_ngs_gaussian_default_retains_constrained_dofs(use_space_sampling):
+    """Boundary coefficients belong to the vector space and data space.
+
+    NgsVectorSpace.randn() retains them by default, whereas a homogeneous
+    Dirichlet random *PDE variation* uses project_free_dofs=True.
+    """
+    space = _noise_space(constrained=True)
+    options = {"seed": 38, "use_space_sampling": use_space_sampling,
+               "mass_matrix_weighting": False}
+    free_dofs = space.fes.FreeDofs()
+    free = np.fromiter((bool(free_dofs[i]) for i in range(space.fes.ndof)),
+                       dtype=bool, count=space.fes.ndof)
+    assert np.any(~free)
+
+    full = space.randn(**options)
+    repeated = space.randn(**options)
+    projected = space.randn(**options, project_free_dofs=True)
+    full_coeffs = _native_coefficients(space, full)
+    projected_coeffs = _native_coefficients(space, projected)
+
+    np.testing.assert_array_equal(full_coeffs,
+                                  _native_coefficients(space, repeated))
+    assert np.any(np.abs(full_coeffs[~free]) > 0)
+    np.testing.assert_array_equal(projected_coeffs[~free], 0)
+    np.testing.assert_allclose(projected_coeffs[free], full_coeffs[free])
 
 
 @pytest.mark.parametrize("use_space_sampling", [False, True],

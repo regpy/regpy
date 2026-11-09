@@ -102,6 +102,32 @@ def _with_stoprule_defaults(methods: dict, factory: Callable[[Setting, dict], St
         method.setdefault('method_params', {})
     return methods
 
+def _stoprule_attached_to_solver(rule: StopRule, solver: Any) -> bool:
+    """Whether a recorded rule tree belongs to the solver's outer run.
+
+    ``CombinedSolver.stoprule`` is its *stage-switching* rule, attached to
+    ``solver.solver1`` rather than to the combined solver. It must not replace
+    the outer rule saved by ``Setting.run``: the latter records the evaluation
+    counter needed by ``convergence_plots(x_axis='op_evals')``.
+
+    A genuine executed rule can have an unattached ``CombineRules`` root
+    (e.g. after a solver adds internal criteria), so inspect its children.
+    """
+    if solver is None:
+        return False
+    pending = [rule]
+    seen = set()
+    while pending:
+        part = pending.pop()
+        if id(part) in seen:
+            continue
+        seen.add(id(part))
+        if getattr(part, 'solver', None) is solver:
+            return True
+        pending.extend(getattr(part, 'rules', ()))
+    return False
+
+
 class Setting:
     r"""A *setting* for an inverse problem, used by RegSolvers. A setting always consists at least of
     
@@ -2224,11 +2250,19 @@ class Setting:
         # Retain that tree *without copying/resetting it*, so get_stoprule()
         # and convergence_plots() can inspect all recorded criteria.
         executed_stoprule = getattr(solver, 'stoprule', None)
-        if not isinstance(executed_stoprule, StopRule):
-            # Codomain-free TikhonovCG delegates to LavrentievCG.
-            delegated = getattr(solver, '_lavrentiev', None)
-            executed_stoprule = getattr(delegated, 'stoprule', None)
-        if isinstance(executed_stoprule, StopRule):
+        executed_owner = solver
+        if (not isinstance(executed_stoprule, StopRule)
+                or not _stoprule_attached_to_solver(executed_stoprule, solver)):
+            # CombinedSolver.stoprule is the *internal stage-switch rule*.
+            # It is attached to solver1, not to the outer CombinedSolver.
+            # Retain the external rule (and its evaluation/timing histories)
+            # rather than overwriting it with that unrelated inner rule.
+            # Codomain-free TikhonovCG may instead delegate to LavrentievCG.
+            executed_owner = getattr(solver, '_lavrentiev', None)
+            executed_stoprule = getattr(executed_owner, 'stoprule', None)
+        if (isinstance(executed_stoprule, StopRule)
+                and _stoprule_attached_to_solver(executed_stoprule,
+                                                 executed_owner)):
             themethod['stoprule'] = executed_stoprule
         
         if self.is_tikhonov and not solver.is_primal:

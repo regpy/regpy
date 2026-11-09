@@ -352,7 +352,10 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
             differentiate : bool = False) -> NgsBaseVector:
         self.adj_first = True
         self.gf_a.vec.data = a.vec
-        self.projector_domain.Project(self.gf_a.vec)
+        # Only the free coefficient DOFs depend on the input: prescribed
+        # boundary coefficients are fixed independently of a. Projector.Project
+        # returns the projected vector; explicitly assign it to storage.
+        self.gf_a.vec.data = self.projector_domain.Project(self.gf_a.vec)
         self.gf_a.vec.data += self.a_bdr
 
         self.bf_mat.Assemble()
@@ -377,9 +380,13 @@ class SecondOrderEllipticCoefficientPDE(NgsOperator):
         self.gf_adj_help.vec.data += self.bf_mat_adj_inv * (g.vec - self.bf_mat_adj * self.gf_adj_help.vec)
         self.lf_adj.Assemble()
         self._prepare_out(out)
-        out.vec.data = self.lf_adj.vec
-        self.projector_domain.Project(out.vec)
-        out.vec.data += self.a_bdr
+        # D F(a) = D F(a) P_free: perturbations of fixed Dirichlet
+        # coefficients are ignored by _c_u. The Euclidean adjoint must
+        # therefore be P_free D F(a)^*, with ZERO constrained components.
+        # Adding a_bdr here would introduce an affine, nonzero offset:
+        # (D F(a))^* 0 must equal 0, even for inhomogeneous a_bdr.
+        # Likewise, never drop the result returned by Projector.Project.
+        out.vec.data = self.projector_domain.Project(self.lf_adj.vec)
         return out
 
     def _bf(self,
