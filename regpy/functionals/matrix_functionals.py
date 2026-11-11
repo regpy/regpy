@@ -21,7 +21,14 @@ __all__ = ["QuadraticPositiveSemidef", "SpectralFunctional"]
 class SpectralFunctional(Functional):
 
     def __init__(self, domain,spec_func, h_domain = None):
-        #TODO add checks
+        if not isinstance(domain,UniformGridFcts):
+            raise TypeError(Errors.not_instance(domain,UniformGridFcts,add_info="SpectralFunctionals are only defined for matrices."))
+        if not domain.ndim==2 or not domain.shape[0]==domain.shape[1]:
+            raise RuntimeError("SpectralFunctionals are only defined for square matrices.")
+        if not isinstance(spec_func.domain,UniformGridFcts) or spec_func.domain.ndim!=1:
+            raise RuntimeError("Spectral functional has to be defined on one dimensional uniform domain.")
+        if spec_func.domain.shape[0]!=domain.shape[0]:
+            raise RuntimeError(f"Size {domain.shape[0]} of matrices is incompatible with size {spec_func.domain.shape} of domain of functional.")
         self.spec_func=spec_func
         all_methods = {'eval', 'subgradient', 'proximal'}
         methods=all_methods.intersection(spec_func.methods)
