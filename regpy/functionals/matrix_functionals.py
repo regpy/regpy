@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from math import inf
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Any
@@ -14,7 +15,67 @@ from regpy.vecsps.numpy import *
 
 from .base import Functional, NotInEssentialDomainError
 
-__all__ = ["QuadraticPositiveSemidef"]
+__all__ = ["QuadraticPositiveSemidef", "SpectralFunctional"]
+
+
+class SpectralFunctional(Functional):
+
+    def __init__(self, domain,spec_func, h_domain = None):
+        #TODO add checks
+        self.spec_func=spec_func
+        all_methods = {'eval', 'subgradient', 'proximal'}
+        methods=all_methods.intersection(spec_func.methods)
+        conj_methods=all_methods.intersection(spec_func._conj_methods)
+        super().__init__(domain,h_domain,is_linear=spec_func.is_linear,is_quadratic=spec_func.is_quadratic,is_convex=spec_func.is_convex,
+                         convexity_param=spec_func.convexity_param,Lipschitz=spec_func.Lipschitz,methods=methods,conj_methods=conj_methods)
+
+
+    def _eval(self, x):
+        evs= np.linalg.eigvalsh(x)
+        return self.spec_func(evs)
+
+    def _subgradient(self, x, out = None):
+        evs, U = np.linalg.eigh(x)
+        grad=(U * self.spec_func.subgradient(evs)) @ np.conj(U).T
+        if(out is None):
+            return grad
+        else:
+            np.copyto(out,grad)
+            return out
+
+    def _proximal(self, x, tau, out = None):
+        evs, U = np.linalg.eigh(x)
+        prox=(U * self.spec_func.proximal(evs,tau)) @ np.conj(U).T
+        if(out is None):
+            return prox
+        else:
+            np.copyto(out,prox)
+            return out
+
+    def _conj(self, xstar):
+        evs = np.linalg.eigvalsh(xstar)
+        return self.spec_func.conj(evs)
+
+    def _conj_subgradient(self, xstar, out = None):
+        evs, U = np.linalg.eigh(xstar)
+        grad=(U * self.spec_func.conj.subgradient(evs)) @ np.conj(U).T
+        if(out is None):
+            return grad
+        else:
+            np.copyto(out,grad)
+            return out
+
+    def _conj_proximal(self, xstar, tau, out = None):
+        evs, U = np.linalg.eigh(xstar)
+        prox=(U * self.spec_func.conj.proximal(evs,tau)) @ np.conj(U).T
+        if(out is None):
+            return prox
+        else:
+            np.copyto(out,prox)
+        return out
+
+
+
 
 class QuadraticPositiveSemidef(Functional):
     r"""Functional 
