@@ -185,14 +185,14 @@ Several vector spaces can be combined into a
 
 .. code-block:: python
 
-   product_space = parameter_space + auxiliary_space
-   combined = product_space.join(parameter, auxiliary)
-   parameter, auxiliary = product_space.split(combined)
+   sum_space = parameter_space + auxiliary_space
+   combined = sum_space.join(parameter, auxiliary)
+   parameter, auxiliary = sum_space.split(combined)
 
 Allocation, copying, membership tests, pairings, and random sampling are then
 performed componentwise by the corresponding summand. The distinguished
 coordinate order of a direct sum concatenates the coordinates of its
-summands, and ``product_space.dimension`` is the sum of their dimensions.
+summands, and ``sum_space.dimension`` is the sum of their dimensions.
 Direct sums allow operators and solvers to work with coupled unknowns whose
 components may even use different vector representations. Their summands
 must be interpreted over a common scalar field; a mixed-field direct sum is
