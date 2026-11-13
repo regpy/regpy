@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from math import inf
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Any
@@ -14,7 +15,74 @@ from regpy.vecsps.numpy import *
 
 from .base import Functional, NotInEssentialDomainError
 
-__all__ = ["QuadraticPositiveSemidef"]
+__all__ = ["QuadraticPositiveSemidef", "SpectralFunctional"]
+
+
+class SpectralFunctional(Functional):
+
+    def __init__(self, domain,spec_func, h_domain = None):
+        if not isinstance(domain,UniformGridFcts):
+            raise TypeError(Errors.not_instance(domain,UniformGridFcts,add_info="SpectralFunctionals are only defined for matrices."))
+        if not domain.ndim==2 or not domain.shape[0]==domain.shape[1]:
+            raise RuntimeError("SpectralFunctionals are only defined for square matrices.")
+        if not isinstance(spec_func.domain,UniformGridFcts) or spec_func.domain.ndim!=1:
+            raise RuntimeError("Spectral functional has to be defined on one dimensional uniform domain.")
+        if spec_func.domain.shape[0]!=domain.shape[0]:
+            raise RuntimeError(f"Size {domain.shape[0]} of matrices is incompatible with size {spec_func.domain.shape} of domain of functional.")
+        self.spec_func=spec_func
+        all_methods = {'eval', 'subgradient', 'proximal'}
+        methods=all_methods.intersection(spec_func.methods)
+        conj_methods=all_methods.intersection(spec_func._conj_methods)
+        super().__init__(domain,h_domain,is_linear=spec_func.is_linear,is_quadratic=spec_func.is_quadratic,is_convex=spec_func.is_convex,
+                         convexity_param=spec_func.convexity_param,Lipschitz=spec_func.Lipschitz,methods=methods,conj_methods=conj_methods)
+
+
+    def _eval(self, x):
+        evs= np.linalg.eigvalsh(x)
+        return self.spec_func(evs)
+
+    def _subgradient(self, x, out = None):
+        evs, U = np.linalg.eigh(x)
+        grad=(U * self.spec_func.subgradient(evs)) @ np.conj(U).T
+        if(out is None):
+            return grad
+        else:
+            np.copyto(out,grad)
+            return out
+
+    def _proximal(self, x, tau, out = None):
+        evs, U = np.linalg.eigh(x)
+        prox=(U * self.spec_func.proximal(evs,tau)) @ np.conj(U).T
+        if(out is None):
+            return prox
+        else:
+            np.copyto(out,prox)
+            return out
+
+    def _conj(self, xstar):
+        evs = np.linalg.eigvalsh(xstar)
+        return self.spec_func.conj(evs)
+
+    def _conj_subgradient(self, xstar, out = None):
+        evs, U = np.linalg.eigh(xstar)
+        grad=(U * self.spec_func.conj.subgradient(evs)) @ np.conj(U).T
+        if(out is None):
+            return grad
+        else:
+            np.copyto(out,grad)
+            return out
+
+    def _conj_proximal(self, xstar, tau, out = None):
+        evs, U = np.linalg.eigh(xstar)
+        prox=(U * self.spec_func.conj.proximal(evs,tau)) @ np.conj(U).T
+        if(out is None):
+            return prox
+        else:
+            np.copyto(out,prox)
+        return out
+
+
+
 
 class QuadraticPositiveSemidef(Functional):
     r"""Functional 
