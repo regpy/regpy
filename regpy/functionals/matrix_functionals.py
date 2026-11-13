@@ -21,8 +21,8 @@ __all__ = ["QuadraticPositiveSemidef", "SpectralFunctional"]
 class SpectralFunctional(Functional):
 
     def __init__(self, domain,spec_func, h_domain = None):
-        if not isinstance(domain,UniformGridFcts):
-            raise TypeError(Errors.not_instance(domain,UniformGridFcts,add_info="SpectralFunctionals are only defined for matrices."))
+        if not isinstance(domain,NumPyVectorSpace):
+            raise TypeError(Errors.not_instance(domain,NumPyVectorSpace,add_info="SpectralFunctionals are only defined for numpy arrays."))
         if not domain.ndim==2 or not domain.shape[0]==domain.shape[1]:
             raise RuntimeError("SpectralFunctionals are only defined for square matrices.")
         if not isinstance(spec_func.domain,UniformGridFcts) or spec_func.domain.ndim!=1:
