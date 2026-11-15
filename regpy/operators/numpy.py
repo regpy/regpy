@@ -1253,6 +1253,11 @@ class FourierTransform(Operator):
                     use_cell_measure=False
                 )
 
+        if self.is_complex:
+            codomain.as_real_space = domain.as_real_space
+        else:
+            codomain.as_real_space = True
+
         super().__init__(domain, codomain, linear=True)
 
     @staticmethod
