@@ -1,7 +1,7 @@
 Operators
 =========
 
-An :class:`regpy.operators.Operator` represents a possibly nonlinear map
+A :class:`regpy.operators.Operator` represents a possibly nonlinear map
 :math:`F:X\to Y` between RegPy vector spaces. Both real- and complex-valued
 vectors occur in practice. In particular, an operator between complex array
 spaces does not need to be complex-linear: differentiation and adjoints use the
@@ -16,7 +16,7 @@ section :ref:`building_operators` then discusses combinations in detail.
 
 The operator's adjoint is defined with respect to the *standard vector-space
 pairings*, not with respect to arbitrary Hilbert-space norms chosen for an
-inverse problem. For NumPy vectors the standard real pairing is
+inverse problem. For NumPy vectors the standard pairing is
 
 .. math::
 
@@ -61,8 +61,7 @@ Here indexing starts at one. Thus :math:`T(1,2,3)=(1,3,6,9,12)` for
 
 The following complete implementation uses
 :class:`regpy.vecsps.numpy.NumPyVectorSpace` for both spaces. The same code
-works with real or complex NumPy arrays; the complex case uses the standard
-real pairing, for which the formula above is also the adjoint.
+works with real or complex NumPy arrays.
 
 .. code-block:: python
 
@@ -168,9 +167,7 @@ operators. There is no need to write its derivative or adjoint yourself:
    intensity = SquaredModulus(fft.codomain) * fft
 
 RegPy applies the chain rule automatically when such a composition is
-linearized. See :doc:`notebooks/volterra_main_example` for another operator
-example and :doc:`notebooks/diffusion_coefficient` for a PDE-based inverse
-problem.
+linearized. 
 
 .. _operator_tests_tutorial:
 
@@ -232,8 +229,7 @@ Before implementing a new operator, consult the
   :class:`regpy.operators.numpy.Exponential`, and
   :class:`regpy.operators.numpy.NemytskiiOperator`. A Nemytskii
   operator applies a supplied point function at each spatial location;
-  its constructor also takes the pointwise (real) Jacobian. The latter
-  requires a :class:`regpy.vecsps.numpy.MeasureSpaceFcts` domain.
+  its constructor also takes the pointwise (real) Jacobian. 
 * **Linear algebra and transforms:**
   :class:`regpy.operators.numpy.MatrixMultiplication`,
   :class:`regpy.operators.numpy.FourierTransform`,
