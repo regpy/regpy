@@ -20,7 +20,7 @@ inverse problem. For NumPy vectors the standard real pairing is
 
 .. math::
 
-   \langle x,z\rangle_{\mathbb R}=\operatorname{Re}\bigl(\operatorname{vdot}(x,z)\bigr).
+   \langle x,z\rangle= \operatorname{vdot}(x,z).
 
 When Hilbert norms are induced by Gram operators :math:`G_X,G_Y`, the
 corresponding Hilbert adjoint is instead :math:`G_X^{-1}T^*G_Y`. This
@@ -195,8 +195,8 @@ coefficients:
    x = rng.normal(size=3) + 1j * rng.normal(size=3)
    y = rng.normal(size=5) + 1j * rng.normal(size=5)
    assert np.allclose(
-       np.vdot(Tc(x), y).real,
-       np.vdot(x, Tc.adjoint(y)).real,
+       np.vdot(Tc(x), y),
+       np.vdot(x, Tc.adjoint(y)),
    )
 
 RegPy contains the dedicated utilities
@@ -535,7 +535,6 @@ Further reading
 * :doc:`Spaces` — vector-space representations and Hilbert structures.
 * :doc:`Functionals` — functionals and their derivatives.
 * :doc:`Solvers` — iterative regularization methods.
-* :doc:`notebooks/volterra_main_example` — operator example.
 * :doc:`notebooks/diffusion_coefficient` — PDE-based example.
 * :doc:`notebooks/parallel_mri` — parallel MRI example.
 * :doc:`full RegPy API <autoapi/regpy/index>` — complete class and method

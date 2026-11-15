@@ -428,7 +428,7 @@ and the method requires both ``'subgradient'`` and ``'hessian'`` in
 
 .. _vector_integral_functionals:
 
-Vector-valued integral and matrix functionals
+Vector-valued integral functionals
 ---------------------------------------------
 
 :class:`regpy.functionals.vector_integral_functionals.VectorIntegralFunctional`
@@ -471,24 +471,12 @@ A TV proximal mapping generally requires an inner iterative solve; it is
 not just a pointwise soft-thresholding step in the original image space.
 See :doc:`Operators` for the gradient operator and operator compositions.
 
-**Matrix-valued functionals.** The supplied ``matrix_functionals.py`` does
-not define a generic class called ``MatrixFunctional``. It provides the
-specific class
-:class:`regpy.functionals.matrix_functionals.QuadraticPositiveSemidef`,
-which models a quadratic Hilbert--Schmidt penalty on Hermitian
-positive-semidefinite matrices, optionally with a prescribed trace. Its
-proximal operator uses an eigenvalue decomposition and projects the
-eigenvalues onto the nonnegative cone or the appropriate simplex. This is a
-useful illustration of the difference between scalar pointwise constraints
-and matrix constraints: a positivity condition for matrices is imposed on
-the **spectrum**, not independently on the matrix entries.
 
 Further references
 ------------------
 
 The documented API is implemented primarily in
 :mod:`regpy.functionals.base`,
-:mod:`regpy.functionals.integral_functionals`,
-:mod:`regpy.functionals.vector_integral_functionals` and
-:mod:`regpy.functionals.matrix_functionals`. Related background is covered
+:mod:`regpy.functionals.integral_functionals`, and
+:mod:`regpy.functionals.vector_integral_functionals`
 in :doc:`Spaces`, :doc:`Operators` and :doc:`Solvers`.
