@@ -531,6 +531,9 @@ def test_adjoint(op: Operator, tolerance: float=1e-10) -> bool:
         inner(y, op(x)) == inner(op.adjoint(y), x)
     
     in :math:`L^2` up to some tolerance for random choices of `x` and `y`.
+    If both vector spaces are complex (``as_real_space=False``), the full
+    complex inner products are compared. Otherwise only their real parts
+    are compared, as required for a real-linear adjoint.
     
     Parameters
     ----------
@@ -548,7 +551,9 @@ def test_adjoint(op: Operator, tolerance: float=1e-10) -> bool:
     fx = op(x)
     y = op.codomain.randn()
     fty = op.adjoint(y)
-    err = (op.codomain.vdot(y, fx) - op.domain.vdot(fty, x)).real
+    err = op.codomain.vdot(y, fx) - op.domain.vdot(fty, x)
+    if op.domain.as_real_space or op.codomain.as_real_space:
+        err = err.real
     if abs(err) < tolerance:
         op.log.info(f'Adjoint test passed: err = {err}')
         return True
