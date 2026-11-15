@@ -12,19 +12,19 @@ They illustrate representative applications and common RegPy workflows.
 .. toctree::
    :maxdepth: 1
 
-   notebooks/volterra_main_example
    notebooks/deconvolution_Impulsive
    notebooks/medium_scattering
    notebooks/parallel_mri
    notebooks/potential_example
+   notebooks/obstacle_scattering   
    notebooks/tfm
    notebooks/diffusion_coefficient
 
 ..
-   volterra_main_example: Symlink
    deconvolution_Impulsive: File
    medium_scattering: File
    parallel_mri: File
    potential: File
+   obstacle_scattering: File 
    tfm: Symlink
    diffusion_coefficient: Symlink
