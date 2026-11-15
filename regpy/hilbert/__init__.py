@@ -154,6 +154,17 @@ def _masked_l2(vecsp: VectorSpaceBase, **kwargs: Any) -> MaskedHilbertSpace:
     return MaskedHilbertSpace(full_hilbert, vecsp)
 
 
+def _masked_hm0(vecsp: MaskedVectorSpace, **kwargs: Any) -> HmDomain:
+    r"""Construct Hm0 on the reduced support, with zero exterior values.
+
+    HmDomain provides the sparse finite-difference matrix and its inverse.
+    Unlike full-grid Hm, Hm0 defaults to Dirichlet also at the edges of the
+    enclosing computational grid, as required for a zero extension.
+    """
+    kwargs.setdefault('ext_bd_cond', 'Dir')
+    return HmDomain(vecsp, **kwargs)
+
+
 def _register_spaces() -> None:
     r"""Auxiliary method to register abstract spaces for various vector spaces. Using the decorator
     method described in `AbstractSpace` does not work due to circular depenencies when
@@ -178,6 +189,9 @@ def _register_spaces() -> None:
     Hm.register(Prod, componentwise(HmDomain,cls=TensorProd))
     Hm.register(DirectSumVS, componentwise(HmDomain))
     Hm.register(UniformGridFcts,HmDomain)
+    # Hm0 is defined on the reduced coordinates of a masked grid. HmDomain
+    # assembles the Dirichlet finite-difference Gram matrix on that support.
+    Hm0.register(MaskedVectorSpace, _masked_hm0)
 
     L2Boundary.register(DirectSumVS, componentwise(L2Boundary))
 

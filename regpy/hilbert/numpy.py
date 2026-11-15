@@ -10,6 +10,7 @@ import numpy as np
 from scipy.sparse import csc_matrix
 
 from regpy import vecsps
+from regpy.vecsps.maskable import MaskedVectorSpace
 from regpy.util import memoized_property,Errors
 from regpy.operators import Operator,PtwMultiplication,Pow,MatrixMultiplication,FourierTransform,CoordinateProjection
 
@@ -186,6 +187,9 @@ class SobolevUniformGridFcts(HilbertSpace):
 
 class HmDomain(HilbertSpace):
     r"""Implementation of a Sobolev space :math:`H^m(D)` for a subset :math:`D` of a `regpy.vecsps.UniformGridFcts` grid.
+    Also supports a ``MaskedVectorSpace`` whose full space is a
+    ``UniformGridFcts``. In that case the Gram and its inverse act on the
+    *reduced masked coordinates*, rather than on the full grid.
     :math:`D` is characterized by a binary or integer-valued mask: `D={mask==1}`.
     `{mask==0}` are Dirichlet boundaries, and `{mask==-1}` Neumann boundaries.
     `mask` may also be boolean, in this case there are only Dirichlet boundaries.
@@ -201,8 +205,8 @@ class HmDomain(HilbertSpace):
     
     Parameters
     ----------
-    vecsp: vecsps.UniformGridFcts
-        Underlying grid functions.
+    vecsp: vecsps.UniformGridFcts | MaskedVectorSpace
+        Underlying grid functions, or a masked space of such functions.
     mask: Mask | None [default: None]
         Mask to capture that subset :math:`D` on which the Sobolev space is defined. Can only contain 
         values `{-1,0,1}` or is a boolean. Shape has to match the shape of `vecsp`. In this case it is set to all True.
@@ -222,7 +226,7 @@ class HmDomain(HilbertSpace):
     """
 
     def __init__(self,
-                vecsp:vecsps.UniformGridFcts, 
+                vecsp:vecsps.UniformGridFcts | MaskedVectorSpace,
                 mask: Mask | None = None,
                 h:str='normalized',
                 index:int=1,
@@ -230,11 +234,30 @@ class HmDomain(HilbertSpace):
                 ext_bd_cond:str = 'Neum',
                 alpha:float = 1.,
                 dtype: DTypeLike = float) -> None:
-        if not isinstance(vecsp,vecsps.UniformGridFcts):
-            raise TypeError(Errors.not_instance(vecsp,vecsps.UniformGridFcts,"The underlying vecsp has to be of type UniformGridFcts"))
-        if mask is None:
-            mask = np.ones(vecsp.shape, dtype=bool)
-        elif vecsp.shape != mask.shape:
+        self._masked_domain = isinstance(vecsp, MaskedVectorSpace)
+        full_vecsp = vecsp.get_full_space() if self._masked_domain else vecsp
+        if not isinstance(full_vecsp, vecsps.UniformGridFcts):
+            raise TypeError(Errors.not_instance(
+                full_vecsp, vecsps.UniformGridFcts,
+                "HmDomain requires a UniformGridFcts or a masked space of one."))
+
+        if self._masked_domain:
+            # The coefficient vector has no spatial shape; its support mask
+            # belongs to the underlying full UniformGridFcts.
+            support = np.asarray(vecsp.mask, dtype=bool)
+            if support.shape != full_vecsp.shape:
+                raise ValueError('The masked space has an incompatible support shape.')
+            if mask is None:
+                mask = support
+            elif not np.array_equal(np.asarray(mask) == 1, support):
+                raise ValueError(
+                    'A supplied Hm0 mask must select exactly the masked '
+                    'vector space support.')
+        elif mask is None:
+            mask = np.ones(full_vecsp.shape, dtype=bool)
+
+        mask = np.asarray(mask)
+        if full_vecsp.shape != mask.shape:
             raise ValueError(Errors.value_error("mask has to have the same shape as the vector space"),self)
         if not isinstance(index,int):
             raise TypeError(Errors.not_instance(index,int,add_info="index has to be a non-negative integer!"))
@@ -248,12 +271,12 @@ class HmDomain(HilbertSpace):
         """
         if type(h) == tuple:
             self.h_val = h
-        elif vecsp is None:
+        elif full_vecsp is None:
             self.h_val=1./np.max(mask.shape)*np.ones((self.ndim,))
         elif h=='physical':
-            self.h_val = vecsp.extents/(np.array(vecsp.shape)-1)
+            self.h_val = full_vecsp.extents/(np.array(full_vecsp.shape)-1)
         elif h=='normalized':
-            self.h_val = (2.*np.pi/np.max(vecsp.extents))* (vecsp.extents/(np.array(vecsp.shape)-1))
+            self.h_val = (2.*np.pi/np.max(full_vecsp.extents))* (full_vecsp.extents/(np.array(full_vecsp.shape)-1))
         else:
             raise NotImplemented
 
@@ -266,12 +289,12 @@ class HmDomain(HilbertSpace):
         self.mask = np.equal(mask, 1)
         """Mask to determine the subspace D.
         """
-        self.dtype = vecsp.dtype if vecsp else dtype
+        self.dtype = full_vecsp.dtype
         """Type of the underlying grid. 
         """
 
         self.proj = CoordinateProjection(
-                self.vecsp,
+                full_vecsp,
                 self.mask
             )
 
@@ -390,13 +413,16 @@ class HmDomain(HilbertSpace):
 
     @memoized_property
     def _I_minus_Delta_operator(self)->Operator:
+        # Hm0 is defined on the reduced masked coefficients themselves. On a
+        # full grid HmDomain retains the original projection/sandwich model.
+        reduced_domain = self.vecsp if self._masked_domain else self.proj.codomain
         return MatrixMultiplication(
             # Keep native grid entries here. MatrixMultiplication handles
             # interleaved real coordinates when the complex space is realified.
             self.I_minus_Delta().astype(self.dtype, copy=False),
             inverse="superLU",
-            domain=self.proj.codomain,
-            codomain=self.proj.codomain,
+            domain=reduced_domain,
+            codomain=reduced_domain,
             dtype=self.dtype,
         )
 
@@ -411,6 +437,8 @@ class HmDomain(HilbertSpace):
             Constructed operator.
         """
         mat = Pow(self._I_minus_Delta_operator, self.index)
+        if self._masked_domain:
+            return mat
         gram = self.proj.adjoint * mat * self.proj
         gram.inverse = self.proj.adjoint * mat.inverse * self.proj
         return gram
@@ -427,7 +455,7 @@ class HmDomain(HilbertSpace):
         """
         if self.index % 2 == 0:
             mat = Pow(self._I_minus_Delta_operator, self.index // 2)
-            return self.proj.adjoint * mat * self.proj
+            return mat if self._masked_domain else self.proj.adjoint * mat * self.proj
         raise NotImplementedError(
             "Cholesky factorization is only implemented for even indices so far."
         )
