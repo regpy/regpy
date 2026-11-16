@@ -19,12 +19,13 @@ They illustrate representative applications and common RegPy workflows.
    notebooks/obstacle_scattering   
    notebooks/tfm
    notebooks/diffusion_coefficient
+   notebooks/volterra_main_example.ipynb
 
 ..
    deconvolution_Impulsive: File
    medium_scattering: File
    parallel_mri: File
    potential: File
-   obstacle_scattering: File 
+   obstacle_scattering: Symlink 
    tfm: Symlink
    diffusion_coefficient: Symlink

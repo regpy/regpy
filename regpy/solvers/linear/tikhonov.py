@@ -844,19 +844,12 @@ class TikhonovCG(RegSolver):
         r"""Runs the method with the stoprule specified by the parameters of the constructor.
         
         Parameters
-        stoprule: StopRule, optional
-            Defaults to None. Otherwise, the given StopRule is (or-) combined with the internal StopRule. 
-        max_it: int, optional
-            Defaults to None. Otherwise, the given maximal number of
-            iterations is added to the internal stopping rule for this run.
-        
-        Parameters
         ----------
         stoprule: StopRule | None [default: None]
-            Stoprule.
+            Defaults to None. Otherwise, the given StopRule is (or-) combined with the internal StopRule. 
         max_it: int | None [default: None]
-            Maximum number of iterations.
-        
+            Defaults to None. Otherwise, the given maximal number of
+                        iterations is added to the internal stopping rule for this run.
         
         Returns
         -------

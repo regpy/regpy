@@ -225,7 +225,7 @@ class GenCurve:
     
     @property
     def zpabs(self)->np.ndarray:
-        r"""Absolute _call_samples |z'(t)| at equidistant grid of self.n points.
+        r"""Absolute _call_samples :math:`|z'(t)|` at equidistant grid of self.n points.
         
         
         Returns
@@ -303,13 +303,9 @@ class GenCurve:
         which are given by their radial_samples at self.nval equidistant point on :math:`[0,2 pi]` 
         
         Parameters
-        u: np.ndarray
-            two-dimnensional complex array with first dimension self.nval 
-        
-        Parameters
         ----------
         u: np.ndarray
-            U.
+            two-dimnensional complex array with first dimension self.nval
         
         
         Returns

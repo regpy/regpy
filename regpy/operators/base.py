@@ -1413,7 +1413,7 @@ class Operator:
             'lanczos' uses the capped, fully reorthogonalized implementation;
             'eigs' uses SciPy/ARPACK with the existing breakdown fallback.
             Method by which an approximation of the operator norm is computed. If None uses self.default_norm_method or 'lanczos'
-              if this is not set. Alternatives: "power" for power iteration; "eigs" for the SciPy implementation.
+            if this is not set. Alternatives: "power" for power iteration; "eigs" for the SciPy implementation.
         codomain_free: bool [default: False]
             If true, the method avoids any use of vectors in the image space of the operator by using 
             :attr:`adjoint_eval` and :meth:`norm_sa`.
