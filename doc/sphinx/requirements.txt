@@ -11,3 +11,4 @@ pypandoc # Needed to parse the notebooks
 matplotlib
 webgui_jupyter_widgets
 ipywidgets
+anywidget
