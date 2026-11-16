@@ -16,9 +16,12 @@ from regpy.functionals import Functional
 from regpy.stoprules import (
     StopRule, DualityGapStopping, Discrepancy, CountIterations, ErrorMonitor,
     OptimalityCondStoppingNonConvex,
-    CountIterations_factory, default_parameter_choice_rule, default_convex_stoprule,
+    default_parameter_choice_rule, default_convex_stoprule,
     default_nonconvex_stoprule, resolve_stoprule_factory,
 )
+
+from regpy.stoprules.general import  CountIterations_factory
+
 __all__ = [
     "Setting",
     "get_reg_method_dictionary",
