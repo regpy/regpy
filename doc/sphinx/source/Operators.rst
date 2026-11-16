@@ -105,9 +105,10 @@ require additional quadrature factors.
 Complex storage does not by itself force complex-scalar semantics: the
 ``as_real_space`` argument of ``NumPyVectorSpace`` controls the scalar field
 and defaults to ``True``. Use ``as_real_space=False`` for a complex-scalar
-space if only one of the spaces :math:`X` and :math:`Y` is complex (otherwise 
-the notion of linearity is not defined) or if your operator is real-linear, 
-but not complex-linear.
+space when the operator is complex-linear. For operators that are only
+**real-linear**, or for real-valued observations of complex data, interpret
+complex storage as a real vector space (``as_real_space=True``). This is
+essential for the squared-modulus example below.
 
 In-place implementations and buffers
 ------------------------------------
@@ -153,34 +154,127 @@ evaluation of the original nonlinear operator may invalidate it. If
 linearizations at distinct points must coexist, use independent operator
 instances or copies with independent state.
 
-For example, the nonlinear mapping :math:`x\mapsto |\mathcal Fx|^2`
-(phase-retrieval data) already has an implementation using existing RegPy
-operators. There is no need to write its derivative or adjoint yourself:
+**Example: the squared-modulus operator.** On a complex array space
+:math:`X=\mathbb C^n` **regarded as a real vector space**, define
+:math:`S:X\to\mathbb R^n` by :math:`S(z)=|z|^2`, with pointwise absolute
+values. For a perturbation :math:`w\in X`,
+
+.. math::
+
+   S'[z]w = 2\operatorname{Re}(\overline z\odot w),
+   \qquad
+   S'[z]^*y = 2z\odot y,\quad y\in\mathbb R^n.
+
+Here :math:`\odot` denotes pointwise multiplication, and the adjoint is
+defined using the **real parts** of the standard complex pairings. In
+particular, the derivative is real-linear, but not complex-linear. The
+following self-contained implementation uses NumPy arrays and a
+:class:`regpy.vecsps.numpy.NumPyVectorSpace` (or one of its grid subclasses):
+
+.. code-block:: python
+
+   import numpy as np
+   from regpy.operators import Operator
+   from regpy.vecsps import NumPyVectorSpace
+
+   class SquaredModulus(Operator):
+       """Pointwise squared modulus; complex inputs are treated as real."""
+
+       def __init__(self, domain: NumPyVectorSpace):
+           if not domain.as_real_space:
+               raise ValueError("SquaredModulus requires as_real_space=True")
+           super().__init__(domain, domain.real_space())
+
+       def _eval(self, z, differentiate=False):
+           if differentiate:
+               # Copy: subsequent changes to the caller's z must not alter
+               # this linearization or its adjoint.
+               self._z_at_linearization = np.array(z, copy=True)
+           return np.abs(z)**2
+
+       def _derivative(self, w):
+           return 2 * np.real(np.conj(self._z_at_linearization) * w)
+
+       def _adjoint(self, y):
+           return 2 * self._z_at_linearization * y
+
+   samples = NumPyVectorSpace(64, dtype=complex, as_real_space=True)
+   S = SquaredModulus(samples)
+   z = samples.randn()
+   values, DS = S.linearize(z)
+   directional_change = DS(samples.randn())
+
+This is a minimal NumPy-specific teaching implementation; RegPy already
+provides the more general :class:`regpy.operators.base.SquaredModulus`,
+which supports other vector backends as well.
+
+**Phase retrieval by composition.** Let :math:`\mathcal F:X\to Z` be a
+discrete Fourier transform and :math:`\Phi=S\circ\mathcal F`. The
+phase-retrieval forward operator measures :math:`\Phi(x)=|\mathcal Fx|^2`.
+The chain rule gives
+
+.. math::
+
+   \begin{aligned}
+   \Phi'[x]h
+     &= S'[\mathcal Fx](\mathcal Fh) \\
+     &= 2\operatorname{Re}\!\left(
+          \overline{\mathcal Fx}\odot\mathcal Fh\right).
+   \end{aligned}
+
+and its real-linear adjoint satisfies
+
+.. math::
+
+   \Phi'[x]^*y
+     = \mathcal F^*\!\left(2(\mathcal Fx)\odot y\right),
+     \qquad y\in\mathbb R^m.
+
+Here :math:`\mathcal F^*` is the adjoint for the standard vector-space
+pairings; depending on FFT normalization it need not equal the inverse
+Fourier transform.
+
+RegPy expresses this composition directly:
 
 .. code-block:: python
 
    from regpy.vecsps import UniformGridFcts
-   from regpy.operators import FourierTransform, SquaredModulus
+   from regpy.operators import FourierTransform
 
    grid = UniformGridFcts((-1, 1, 64), (-1, 1, 64), dtype=complex)
    fft = FourierTransform(grid, centered=True)
    intensity = SquaredModulus(fft.codomain) * fft
+   data, Dintensity = intensity.linearize(grid.randn())
 
-RegPy applies the chain rule automatically when such a composition is
-linearized. 
+RegPy applies the chain rule automatically. **Caching is important:** when
+``intensity.linearize(x)`` evaluates the composition, the Fourier transform
+:math:`\widehat x=\mathcal Fx` is computed **once**. The
+``SquaredModulus._eval(..., differentiate=True)`` method stores this value
+as ``_z_at_linearization``. Repeated calls to ``Dintensity(h)`` then need
+only :math:`\mathcal Fh`, and calls to ``Dintensity.adjoint(y)`` need only
+one application of :math:`\mathcal F^*` to
+:math:`2\widehat x\odot y`. Neither operation recomputes
+:math:`\mathcal Fx`. This can save many FFT evaluations when an iterative
+solver repeatedly applies the linearized forward operator and its adjoint
+at the **same** point. Relinearizing at a new point refreshes the cache.
 
 .. _operator_tests_tutorial:
 
 Testing operators
 ~~~~~~~~~~~~~~~~~
 
-**Test every new operator.** For a linear :math:`T`, the first requirement
-is the standard adjoint identity
+**Test every new operator.** For a real-linear :math:`T`, the first
+requirement is the standard real adjoint identity
 
 .. math::
 
    \operatorname{Re}\langle Tx,y\rangle
      =\operatorname{Re}\langle x,T^*y\rangle.
+
+When *both* spaces are treated as complex vector spaces
+(``as_real_space=False``), test the stronger complex adjoint identity
+:math:`\langle Tx,y\rangle=\langle x,T^*y\rangle` without taking real
+parts. This is also how ``test_adjoint`` distinguishes the two cases.
 
 For the cumulative-sum example, a direct check also works over complex
 coefficients:
