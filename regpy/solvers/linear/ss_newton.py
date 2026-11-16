@@ -28,7 +28,6 @@ from regpy.functionals.integral_functionals import IntegralFunctionalBase
 from ..sequences import Naturals
 from ..solver import RegSolver
 from ..setting import Setting
-from .tikhonov import TikhonovCG
 __all__ = ["SemiSmoothNewton"]
 
 def quadTaylor(func:Functional,x: ReadOnlyVector) -> SquaredNorm:
@@ -535,6 +534,7 @@ class SemiSmoothNewton(RegSolver):
         return model, projection * self.op, projection, linear
 
     def _next(self) -> None:
+        from .tikhonov import TikhonovCG        
         r"""compute active and inactive sets
         """
         self.active_plus_old=self.active_plus
