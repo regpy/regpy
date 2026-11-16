@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Any
+
 import math as ma
 import numpy as np
 from typing import Callable
@@ -21,15 +22,17 @@ from regpy.stoprules import (
 from regpy.hilbert import L2
 
 from .setting import Setting
+from regpy.solvers.linear.primal_dual import PDHG
+from regpy.solvers.linear.proximal_gradient import FISTA
+from regpy.solvers.linear.ss_newton import SemiSmoothNewton
+from regpy.solvers.sequences import Naturals
+from regpy.solvers.solver import CombinedSolver
+
 
 __all__ = ['BoundConstrSetting', 'Huber_XSetting',
            'FISTA_SSNewton', 'dFISTA_SSNewton', 'TV_Setting', 'TVaug_Setting',
            'PDHGaug', 'TVaugOptimalityStopping',
            'TVaugFISTAGapStopping', 'TVaugPDHGGapStopping']
-
-from regpy.solvers.sequences import Naturals
-from regpy.solvers.solver import CombinedSolver
-from regpy.solvers.linear import FISTA, SemiSmoothNewton, PDHG
 
 def _fista_gap_switch_rule(reltol: float, logging_level: int | str) -> DualityGapStopping:
     """Stop FISTA only when the relative primal duality-gap bound holds.
@@ -277,7 +280,7 @@ class dFISTA_SSNewton(_FISTA_SSNewtonBase):
         is_primal: bool = True,
         fista_pars: dict | None = None,
         ssn_pars: dict | None = None,
-    ) -> None:
+    ) -> None: 
         if is_primal is not True:
             raise ValueError("Register dFISTA_SSNewton with primal=True.")
         _fista_gap_switch_rule(fista_reltol, logging_level)
@@ -305,7 +308,7 @@ class dFISTA_SSNewton(_FISTA_SSNewtonBase):
     @staticmethod
     def check_applicability(
         setting: Setting, ssn_primal: bool = True, **kwargs: Any,
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:     
         try:
             dual_setting = setting.get_dual_setting()
             fista_out, _ = FISTA.check_applicability(dual_setting)
@@ -1025,7 +1028,7 @@ class PDHGaug(PDHG):
         augmented_op_norm: float | None = None,
         tau: float = 0., sigma: float = 0., theta: float = -1.,
         **kwargs,
-    ):
+    ):             
         if not setting.is_tikhonov or not setting.is_convex:
             return {'applicable': False, 'info':
                     'PDHGaug requires a convex TV Tikhonov setting.'}, {}
