@@ -367,25 +367,25 @@ class Functional:
         math.inf the gradient is not Lipschitz continuous.
     dom_l: Vector | Scalar | None [default: None]
         should not be None, and they should specify the essential domain of the functional by 
-        :math:`\{x in domain: dom_l<=x<=dom_u}`, 
+        :math:`\{x in domain: dom_l<=x<=dom_u\}`, 
         and the essential domain of the conjugate functional (which is then also separable) by 
         :math:`\{xstar in domain: conj_dom_l<=xstar <= conj_dom_u\}`.
         In case of open domains, the boundaries should be shifted in the order of machine precision.
     dom_u: Vector | Scalar | None [default: None]
         should not be None, and they should specify the essential domain of the functional by 
-        :math:`\{x in domain: dom_l<=x<=dom_u}`, 
+        :math:`\{x in domain: dom_l<=x<=dom_u\}`, 
         and the essential domain of the conjugate functional (which is then also separable) by 
         :math:`\{xstar in domain: conj_dom_l<=xstar <= conj_dom_u\}`.
         In case of open domains, the boundaries should be shifted in the order of machine precision.
     conj_dom_l: Vector | Scalar | None [default: None]
         should not be None, and they should specify the essential domain of the functional by 
-        :math:`\{x in domain: dom_l<=x<=dom_u}`, 
+        :math:`\{x in domain: dom_l<=x<=dom_u\}`, 
         and the essential domain of the conjugate functional (which is then also separable) by 
         :math:`\{xstar in domain: conj_dom_l<=xstar <= conj_dom_u\}`.
         In case of open domains, the boundaries should be shifted in the order of machine precision.
     conj_dom_u: Vector | Scalar | None [default: None]
         should not be None, and they should specify the essential domain of the functional by 
-        :math:`\{x in domain: dom_l<=x<=dom_u}`, 
+        :math:`\{x in domain: dom_l<=x<=dom_u\}`, 
         and the essential domain of the conjugate functional (which is then also separable) by 
         :math:`\{xstar in domain: conj_dom_l<=xstar <= conj_dom_u\}`.
         In case of open domains, the boundaries should be shifted in the order of machine precision.
